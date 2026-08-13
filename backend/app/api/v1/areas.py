@@ -16,15 +16,15 @@ def listar(db: Session = Depends(get_db), _: dict = Depends(get_current_admin)):
 
 @router.post("", response_model=AreaOut, status_code=status.HTTP_201_CREATED)
 def crear(data: AreaCreate, db: Session = Depends(get_db), admin: dict = Depends(get_current_admin)):
-    return AreaService(db).crear(data, admin["sub"])
+    return AreaService(db).crear(data, admin["id"])
 
 
 @router.put("/{area_id}", response_model=AreaOut)
 def actualizar(area_id: int, data: AreaUpdate, db: Session = Depends(get_db),
                admin: dict = Depends(get_current_admin)):
-    return AreaService(db).actualizar(area_id, data, admin["sub"])
+    return AreaService(db).actualizar(area_id, data, admin["id"])
 
 
-@router.delete("/{area_id}", status_code=status.HTTP_204_NO_CONTENT)
-def eliminar(area_id: int, db: Session = Depends(get_db), admin: dict = Depends(get_current_admin)):
-    AreaService(db).eliminar(area_id, admin["sub"])
+@router.post("/{area_id}/desactivar", response_model=AreaOut)
+def desactivar(area_id: int, db: Session = Depends(get_db), admin: dict = Depends(get_current_admin)):
+    return AreaService(db).desactivar(area_id, admin["id"])

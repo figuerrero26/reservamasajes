@@ -1,32 +1,50 @@
 import api from "./api";
-import type { AgendaPublica, HorariosResponse, Reserva } from "../types";
+import apiUsuario from "./apiUsuario";
+import type { HorariosResponse, Reserva, ReservaCreada } from "../types";
 
-export async function listarAgendasPublicas(): Promise<AgendaPublica[]> {
-  const { data } = await api.get<AgendaPublica[]>("/agendas/publicas");
-  return data;
-}
-
-export async function validarCedula(cedula: string) {
-  const { data } = await api.post<{ valido: boolean; tiene_reserva_activa: boolean }>(
-    "/reservas/validar-cedula",
-    { cedula }
-  );
-  return data;
-}
-
+// ---- Portal público (requiere sesión de usuario, salvo horarios que es abierto) ----
 export async function obtenerHorarios(agendaId: number, fecha: string): Promise<HorariosResponse> {
-  const { data } = await api.get<HorariosResponse>(`/agendas/${agendaId}/horarios`, {
+  const { data } = await apiUsuario.get<HorariosResponse>(`/agendas/${agendaId}/horarios`, {
     params: { fecha },
   });
   return data;
 }
 
 export async function crearReserva(payload: {
-  cedula: string;
   agenda_id: number;
   fecha: string;
   hora_inicio: string;
-}): Promise<Reserva> {
-  const { data } = await api.post<Reserva>("/reservas", payload);
+}): Promise<ReservaCreada> {
+  const { data } = await apiUsuario.post<ReservaCreada>("/reservas", payload);
+  return data;
+}
+
+export async function misReservas(): Promise<Reserva[]> {
+  const { data } = await apiUsuario.get<Reserva[]>("/reservas/mias");
+  return data;
+}
+
+export async function cancelarReservaPropia(id: number): Promise<Reserva> {
+  const { data } = await apiUsuario.post<Reserva>(`/reservas/${id}/cancelar`);
+  return data;
+}
+
+// ---- Administración ----
+export async function buscarReservas(params: {
+  nombre?: string; correo?: string; fecha?: string; agenda_id?: number;
+}): Promise<Reserva[]> {
+  const { data } = await api.get<Reserva[]>("/reservas", { params });
+  return data;
+}
+
+export async function crearReservaManual(payload: {
+  correo: string; agenda_id: number; fecha: string; hora_inicio: string; notes?: string;
+}): Promise<ReservaCreada> {
+  const { data } = await api.post<ReservaCreada>("/reservas/manual", payload);
+  return data;
+}
+
+export async function cancelarReserva(id: number): Promise<Reserva> {
+  const { data } = await api.delete<Reserva>(`/reservas/${id}`);
   return data;
 }

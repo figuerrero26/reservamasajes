@@ -17,16 +17,16 @@ def listar(db: Session = Depends(get_db), _: dict = Depends(get_current_admin)):
 @router.post("", response_model=ServicioOut, status_code=status.HTTP_201_CREATED)
 def crear(data: ServicioCreate, db: Session = Depends(get_db),
           admin: dict = Depends(get_current_admin)):
-    return ServicioService(db).crear(data, admin["sub"])
+    return ServicioService(db).crear(data, admin["id"])
 
 
 @router.put("/{servicio_id}", response_model=ServicioOut)
 def actualizar(servicio_id: int, data: ServicioUpdate, db: Session = Depends(get_db),
                admin: dict = Depends(get_current_admin)):
-    return ServicioService(db).actualizar(servicio_id, data, admin["sub"])
+    return ServicioService(db).actualizar(servicio_id, data, admin["id"])
 
 
-@router.delete("/{servicio_id}", status_code=status.HTTP_204_NO_CONTENT)
-def eliminar(servicio_id: int, db: Session = Depends(get_db),
-             admin: dict = Depends(get_current_admin)):
-    ServicioService(db).eliminar(servicio_id, admin["sub"])
+@router.post("/{servicio_id}/desactivar", response_model=ServicioOut)
+def desactivar(servicio_id: int, db: Session = Depends(get_db),
+               admin: dict = Depends(get_current_admin)):
+    return ServicioService(db).desactivar(servicio_id, admin["id"])

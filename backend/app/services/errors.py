@@ -16,3 +16,8 @@ class NotFound(DomainError):
 class Conflict(DomainError):
     def __init__(self, message: str = "Conflicto de datos"):
         super().__init__(message, status_code=409)
+
+
+class Forbidden(DomainError):
+    def __init__(self, message: str = "No tiene permisos para esta acción"):
+        super().__init__(message, status_code=403)

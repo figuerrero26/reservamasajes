@@ -1,84 +1,65 @@
-import { useEffect, useState } from "react";
-import {
-  Alert, Box, Button, Chip, Divider, List, ListItem, ListItemText, Stack,
-  Tab, Tabs, TextField, Typography,
-} from "@mui/material";
-import type { Agenda, Area, Servicio } from "../../types";
-import {
-  cambiarEstadoAgenda, crearArea, crearServicio, listarAgendas, listarAreas, listarServicios,
-} from "../../services/agendas";
+import { Box, Card, CardActionArea, CardContent, Grid, Typography } from "@mui/material";
+import { useNavigate } from "react-router-dom";
+import CategoryIcon from "@mui/icons-material/Category";
+import SpaIcon from "@mui/icons-material/Spa";
+import EventNoteIcon from "@mui/icons-material/EventNote";
+import EventAvailableIcon from "@mui/icons-material/EventAvailable";
+import PeopleIcon from "@mui/icons-material/People";
+import BlockIcon from "@mui/icons-material/Block";
+import CelebrationIcon from "@mui/icons-material/Celebration";
+import SettingsIcon from "@mui/icons-material/Settings";
+import HistoryIcon from "@mui/icons-material/History";
+import type { ReactNode } from "react";
+
+interface Seccion {
+  titulo: string;
+  descripcion: string;
+  ruta: string;
+  icono: ReactNode;
+}
+
+const SECCIONES: Seccion[] = [
+  { titulo: "Áreas", descripcion: "Administra las áreas del portal de reservas.", ruta: "/admin/areas", icono: <CategoryIcon fontSize="large" /> },
+  { titulo: "Servicios", descripcion: "Administra los servicios de bienestar ofrecidos.", ruta: "/admin/servicios", icono: <SpaIcon fontSize="large" /> },
+  { titulo: "Agendas", descripcion: "Crea y configura las agendas de atención.", ruta: "/admin/agendas", icono: <EventNoteIcon fontSize="large" /> },
+  { titulo: "Reservas", descripcion: "Busca, crea y cancela reservas de colaboradores.", ruta: "/admin/reservas", icono: <EventAvailableIcon fontSize="large" /> },
+  { titulo: "Usuarios", descripcion: "Consulta y gestiona el acceso de los colaboradores.", ruta: "/admin/usuarios", icono: <PeopleIcon fontSize="large" /> },
+  { titulo: "Bloqueos", descripcion: "Bloquea días o rangos de horas en las agendas.", ruta: "/admin/bloqueos", icono: <BlockIcon fontSize="large" /> },
+  { titulo: "Festivos", descripcion: "Administra el calendario de días festivos.", ruta: "/admin/festivos", icono: <CelebrationIcon fontSize="large" /> },
+  { titulo: "Configuración", descripcion: "Ajusta los datos generales y la semana activa.", ruta: "/admin/configuracion", icono: <SettingsIcon fontSize="large" /> },
+  { titulo: "Auditoría", descripcion: "Revisa el historial de acciones administrativas.", ruta: "/admin/auditoria", icono: <HistoryIcon fontSize="large" /> },
+];
 
 export default function DashboardPage() {
-  const [tab, setTab] = useState(0);
-  const [areas, setAreas] = useState<Area[]>([]);
-  const [servicios, setServicios] = useState<Servicio[]>([]);
-  const [agendas, setAgendas] = useState<Agenda[]>([]);
-  const [nuevaArea, setNuevaArea] = useState("");
-  const [nuevoServicio, setNuevoServicio] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  async function recargar() {
-    try {
-      const [a, s, g] = await Promise.all([listarAreas(), listarServicios(), listarAgendas()]);
-      setAreas(a); setServicios(s); setAgendas(g);
-    } catch {
-      setError("No se pudo cargar la información");
-    }
-  }
-  useEffect(() => { recargar(); }, []);
+  const navigate = useNavigate();
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Configuración</Typography>
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
-        <Tab label="Áreas" /><Tab label="Servicios" /><Tab label="Agendas" />
-      </Tabs>
-
-      {tab === 0 && (
-        <Box>
-          <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-            <TextField size="small" label="Nueva área" value={nuevaArea} onChange={(e) => setNuevaArea(e.target.value)} />
-            <Button variant="contained" onClick={async () => { await crearArea(nuevaArea.trim()); setNuevaArea(""); recargar(); }} disabled={!nuevaArea.trim()}>Agregar</Button>
-          </Stack>
-          <Divider />
-          <List>{areas.map((a) => <ListItem key={a.id}><ListItemText primary={a.nombre} /></ListItem>)}</List>
-        </Box>
-      )}
-
-      {tab === 1 && (
-        <Box>
-          <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-            <TextField size="small" label="Nuevo servicio" value={nuevoServicio} onChange={(e) => setNuevoServicio(e.target.value)} />
-            <Button variant="contained" onClick={async () => { await crearServicio(nuevoServicio.trim()); setNuevoServicio(""); recargar(); }} disabled={!nuevoServicio.trim()}>Agregar</Button>
-          </Stack>
-          <Divider />
-          <List>{servicios.map((s) => <ListItem key={s.id}><ListItemText primary={s.nombre} /></ListItem>)}</List>
-        </Box>
-      )}
-
-      {tab === 2 && (
-        <Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            La creación de agendas (área + servicio + horarios) se realiza vía API. Aquí puedes activarlas o desactivarlas.
-          </Typography>
-          <List>
-            {agendas.map((g) => (
-              <ListItem key={g.id} secondaryAction={
-                <Button size="small" variant="outlined" onClick={async () => { await cambiarEstadoAgenda(g.id, !g.estado); recargar(); }}>
-                  {g.estado ? "Desactivar" : "Activar"}
-                </Button>
-              }>
-                <ListItemText
-                  primary={g.nombre}
-                  secondary={`${g.hora_inicio?.slice(0,5)} - ${g.hora_fin?.slice(0,5)} · cada ${g.duracion_min} min`}
-                />
-                <Chip size="small" color={g.estado ? "success" : "default"} label={g.estado ? "Activa" : "Inactiva"} sx={{ mr: 2 }} />
-              </ListItem>
-            ))}
-          </List>
-        </Box>
-      )}
+      <Typography variant="h4" gutterBottom>
+        Panel de administración
+      </Typography>
+      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+        Selecciona una sección para gestionarla.
+      </Typography>
+      <Grid container spacing={2}>
+        {SECCIONES.map((s) => (
+          <Grid item xs={12} sm={6} md={4} key={s.ruta}>
+            <Card variant="outlined" sx={{ height: "100%" }}>
+              <CardActionArea onClick={() => navigate(s.ruta)} sx={{ height: "100%", p: 1 }}>
+                <CardContent>
+                  <Box sx={{ color: "primary.main", mb: 1 }}>{s.icono}</Box>
+                  <Typography variant="h6" gutterBottom>
+                    {s.titulo}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {s.descripcion}
+                  </Typography>
+                </CardContent>
+              </CardActionArea>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
     </Box>
   );
 }

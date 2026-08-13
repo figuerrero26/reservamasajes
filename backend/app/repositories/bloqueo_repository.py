@@ -23,5 +23,5 @@ class BloqueoRepository(BaseRepository[Bloqueo]):
 
     def es_festivo(self, fecha: date) -> bool:
         return self.db.execute(
-            select(Festivo).where(Festivo.fecha == fecha)
+            select(Festivo).where(Festivo.fecha == fecha, Festivo.estado.is_(True))
         ).scalar_one_or_none() is not None

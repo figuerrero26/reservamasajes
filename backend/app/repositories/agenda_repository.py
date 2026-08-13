@@ -9,7 +9,8 @@ class AgendaRepository(BaseRepository[Agenda]):
     def __init__(self, db: Session):
         super().__init__(Agenda, db)
 
-    def list_activas(self) -> list[Agenda]:
-        return list(
-            self.db.execute(select(Agenda).where(Agenda.estado.is_(True))).scalars().all()
-        )
+    def list_activas(self, servicio_id: int | None = None) -> list[Agenda]:
+        stmt = select(Agenda).where(Agenda.activo.is_(True))
+        if servicio_id:
+            stmt = stmt.where(Agenda.servicio_id == servicio_id)
+        return list(self.db.execute(stmt).scalars().all())

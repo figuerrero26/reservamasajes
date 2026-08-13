@@ -1,0 +1,27 @@
+# Entorno
+.env
+.env.*
+!.env.example
+!frontend/.env.example
+
+# Backend (Python)
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/.venv/
+backend/.pytest_cache/
+backend/htmlcov/
+backend/.coverage
+
+# Frontend (Node)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Editores / SO
+.DS_Store
+.vscode/
+.idea/
+
+# Herramientas internas de desarrollo (worktrees de agentes, etc.)
+.claude/

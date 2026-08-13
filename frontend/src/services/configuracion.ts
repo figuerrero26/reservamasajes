@@ -1,0 +1,30 @@
+import api from "./api";
+import type { ConfiguracionGeneral, SmtpConfig, SmtpConfigUpdate } from "../types";
+
+// Endpoint público (sin autenticación); se usa tanto desde el portal como desde el admin
+// para precargar el formulario, por eso se deja en la instancia base.
+export const obtenerConfiguracion = async () =>
+  (await api.get<ConfiguracionGeneral>("/configuracion")).data;
+
+export const actualizarConfiguracion = async (clave: string, valor: string | null) =>
+  api.put("/configuracion", { clave, valor });
+
+export const obtenerSemanaActiva = async () =>
+  (await api.get<{ inicio: string | null; fin: string | null }>("/semana/activa")).data;
+
+export const definirSemanaActiva = async (inicio: string, fin: string) =>
+  api.put("/semana/activa", { inicio, fin });
+
+export const reiniciarSemana = async (fecha_lunes: string) =>
+  (await api.post<{ reservas_afectadas: number }>("/semana/reiniciar", null, {
+    params: { fecha_lunes },
+  })).data;
+
+export const obtenerConfiguracionSmtp = async () =>
+  (await api.get<SmtpConfig>("/configuracion/smtp")).data;
+
+export const actualizarConfiguracionSmtp = async (payload: SmtpConfigUpdate) =>
+  (await api.put<SmtpConfig>("/configuracion/smtp", payload)).data;
+
+export const enviarCorreoPrueba = async (destinatario: string) =>
+  api.post("/configuracion/smtp/prueba", { destinatario });

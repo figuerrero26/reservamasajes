@@ -1,39 +1,48 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: mariadb:11
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-reservas}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-reservas}
-      POSTGRES_DB: ${POSTGRES_DB:-reservas}
-      TZ: America/Bogota
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-reservas_root}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-reservas}
+      MARIADB_USER: ${MARIADB_USER:-reservas}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-reservas}
+      TZ: ${APP_TIMEZONE:-America/Bogota}
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - db_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-reservas}"]
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+      start_period: 30s
     ports:
-      - "5432:5432"
+      - "3306:3306"
 
   backend:
     build: ./backend
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-reservas}:${POSTGRES_PASSWORD:-reservas}@db:5432/${POSTGRES_DB:-reservas}
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: mysql+pymysql://${MARIADB_USER:-reservas}:${MARIADB_PASSWORD:-reservas}@db:3306/${MARIADB_DATABASE:-reservas}
+      # Solo se usa para crear/otorgar permisos sobre la BD de pruebas (reservas_test) al
+      # correr pytest; el usuario de la app nunca tiene privilegios de CREATE DATABASE.
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-reservas_root}
       JWT_SECRET: ${JWT_SECRET:-cambie-esta-clave-en-produccion}
-      TIMEZONE: America/Bogota
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/Bogota}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
       ADMIN_USER: ${ADMIN_USER:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin123*}
-      TZ: America/Bogota
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-Admin123*}
+      TZ: ${APP_TIMEZONE:-America/Bogota}
     ports:
       - "8000:8000"
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
     depends_on:
       - backend
     ports:

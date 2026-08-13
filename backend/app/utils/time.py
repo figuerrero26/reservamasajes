@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 from app.config import settings
 
-TZ = ZoneInfo(settings.TIMEZONE)
+TZ = ZoneInfo(settings.APP_TIMEZONE)
 
 
 def now() -> datetime:

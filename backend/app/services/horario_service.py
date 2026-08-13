@@ -1,4 +1,4 @@
-"""Generación dinámica de horarios (§9 del spec).
+"""Generación dinámica de horarios.
 
 Los slots NO se almacenan: se calculan a partir de la configuración de la agenda,
 aplicando las reglas de casos límite y la zona horaria America/Bogota.
@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 from app.models import Agenda
 from app.repositories.agenda_repository import AgendaRepository
 from app.repositories.bloqueo_repository import BloqueoRepository
+from app.repositories.configuracion_repository import ConfiguracionRepository
 from app.repositories.reserva_repository import ReservaRepository
-from app.schemas.reserva import Slot
+from app.schemas.reserva import EstadoSlot, Slot
 from app.services.errors import NotFound
 from app.utils.time import add_minutes, overlaps, now, today
 
@@ -22,16 +23,29 @@ class HorarioService:
         self.agendas = AgendaRepository(db)
         self.bloqueos = BloqueoRepository(db)
         self.reservas = ReservaRepository(db)
+        self.configuracion = ConfiguracionRepository(db)
 
     def generar(self, agenda_id: int, fecha: date) -> list[Slot]:
         agenda = self.agendas.get(agenda_id)
-        if not agenda or not agenda.estado:
+        if not agenda or not agenda.activo:
             raise NotFound("Agenda no encontrada o inactiva")
 
-        # Día no habilitado en la configuración de la agenda.
+        # Fecha completamente pasada: nunca hay slots (no solo los del propio día en curso).
+        if fecha < today():
+            return []
+
+        # Fuera de la semana activa configurada por el admin (si hay una definida): sin slots.
+        inicio = self.configuracion.get("semana_activa_inicio")
+        fin = self.configuracion.get("semana_activa_fin")
+        if inicio and (fecha < date.fromisoformat(inicio)):
+            return []
+        if fin and (fecha > date.fromisoformat(fin)):
+            return []
+
+        # Día no habilitado en la configuración de la agenda: sin slots.
         if fecha.weekday() not in agenda.dias:
             return []
-        # Festivo (RF-19) o día bloqueado completo (RF-14).
+        # Festivo o día bloqueado completo: sin slots.
         if self.bloqueos.es_festivo(fecha):
             return []
         bloqueos = self.bloqueos.por_agenda_fecha(agenda_id, fecha)
@@ -53,7 +67,7 @@ class HorarioService:
                          rangos_bloqueados: list, es_hoy: bool, hora_actual: time) -> list[Slot]:
         slots: list[Slot] = []
         cursor = agenda.hora_inicio
-        dur = agenda.duracion_min
+        dur = agenda.duracion_minutos
 
         while True:
             fin = add_minutes(cursor, dur)
@@ -61,25 +75,32 @@ class HorarioService:
             if fin > agenda.hora_fin:
                 break
 
-            excluir = False
-            # Solape con almuerzo (total o parcial) -> excluir (RF-10).
-            if agenda.almuerzo_inicio and agenda.almuerzo_fin:
-                if overlaps(cursor, fin, agenda.almuerzo_inicio, agenda.almuerzo_fin):
-                    excluir = True
-            # Solape con rangos bloqueados (RF-15).
-            for b_ini, b_fin in rangos_bloqueados:
-                if overlaps(cursor, fin, b_ini, b_fin):
-                    excluir = True
-                    break
-            # Horario pasado (RF-11), evaluado en America/Bogota.
-            if es_hoy and cursor <= hora_actual:
-                excluir = True
+            # Solape con almuerzo (total o parcial): la franja no existe como slot.
+            en_almuerzo = bool(
+                agenda.almuerzo_inicio and agenda.almuerzo_fin
+                and overlaps(cursor, fin, agenda.almuerzo_inicio, agenda.almuerzo_fin)
+            )
+            if not en_almuerzo:
+                bloqueado = any(
+                    overlaps(cursor, fin, b_ini, b_fin) for b_ini, b_fin in rangos_bloqueados
+                )
+                pasado = es_hoy and cursor <= hora_actual
+                ocupado = cursor in ocupados
 
-            if not excluir:
+                if bloqueado:
+                    estado = EstadoSlot.BLOQUEADO
+                elif ocupado:
+                    estado = EstadoSlot.OCUPADO
+                elif pasado:
+                    estado = EstadoSlot.PASADO
+                else:
+                    estado = EstadoSlot.DISPONIBLE
+
                 slots.append(Slot(
                     hora_inicio=cursor,
                     hora_fin=fin,
-                    disponible=cursor not in ocupados,
+                    estado=estado,
+                    disponible=estado == EstadoSlot.DISPONIBLE,
                 ))
 
             cursor = fin
