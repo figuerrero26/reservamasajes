@@ -38,7 +38,7 @@ services:
       ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-Admin123*}
       TZ: ${APP_TIMEZONE:-America/Bogota}
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8001}:8000"
 
   frontend:
     build: ./frontend

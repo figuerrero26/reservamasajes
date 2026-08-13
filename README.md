@@ -383,12 +383,15 @@ cualquier nombre/correo/contraseña — el registro es abierto.
 |----------------------|-------------------------------|
 | Portal de reservas   | http://localhost:8080         |
 | Panel administrativo | http://localhost:8080/admin   |
-| API (Swagger)        | http://localhost:8000/docs    |
-| Health check         | http://localhost:8000/health  |
+| API (Swagger)        | http://localhost:8001/docs    |
+| Health check         | http://localhost:8001/health  |
 
 El sistema funciona igual detrás de una IP de red local (`http://IP-DEL-SERVIDOR`) sin ningún
 cambio de código: no hay IPs ni dominios fijos en el proyecto — todo sale de `CORS_ORIGINS`
-y de rutas relativas (`/api/v1`) en el frontend.
+y de rutas relativas (`/api/v1`) en el frontend. Los puertos publicados en el host (`8080`
+para el frontend, `8001` para la API — ver `BACKEND_PORT` en `.env`) son configurables si ya
+están en uso en su servidor; el frontend siempre llega al backend por la red interna de
+Docker (`backend:8000`), sin importar qué puerto de host se elija.
 
 ## Variables de entorno
 
@@ -402,6 +405,7 @@ Ver `.env.example` en la raíz (backend) y `frontend/.env.example` (build del fr
 | `APP_ENV` | `development` \| `production` |
 | `APP_TIMEZONE` | Zona horaria única del sistema (`America/Bogota`) |
 | `CORS_ORIGINS` | Orígenes permitidos, separados por coma |
+| `BACKEND_PORT` | Puerto del host publicado hacia el backend (por defecto `8001`; cámbielo si ya está en uso) |
 | `ADMIN_USER`, `ADMIN_INITIAL_PASSWORD` | Credenciales del administrador inicial (cámbielas tras el primer login) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_TLS`, `SMTP_FROM`, `SMTP_FROM_NAME` | Configuración SMTP por defecto (fallback si no hay una guardada desde el panel — ver [Configuración SMTP](#configuración-smtp-y-notificaciones)) |
 | `VITE_API_URL` | Base de la API que usa el frontend (en Docker, ruta relativa `/api/v1`) |
@@ -553,8 +557,8 @@ El sistema no tiene ninguna IP ni dominio codificado. Para publicarlo con
 `https://agenda.empresa.com` detrás de Nginx Proxy Manager:
 
 1. Levante la pila con `docker compose up -d` en la red interna del servidor (sin exponer
-   `8080`/`8000` públicamente si NPM y esta pila comparten una red Docker; si no, exponga solo
-   el puerto que NPM necesite alcanzar).
+   `8080`/`BACKEND_PORT` públicamente si NPM y esta pila comparten una red Docker; si no,
+   exponga solo el puerto que NPM necesite alcanzar).
 2. En NPM, cree un *Proxy Host* apuntando al contenedor/puerto del servicio `frontend`
    (que ya sirve el frontend y reenvía `/api` al backend), con el dominio deseado.
 3. Solicite el certificado (Let's Encrypt) desde NPM y fuerce HTTPS.
