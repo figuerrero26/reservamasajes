@@ -48,9 +48,9 @@ Toda la operación usa la zona horaria única **America/Bogota**.
   [Cuentas de usuario](#cuentas-de-usuario)).
 - **Base de datos:** **MariaDB** (obligatorio; no se usa PostgreSQL en ninguna parte del
   sistema).
-- **Infraestructura:** Docker Compose con 3 servicios (`db`, `backend`, `frontend`). Existe un
-  archivo alternativo opcional (`docker-compose.client.yml`, sin `db`) para que un equipo se
-  conecte a la MariaDB de otro en vez de tener la suya propia — ver
+- **Infraestructura:** Docker Compose con 3 servicios (`db`, `backend`, `frontend`), el mismo
+  `docker-compose.yml` en todos los equipos. Un equipo puede usar la MariaDB de otro en vez de
+  la propia solo cambiando `DB_HOST` en su `.env` — ver
   [Base de datos compartida en la red local](#base-de-datos-compartida-en-la-red-local). El
   frontend se sirve con Nginx, que hace de proxy inverso hacia la API (`/api → backend:8000`).
   MariaDB persiste sus datos en `./data/mariadb` dentro del propio directorio del proyecto
@@ -502,28 +502,16 @@ y vuelva a iniciar.
 
 ## Base de datos compartida en la red local
 
-Por defecto, `docker compose up -d --build` (el comando estándar, sin cambios) levanta los 3
-servicios de siempre — incluida su propia MariaDB — así que cualquier despliegue normal de un
-solo equipo sigue funcionando exactamente igual. Si en cambio quiere que un único equipo de la
-red (por ejemplo un servidor) aloje la base real y que otro equipo de esa misma LAN (por
-ejemplo su PC local) se conecte a esa misma base en vez de tener la suya propia, use
-`docker-compose.client.yml`:
+Todos los equipos usan el mismo `docker-compose.yml` (no hay un archivo aparte). Para que un
+equipo use la MariaDB de otro en vez de la propia, solo hay que cambiar variables en su
+`.env`:
 
-- **En el equipo que aloja la base** (el que debe tener los datos reales, con el puerto 3306
-  accesible desde la LAN): no cambia nada, sigue con el comando de siempre:
+- **En el equipo que aloja la base real** (por ejemplo un servidor, con el puerto 3306
+  accesible desde la LAN): no cambia nada, `.env` normal, `DB_HOST` sin definir (usa el
+  valor por defecto `db`, el servicio interno de este mismo compose).
 
-  ```bash
-  docker compose up -d --build
-  ```
-
-- **En el equipo que quiere usar esa base remota en vez de la suya propia** (por ejemplo su PC
-  local): use el archivo alternativo, que no incluye el servicio `db`:
-
-  ```bash
-  docker compose -f docker-compose.client.yml up -d --build
-  ```
-
-  con estas variables en su `.env`:
+- **En el equipo que quiere usar esa base remota en vez de la propia** (por ejemplo un PC de
+  desarrollo): en su `.env`,
 
   ```bash
   DB_HOST=192.168.2.14        # IP en la LAN del equipo que aloja la base
@@ -532,6 +520,12 @@ ejemplo su PC local) se conecte a esa misma base en vez de tener la suya propia,
   MARIADB_PASSWORD=...
   MARIADB_DATABASE=reservas
   ```
+
+  y levanta igual con `docker compose up -d --build`. El servicio `db` local **también se
+  levanta** (viene en el mismo archivo), pero queda sin uso: el backend ignora esa base local
+  y se conecta a la remota según `DB_HOST`. Si prefiere no gastar recursos en un `db` local
+  que no se usa, levante solo lo necesario: `docker compose up -d --build backend frontend`
+  (sin iniciar `db`).
 
   Por defecto la app se conecta como `root` de MariaDB (no se crea un usuario de aplicación
   aparte); si prefiere un usuario con privilegios acotados en vez de root, defina
@@ -547,8 +541,8 @@ ejemplo su PC local) se conecte a esa misma base en vez de tener la suya propia,
 - No corra `pytest` desde un equipo que apunta a la base compartida: las pruebas crean y
   destruyen una base `reservas_test` completa, algo que no debe tocar el servidor que aloja
   los datos reales. Las pruebas automatizadas están pensadas para correrse en el equipo que
-  también aloja su propia MariaDB (`docker compose up -d --build`, sin `docker-compose.client.yml`)
-  o en un entorno aparte.
+  también aloja su propia MariaDB (con `DB_HOST` apuntando a su propio `db`) o en un entorno
+  aparte.
 
 ## Pruebas automatizadas
 
