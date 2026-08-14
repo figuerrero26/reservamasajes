@@ -50,7 +50,9 @@ Toda la operación usa la zona horaria única **America/Bogota**.
   sistema).
 - **Infraestructura:** Docker Compose con 3 servicios (`db`, `backend`, `frontend`). El
   frontend se sirve con Nginx, que hace de proxy inverso hacia la API (`/api → backend:8000`).
-  MariaDB usa un volumen nombrado persistente (`db_data`).
+  MariaDB persiste sus datos en `./data/mariadb` dentro del propio directorio del proyecto
+  (bind mount, no volumen nombrado de Docker), para que los datos vivan siempre junto al
+  código y no dependan del ciclo de vida de los volúmenes de Docker.
 
 ```mermaid
 flowchart LR
@@ -472,9 +474,8 @@ docker compose exec db mariadb-dump -u root -p"$MARIADB_ROOT_PASSWORD" \
   --single-transaction --routines --events "$MARIADB_DATABASE" > backup_$(date +%F).sql
 ```
 
-Guarde el archivo fuera del volumen del contenedor (por ejemplo, en el servidor host o en un
-almacenamiento de respaldo externo). Recomendado: automatizarlo con cron y conservar varias
-versiones.
+Guarde el archivo fuera de la carpeta `data/` (por ejemplo, en un almacenamiento de respaldo
+externo). Recomendado: automatizarlo con cron y conservar varias versiones.
 
 **Restauración:**
 
@@ -482,16 +483,19 @@ versiones.
 cat backup_2026-08-13.sql | docker compose exec -T db mariadb -u root -p"$MARIADB_ROOT_PASSWORD" "$MARIADB_DATABASE"
 ```
 
-**Backup del volumen completo** (alternativa a nivel de archivo, con el servicio detenido;
-confirme el nombre exacto del volumen con `docker volume ls`, normalmente
-`<carpeta_del_proyecto>_db_data`):
+**Backup de los archivos de datos completos** (alternativa a nivel de archivo; como MariaDB
+persiste en `./data/mariadb` dentro del propio proyecto, basta con copiar esa carpeta con el
+servicio detenido, sin usar `docker volume`):
 
 ```bash
 docker compose stop db
-docker run --rm -v reservamasajes_db_data:/data -v "$PWD":/backup alpine \
-  tar czf /backup/db_data_$(date +%F).tar.gz -C /data .
+tar czf backup_data_$(date +%F).tar.gz -C data mariadb
 docker compose start db
 ```
+
+Para restaurar este tipo de backup, detenga el servicio, reemplace el contenido de
+`data/mariadb` por el del tar (`rm -rf data/mariadb && tar xzf backup_data_2026-08-13.tar.gz -C data`)
+y vuelva a iniciar.
 
 ## Pruebas automatizadas
 

@@ -9,7 +9,7 @@ services:
       MARIADB_PASSWORD: ${MARIADB_PASSWORD:-reservas}
       TZ: ${APP_TIMEZONE:-America/Bogota}
     volumes:
-      - db_data:/var/lib/mysql
+      - ./data/mariadb:/var/lib/mysql
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s
@@ -47,6 +47,3 @@ services:
       - backend
     ports:
       - "8080:80"
-
-volumes:
-  db_data:

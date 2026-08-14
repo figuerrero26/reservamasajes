@@ -4,6 +4,11 @@
 !.env.example
 !frontend/.env.example
 
+# Datos persistentes de MariaDB (bind mount de docker-compose.yml). Nunca se versiona:
+# son los datos reales de la base (potencialmente con información personal) y archivos
+# binarios grandes.
+/data/
+
 # Backend (Python)
 backend/__pycache__/
 backend/**/__pycache__/
