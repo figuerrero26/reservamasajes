@@ -27,15 +27,23 @@ services:
         condition: service_healthy
     environment:
       APP_ENV: ${APP_ENV:-production}
-      DATABASE_URL: mysql+pymysql://${MARIADB_USER:-reservas}:${MARIADB_PASSWORD:-reservas}@db:3306/${MARIADB_DATABASE:-reservas}
+      # El backend arma la cadena de conexión él mismo a partir de estas variables sueltas
+      # (ver backend/app/config.py), codificando correctamente cualquier carácter especial
+      # que tenga la contraseña. Si en cambio se define DATABASE_URL directamente, esa tiene
+      # prioridad.
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-3306}
+      MARIADB_USER: ${MARIADB_USER:-reservas}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-reservas}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-reservas}
       # Solo se usa para crear/otorgar permisos sobre la BD de pruebas (reservas_test) al
       # correr pytest; el usuario de la app nunca tiene privilegios de CREATE DATABASE.
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-reservas_root}
       JWT_SECRET: ${JWT_SECRET:-cambie-esta-clave-en-produccion}
       APP_TIMEZONE: ${APP_TIMEZONE:-America/Bogota}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
-      ADMIN_USER: ${ADMIN_USER:-admin}
-      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-Admin123*}
+      ADMIN_USER: ${ADMIN_USER:-admin_sigra}
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-T3cn0z1gr@67!}
       TZ: ${APP_TIMEZONE:-America/Bogota}
     ports:
       - "${BACKEND_PORT:-8001}:8000"

@@ -4,29 +4,48 @@ la regla de concurrencia y la regla "una reserva por usuario+evento+día" depend
 columna generada `slot_lock` y de índices únicos propios de MariaDB, así que solo tienen
 sentido validadas contra el motor real.
 
-Variables de entorno usadas: TEST_DATABASE_URL (opcional; por defecto reutiliza el host de
-DATABASE_URL con la base de datos "reservas_test", que se crea si no existe) y
-MARIADB_ROOT_PASSWORD (para crear esa BD y otorgarle permisos al usuario de la app — ya viene
-configurada en docker-compose.yml).
+Variables de entorno usadas: TEST_DATABASE_URL (opcional, URL completa) o, por defecto, las
+mismas variables sueltas que usa la app (DB_HOST, DB_PORT, MARIADB_USER, MARIADB_PASSWORD)
+con la base de datos "reservas_test" (que se crea si no existe), más MARIADB_ROOT_PASSWORD
+(para crear esa BD y otorgarle permisos al usuario de la app — ya viene configurada en
+docker-compose.yml).
 """
 import os
-import re
 
 import pymysql
 import pytest
+from sqlalchemy.engine import URL as SqlAlchemyURL, make_url
 
-DEFAULT_TEST_URL = "mysql+pymysql://reservas:reservas@db:3306/reservas_test"
-TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or re.sub(
-    r"/[^/]+$", "/reservas_test", os.environ.get("DATABASE_URL", DEFAULT_TEST_URL)
+if os.environ.get("TEST_DATABASE_URL"):
+    _url = make_url(os.environ["TEST_DATABASE_URL"])
+else:
+    _url = SqlAlchemyURL.create(
+        "mysql+pymysql",
+        username=os.environ.get("MARIADB_USER", "reservas"),
+        password=os.environ.get("MARIADB_PASSWORD", "reservas"),
+        host=os.environ.get("DB_HOST", "db"),
+        port=int(os.environ.get("DB_PORT", "3306")),
+        database="reservas_test",
+    )
+_user, _password, _host, _port, _dbname = (
+    _url.username,
+    _url.password,
+    _url.host,
+    _url.port,
+    _url.database,
 )
 
 # Debe fijarse ANTES de importar cualquier módulo de app.* (config usa lru_cache y
-# database/session crea el engine al importarse).
-os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+# database/session crea el engine al importarse). Se limpia DATABASE_URL para forzar que
+# Settings arme la URL desde estas mismas variables sueltas (evita divergencia entre lo que
+# usa este script para crear la BD y lo que usa la app para conectarse).
+os.environ["DATABASE_URL"] = ""
+os.environ["DB_HOST"] = _host
+os.environ["DB_PORT"] = str(_port)
+os.environ["MARIADB_USER"] = _user
+os.environ["MARIADB_PASSWORD"] = _password
+os.environ["MARIADB_DATABASE"] = _dbname
 os.environ.setdefault("JWT_SECRET", "test-secret")
-
-_match = re.match(r"mysql\+pymysql://([^:]+):([^@]+)@([^:/]+):(\d+)/(.+)", TEST_DATABASE_URL)
-_user, _password, _host, _port, _dbname = _match.groups()
 
 # El usuario de la aplicación (MARIADB_USER) solo tiene privilegios sobre la BD de negocio
 # (MARIADB_DATABASE): el contenedor oficial de MariaDB no le otorga CREATE DATABASE global.

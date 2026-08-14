@@ -1,0 +1,42 @@
+# Archivo alternativo para equipos que NO deben tener su propia MariaDB, sino conectarse a
+# la de otra máquina de la red local (por ejemplo un servidor que sí corre docker-compose.yml
+# completo, con su servicio 'db'). Úselo así, en vez de "docker compose up":
+#
+#   docker compose -f docker-compose.client.yml up -d --build
+#
+# y defina en el .env de este equipo:
+#   DB_HOST=<IP en la LAN de la máquina que aloja la base>
+#   MARIADB_USER / MARIADB_PASSWORD / MARIADB_DATABASE iguales a los de esa máquina
+#
+# Ver README, sección "Base de datos compartida en la red local".
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      # El backend arma la cadena de conexión él mismo a partir de estas variables sueltas
+      # (ver backend/app/config.py), codificando correctamente cualquier carácter especial
+      # que tenga la contraseña.
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-3306}
+      MARIADB_USER: ${MARIADB_USER:-reservas}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-reservas}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-reservas}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-reservas_root}
+      JWT_SECRET: ${JWT_SECRET:-cambie-esta-clave-en-produccion}
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/Bogota}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-cambie-esta-clave}
+      TZ: ${APP_TIMEZONE:-America/Bogota}
+    ports:
+      - "${BACKEND_PORT:-8001}:8000"
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"

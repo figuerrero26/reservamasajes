@@ -6,6 +6,7 @@ No existen valores fijos de negocio codificados aquí.
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL as SqlAlchemyURL
 
 
 class Settings(BaseSettings):
@@ -14,8 +15,17 @@ class Settings(BaseSettings):
     # Entorno
     APP_ENV: str = "development"
 
-    # Base de datos (MariaDB obligatorio — no usar PostgreSQL)
-    DATABASE_URL: str = "mysql+pymysql://reservas:reservas@db:3306/reservas"
+    # Base de datos (MariaDB obligatorio — no usar PostgreSQL). DATABASE_URL, si se define
+    # explícitamente, tiene prioridad; si no, se arma a partir de las variables sueltas de
+    # abajo usando SqlAlchemyURL.create(), que codifica correctamente cualquier carácter
+    # especial (@, :, /, etc.) que tenga la contraseña — pegar la contraseña cruda dentro de
+    # un string de conexión se rompe si contiene una "@".
+    DATABASE_URL: str = ""
+    DB_HOST: str = "db"
+    DB_PORT: int = 3306
+    MARIADB_USER: str = "reservas"
+    MARIADB_PASSWORD: str = "reservas"
+    MARIADB_DATABASE: str = "reservas"
 
     # Seguridad / JWT
     JWT_SECRET: str = "cambie-esta-clave-en-produccion"
@@ -55,6 +65,19 @@ class Settings(BaseSettings):
     @property
     def cors_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def database_url(self) -> str:
+        if self.DATABASE_URL:
+            return self.DATABASE_URL
+        return SqlAlchemyURL.create(
+            "mysql+pymysql",
+            username=self.MARIADB_USER,
+            password=self.MARIADB_PASSWORD,
+            host=self.DB_HOST,
+            port=self.DB_PORT,
+            database=self.MARIADB_DATABASE,
+        ).render_as_string(hide_password=False)
 
 
 @lru_cache

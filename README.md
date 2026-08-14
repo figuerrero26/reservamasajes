@@ -48,7 +48,10 @@ Toda la operación usa la zona horaria única **America/Bogota**.
   [Cuentas de usuario](#cuentas-de-usuario)).
 - **Base de datos:** **MariaDB** (obligatorio; no se usa PostgreSQL en ninguna parte del
   sistema).
-- **Infraestructura:** Docker Compose con 3 servicios (`db`, `backend`, `frontend`). El
+- **Infraestructura:** Docker Compose con 3 servicios (`db`, `backend`, `frontend`). Existe un
+  archivo alternativo opcional (`docker-compose.client.yml`, sin `db`) para que un equipo se
+  conecte a la MariaDB de otro en vez de tener la suya propia — ver
+  [Base de datos compartida en la red local](#base-de-datos-compartida-en-la-red-local). El
   frontend se sirve con Nginx, que hace de proxy inverso hacia la API (`/api → backend:8000`).
   MariaDB persiste sus datos en `./data/mariadb` dentro del propio directorio del proyecto
   (bind mount, no volumen nombrado de Docker), para que los datos vivan siempre junto al
@@ -496,6 +499,50 @@ docker compose start db
 Para restaurar este tipo de backup, detenga el servicio, reemplace el contenido de
 `data/mariadb` por el del tar (`rm -rf data/mariadb && tar xzf backup_data_2026-08-13.tar.gz -C data`)
 y vuelva a iniciar.
+
+## Base de datos compartida en la red local
+
+Por defecto, `docker compose up -d --build` (el comando estándar, sin cambios) levanta los 3
+servicios de siempre — incluida su propia MariaDB — así que cualquier despliegue normal de un
+solo equipo sigue funcionando exactamente igual. Si en cambio quiere que un único equipo de la
+red (por ejemplo un servidor) aloje la base real y que otro equipo de esa misma LAN (por
+ejemplo su PC local) se conecte a esa misma base en vez de tener la suya propia, use
+`docker-compose.client.yml`:
+
+- **En el equipo que aloja la base** (el que debe tener los datos reales, con el puerto 3306
+  accesible desde la LAN): no cambia nada, sigue con el comando de siempre:
+
+  ```bash
+  docker compose up -d --build
+  ```
+
+- **En el equipo que quiere usar esa base remota en vez de la suya propia** (por ejemplo su PC
+  local): use el archivo alternativo, que no incluye el servicio `db`:
+
+  ```bash
+  docker compose -f docker-compose.client.yml up -d --build
+  ```
+
+  con estas variables en su `.env`:
+
+  ```bash
+  DB_HOST=192.168.2.14        # IP en la LAN del equipo que aloja la base
+  DB_PORT=3306
+  MARIADB_USER=reservas       # deben coincidir exactamente con las del equipo que aloja la base
+  MARIADB_PASSWORD=...
+  MARIADB_DATABASE=reservas
+  ```
+
+**Advertencias importantes:**
+
+- El puerto 3306 queda expuesto a toda la red local, no solo a Docker. Úsese solo dentro de
+  una LAN de confianza (oficina/casa); no lo exponga a internet sin una VPN o un firewall que
+  restrinja el origen.
+- No corra `pytest` desde un equipo que apunta a la base compartida: las pruebas crean y
+  destruyen una base `reservas_test` completa, algo que no debe tocar el servidor que aloja
+  los datos reales. Las pruebas automatizadas están pensadas para correrse en el equipo que
+  también aloja su propia MariaDB (`docker compose up -d --build`, sin `docker-compose.client.yml`)
+  o en un entorno aparte.
 
 ## Pruebas automatizadas
 
