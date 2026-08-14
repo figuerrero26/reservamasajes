@@ -3,10 +3,11 @@ services:
     image: mariadb:11
     restart: unless-stopped
     environment:
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-reservas_root}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root}
+      # '%' permite que 'root' se conecte desde cualquier host (otros contenedores, la LAN),
+      # no solo localhost, que es la restricción por defecto del contenedor oficial.
+      MARIADB_ROOT_HOST: '%'
       MARIADB_DATABASE: ${MARIADB_DATABASE:-reservas}
-      MARIADB_USER: ${MARIADB_USER:-reservas}
-      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-reservas}
       TZ: ${APP_TIMEZONE:-America/Bogota}
     volumes:
       - ./data/mariadb:/var/lib/mysql
@@ -27,18 +28,18 @@ services:
         condition: service_healthy
     environment:
       APP_ENV: ${APP_ENV:-production}
-      # El backend arma la cadena de conexión él mismo a partir de estas variables sueltas
-      # (ver backend/app/config.py), codificando correctamente cualquier carácter especial
-      # que tenga la contraseña. Si en cambio se define DATABASE_URL directamente, esa tiene
-      # prioridad.
+      # El backend se conecta como 'root' de MariaDB (usuario por defecto del contenedor
+      # oficial, sin crear un usuario de aplicación aparte). El backend arma la cadena de
+      # conexión él mismo a partir de estas variables sueltas (ver backend/app/config.py),
+      # codificando correctamente cualquier carácter especial que tenga la contraseña.
       DB_HOST: ${DB_HOST:-db}
       DB_PORT: ${DB_PORT:-3306}
-      MARIADB_USER: ${MARIADB_USER:-reservas}
-      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-reservas}
+      MARIADB_USER: ${MARIADB_USER:-root}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-root}
       MARIADB_DATABASE: ${MARIADB_DATABASE:-reservas}
-      # Solo se usa para crear/otorgar permisos sobre la BD de pruebas (reservas_test) al
-      # correr pytest; el usuario de la app nunca tiene privilegios de CREATE DATABASE.
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-reservas_root}
+      # Usada también por pytest para crear la BD de pruebas (reservas_test). Debe coincidir
+      # con MARIADB_ROOT_PASSWORD del servicio 'db'.
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root}
       JWT_SECRET: ${JWT_SECRET:-cambie-esta-clave-en-produccion}
       APP_TIMEZONE: ${APP_TIMEZONE:-America/Bogota}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}

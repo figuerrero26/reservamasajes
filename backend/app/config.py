@@ -23,8 +23,10 @@ class Settings(BaseSettings):
     DATABASE_URL: str = ""
     DB_HOST: str = "db"
     DB_PORT: int = 3306
-    MARIADB_USER: str = "reservas"
-    MARIADB_PASSWORD: str = "reservas"
+    # Por defecto la app se conecta como 'root' de MariaDB (el usuario que siempre existe en
+    # el contenedor oficial), sin crear un usuario de aplicación aparte.
+    MARIADB_USER: str = "root"
+    MARIADB_PASSWORD: str = "root"
     MARIADB_DATABASE: str = "reservas"
 
     # Seguridad / JWT

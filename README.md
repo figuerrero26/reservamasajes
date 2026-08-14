@@ -528,10 +528,16 @@ ejemplo su PC local) se conecte a esa misma base en vez de tener la suya propia,
   ```bash
   DB_HOST=192.168.2.14        # IP en la LAN del equipo que aloja la base
   DB_PORT=3306
-  MARIADB_USER=reservas       # deben coincidir exactamente con las del equipo que aloja la base
+  MARIADB_USER=root           # deben coincidir exactamente con las del equipo que aloja la base
   MARIADB_PASSWORD=...
   MARIADB_DATABASE=reservas
   ```
+
+  Por defecto la app se conecta como `root` de MariaDB (no se crea un usuario de aplicación
+  aparte); si prefiere un usuario con privilegios acotados en vez de root, defina
+  `MARIADB_USER`/`MARIADB_PASSWORD` con otro nombre en el `.env` del equipo que aloja la base
+  **antes** del primer arranque (el contenedor oficial solo crea ese usuario al inicializar
+  una base vacía).
 
 **Advertencias importantes:**
 
