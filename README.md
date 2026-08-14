@@ -502,23 +502,28 @@ y vuelva a iniciar.
 
 ## Base de datos compartida en la red local
 
-Todos los equipos usan el mismo `docker-compose.yml` (no hay un archivo aparte). Para que un
-equipo use la MariaDB de otro en vez de la propia, solo hay que cambiar variables en su
-`.env`:
+Todos los equipos usan el mismo `docker-compose.yml` y, en este proyecto, el mismo `.env`
+versionado en git (`MARIADB_USER`/`MARIADB_PASSWORD`/`MARIADB_DATABASE`/`JWT_SECRET`/
+credenciales de admin son iguales en todos lados a propósito, porque todos hablan con la
+misma base física).
+
+**`DB_HOST` es la única excepción y NO vive en el `.env`**: cada equipo necesita un valor
+distinto (el que aloja la base usa `db`, el interno de Docker; los demás, la IP del que la
+aloja), y si estuviera en el `.env` compartido, un `git pull` en cualquier equipo
+sobreescribiría el `DB_HOST` de los demás. Por eso cada equipo lo define como **variable de
+entorno de su propio shell** (que Docker Compose siempre prioriza sobre el `.env`), agregando
+una línea a su `~/.bashrc`/`~/.zshrc`:
 
 - **En el equipo que aloja la base real** (por ejemplo un servidor, con el puerto 3306
-  accesible desde la LAN): no cambia nada, `.env` normal, `DB_HOST` sin definir (usa el
-  valor por defecto `db`, el servicio interno de este mismo compose).
+  accesible desde la LAN): no hace falta exportar nada — sin `DB_HOST` definido, cae en el
+  valor por defecto `db` (el servicio interno de este mismo compose).
 
 - **En el equipo que quiere usar esa base remota en vez de la propia** (por ejemplo un PC de
-  desarrollo): en su `.env`,
+  desarrollo):
 
   ```bash
-  DB_HOST=192.168.2.14        # IP en la LAN del equipo que aloja la base
-  DB_PORT=3306
-  MARIADB_USER=root           # deben coincidir exactamente con las del equipo que aloja la base
-  MARIADB_PASSWORD=...
-  MARIADB_DATABASE=reservas
+  echo 'export DB_HOST=192.168.2.14' >> ~/.zshrc   # IP en la LAN del equipo que aloja la base
+  source ~/.zshrc
   ```
 
   y levanta igual con `docker compose up -d --build`. El servicio `db` local **también se
@@ -529,9 +534,9 @@ equipo use la MariaDB de otro en vez de la propia, solo hay que cambiar variable
 
   Por defecto la app se conecta como `root` de MariaDB (no se crea un usuario de aplicación
   aparte); si prefiere un usuario con privilegios acotados en vez de root, defina
-  `MARIADB_USER`/`MARIADB_PASSWORD` con otro nombre en el `.env` del equipo que aloja la base
-  **antes** del primer arranque (el contenedor oficial solo crea ese usuario al inicializar
-  una base vacía).
+  `MARIADB_USER`/`MARIADB_PASSWORD` con otro nombre en el `.env` **antes** del primer arranque
+  del equipo que aloja la base (el contenedor oficial solo crea ese usuario al inicializar una
+  base vacía).
 
 **Advertencias importantes:**
 
