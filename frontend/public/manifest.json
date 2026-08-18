@@ -1,10 +1,21 @@
 {
   "name": "Reservas de Bienestar",
   "short_name": "Reservas",
-  "description": "Reserva de actividades de bienestar por cédula",
+  "description": "Reserva de actividades de bienestar para colaboradores",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#F4F7FB",
   "theme_color": "#1F3A5F",
-  "icons": []
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
 }
