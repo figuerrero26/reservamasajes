@@ -1,9 +1,10 @@
-import { Box, Button, Card, CardActionArea, CardContent, CardMedia, Chip, Stack, Typography } from "@mui/material";
+import { Box, Button, Card, CardActionArea, CardContent, CardMedia, Chip, Stack, Typography, useTheme } from "@mui/material";
 import SpaIcon from "@mui/icons-material/Spa";
 import PlaceIcon from "@mui/icons-material/Place";
 import ScheduleIcon from "@mui/icons-material/Schedule";
 import { useNavigate } from "react-router-dom";
 import type { EventoPublico } from "../types";
+import { useConfig } from "../hooks/useConfig";
 
 interface Props {
   evento: EventoPublico;
@@ -11,6 +12,9 @@ interface Props {
 
 export default function EventCard({ evento }: Props) {
   const navigate = useNavigate();
+  const config = useConfig();
+  const theme = useTheme();
+  const colorBoton = config.color_boton_disponibilidad || theme.palette.primary.main;
 
   return (
     <Card variant="outlined" sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -52,7 +56,16 @@ export default function EventCard({ evento }: Props) {
         </CardContent>
       </CardActionArea>
       <Box sx={{ p: 2, pt: 0 }}>
-        <Button fullWidth variant="contained" onClick={() => navigate(`/eventos/${evento.id}`)}>
+        <Button
+          fullWidth
+          variant="contained"
+          onClick={() => navigate(`/eventos/${evento.id}`)}
+          sx={{
+            bgcolor: colorBoton,
+            color: theme.palette.getContrastText(colorBoton),
+            "&:hover": { bgcolor: colorBoton, opacity: 0.9 },
+          }}
+        >
           Ver disponibilidad
         </Button>
       </Box>

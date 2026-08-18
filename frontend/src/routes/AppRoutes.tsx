@@ -5,6 +5,8 @@ import EventosPage from "../pages/EventosPage";
 import DisponibilidadPage from "../pages/DisponibilidadPage";
 import LoginUsuarioPage from "../pages/LoginUsuarioPage";
 import RegistroPage from "../pages/RegistroPage";
+import OlvidePasswordPage from "../pages/OlvidePasswordPage";
+import RestablecerPasswordPage from "../pages/RestablecerPasswordPage";
 import MisReservasPage from "../pages/MisReservasPage";
 import LoginPage from "../pages/LoginPage";
 import DashboardPage from "../pages/admin/DashboardPage";
@@ -13,6 +15,7 @@ import ServiciosPage from "../pages/admin/ServiciosPage";
 import AgendasPage from "../pages/admin/AgendasPage";
 import ReservasPage from "../pages/admin/ReservasPage";
 import UsuariosPage from "../pages/admin/UsuariosPage";
+import AdministradoresPage from "../pages/admin/AdministradoresPage";
 import BloqueosPage from "../pages/admin/BloqueosPage";
 import FestivosPage from "../pages/admin/FestivosPage";
 import ConfiguracionPage from "../pages/admin/ConfiguracionPage";
@@ -27,6 +30,8 @@ export default function AppRoutes() {
         <Route path="/eventos/:id" element={<DisponibilidadPage />} />
         <Route path="/login" element={<LoginUsuarioPage />} />
         <Route path="/registro" element={<RegistroPage />} />
+        <Route path="/olvide-password" element={<OlvidePasswordPage />} />
+        <Route path="/restablecer-password" element={<RestablecerPasswordPage />} />
         <Route path="/mis-reservas" element={<MisReservasPage />} />
       </Route>
 
@@ -42,6 +47,7 @@ export default function AppRoutes() {
         <Route path="/admin/bloqueos" element={<BloqueosPage />} />
         <Route path="/admin/festivos" element={<FestivosPage />} />
         <Route path="/admin/configuracion" element={<ConfiguracionPage />} />
+        <Route path="/admin/administradores" element={<AdministradoresPage />} />
         <Route path="/admin/auditoria" element={<AuditoriaPage />} />
       </Route>
     </Routes>

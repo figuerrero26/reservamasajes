@@ -12,48 +12,76 @@ import {
   Grid,
   InputLabel,
   MenuItem,
+  Paper,
   Select,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   TextField,
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import SearchIcon from "@mui/icons-material/Search";
-import type { Agenda, EstadoReserva, Reserva } from "../../types";
+import type { Agenda, AgendaDia, EstadoSlot, Servicio, SlotDia } from "../../types";
 import { listarAgendas } from "../../services/agendas";
-import { buscarReservas, cancelarReserva, crearReservaManual } from "../../services/reservas";
+import { listarServicios } from "../../services/servicios";
+import { cancelarReserva, crearReservaManual, obtenerDia } from "../../services/reservas";
 import { mensajeError } from "../../utils/errors";
 import Loader from "../../components/Loader";
-import DataTable, { type ColumnaDataTable } from "../../components/DataTable";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import { useAuth } from "../../hooks/useAuth";
+import { ROL_ADMINISTRADOR } from "../../constants/roles";
 
-const COLOR_ESTADO: Record<EstadoReserva, "success" | "default" | "info" | "warning"> = {
-  activa: "success",
-  cancelada: "default",
-  completada: "info",
-  no_asistio: "warning",
+const ETIQUETA_ESTADO_SLOT: Record<EstadoSlot, string> = {
+  disponible: "Disponible",
+  ocupado: "Ocupado",
+  bloqueado: "Bloqueado",
+  pasado: "Pasado",
 };
 
-const ETIQUETA_ESTADO: Record<EstadoReserva, string> = {
-  activa: "Activa",
-  cancelada: "Cancelada",
-  completada: "Completada",
-  no_asistio: "No asistió",
+const COLOR_ESTADO_SLOT: Record<EstadoSlot, "success" | "primary" | "warning" | "default"> = {
+  disponible: "success",
+  ocupado: "primary",
+  bloqueado: "warning",
+  pasado: "default",
 };
+
+function hoyISO() {
+  const hoy = new Date();
+  const mes = String(hoy.getMonth() + 1).padStart(2, "0");
+  const dia = String(hoy.getDate()).padStart(2, "0");
+  return `${hoy.getFullYear()}-${mes}-${dia}`;
+}
+
+function formatearFecha(fecha: string) {
+  const [anio, mes, dia] = fecha.split("-").map(Number);
+  return new Date(anio, mes - 1, dia).toLocaleDateString("es-CO", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+  });
+}
+
+interface CancelarInfo {
+  agenda: AgendaDia;
+  slot: SlotDia;
+}
 
 export default function ReservasPage() {
-  const [agendas, setAgendas] = useState<Agenda[]>([]);
-  const [reservas, setReservas] = useState<Reserva[]>([]);
+  const { rol } = useAuth();
+  const puedeGestionar = rol === ROL_ADMINISTRADOR;
+
+  const [fecha, setFecha] = useState(hoyISO());
+  const [servicioId, setServicioId] = useState<number | "">("");
+  const [agendasDia, setAgendasDia] = useState<AgendaDia[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [buscado, setBuscado] = useState(false);
 
-  const [nombre, setNombre] = useState("");
-  const [correo, setCorreo] = useState("");
-  const [fecha, setFecha] = useState("");
-  const [agendaId, setAgendaId] = useState<number | "">("");
+  const [agendas, setAgendas] = useState<Agenda[]>([]);
+  const [servicios, setServicios] = useState<Servicio[]>([]);
 
-  const [dialogCancelar, setDialogCancelar] = useState<Reserva | null>(null);
+  const [dialogCancelar, setDialogCancelar] = useState<CancelarInfo | null>(null);
   const [cancelando, setCancelando] = useState(false);
   const [errorCancelar, setErrorCancelar] = useState<string | null>(null);
 
@@ -70,41 +98,36 @@ export default function ReservasPage() {
     listarAgendas()
       .then(setAgendas)
       .catch(() => undefined);
+    listarServicios()
+      .then(setServicios)
+      .catch(() => undefined);
   }, []);
 
-  const nombreAgenda = (id: number) => agendas.find((a) => a.id === id)?.nombre ?? `Agenda #${id}`;
-
-  async function buscar() {
+  async function cargar() {
     setCargando(true);
     setError(null);
-    setBuscado(true);
     try {
-      const params: { nombre?: string; correo?: string; fecha?: string; agenda_id?: number } = {};
-      if (nombre.trim()) params.nombre = nombre.trim();
-      if (correo.trim()) params.correo = correo.trim();
-      if (fecha) params.fecha = fecha;
-      if (agendaId !== "") params.agenda_id = Number(agendaId);
-      setReservas(await buscarReservas(params));
+      setAgendasDia(await obtenerDia(fecha, servicioId === "" ? undefined : servicioId));
     } catch (e) {
-      setError(mensajeError(e, "No se pudieron buscar las reservas."));
+      setError(mensajeError(e, "No se pudo cargar el día."));
     } finally {
       setCargando(false);
     }
   }
 
   useEffect(() => {
-    buscar();
+    cargar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fecha, servicioId]);
 
   async function confirmarCancelar() {
-    if (!dialogCancelar) return;
+    if (!dialogCancelar?.slot.reserva_id) return;
     setCancelando(true);
     setErrorCancelar(null);
     try {
-      await cancelarReserva(dialogCancelar.id);
+      await cancelarReserva(dialogCancelar.slot.reserva_id);
       setDialogCancelar(null);
-      await buscar();
+      await cargar();
     } catch (e) {
       setErrorCancelar(mensajeError(e, "No se pudo cancelar la reserva."));
     } finally {
@@ -115,7 +138,7 @@ export default function ReservasPage() {
   function abrirNueva() {
     setNuevaCorreo("");
     setNuevaAgendaId("");
-    setNuevaFecha("");
+    setNuevaFecha(fecha);
     setNuevaHora("");
     setNuevaNota("");
     setErrorCrear(null);
@@ -138,7 +161,7 @@ export default function ReservasPage() {
         notes: nuevaNota.trim() || undefined,
       });
       setDialogNueva(false);
-      await buscar();
+      await cargar();
     } catch (e) {
       setErrorCrear(mensajeError(e, "No se pudo crear la reserva."));
     } finally {
@@ -146,48 +169,21 @@ export default function ReservasPage() {
     }
   }
 
-  const columnas: ColumnaDataTable<Reserva>[] = [
-    { key: "agenda_id", label: "Agenda", render: (r) => nombreAgenda(r.agenda_id) },
-    { key: "fecha", label: "Fecha" },
-    { key: "horario", label: "Horario", render: (r) => `${r.hora_inicio?.slice(0, 5)} – ${r.hora_fin?.slice(0, 5)}` },
-    {
-      key: "estado",
-      label: "Estado",
-      render: (r) => <Chip size="small" label={ETIQUETA_ESTADO[r.estado]} color={COLOR_ESTADO[r.estado]} />,
-    },
-    { key: "notes", label: "Notas", render: (r) => r.notes || "—" },
-    {
-      key: "acciones",
-      label: "Acciones",
-      align: "right",
-      render: (r) =>
-        r.estado === "activa" ? (
-          <Button size="small" color="error" onClick={() => setDialogCancelar(r)}>
-            Cancelar
-          </Button>
-        ) : null,
-    },
-  ];
-
   return (
     <Box>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }} flexWrap="wrap" gap={1}>
         <Typography variant="h4">Reservas</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={abrirNueva}>
-          Nueva reserva manual
-        </Button>
+        {puedeGestionar && (
+          <Button variant="contained" startIcon={<AddIcon />} onClick={abrirNueva}>
+            Nueva reserva manual
+          </Button>
+        )}
       </Stack>
 
-      <Grid container spacing={2} sx={{ mb: 2 }}>
+      <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={12} sm={3}>
-          <TextField label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} fullWidth size="small" />
-        </Grid>
-        <Grid item xs={12} sm={3}>
-          <TextField label="Correo" value={correo} onChange={(e) => setCorreo(e.target.value)} fullWidth size="small" />
-        </Grid>
-        <Grid item xs={12} sm={2}>
           <TextField
-            label="Fecha"
+            label="Día"
             type="date"
             value={fecha}
             onChange={(e) => setFecha(e.target.value)}
@@ -196,28 +192,23 @@ export default function ReservasPage() {
             InputLabelProps={{ shrink: true }}
           />
         </Grid>
-        <Grid item xs={12} sm={3}>
+        <Grid item xs={12} sm={4}>
           <FormControl fullWidth size="small">
-            <InputLabel id="reservas-agenda-label">Agenda</InputLabel>
+            <InputLabel id="reservas-dia-evento-label">Evento</InputLabel>
             <Select
-              labelId="reservas-agenda-label"
-              label="Agenda"
-              value={agendaId}
-              onChange={(e) => setAgendaId(e.target.value === "" ? "" : Number(e.target.value))}
+              labelId="reservas-dia-evento-label"
+              label="Evento"
+              value={servicioId}
+              onChange={(e) => setServicioId(e.target.value === "" ? "" : Number(e.target.value))}
             >
-              <MenuItem value="">Todas las agendas</MenuItem>
-              {agendas.map((a) => (
-                <MenuItem key={a.id} value={a.id}>
-                  {a.nombre}
+              <MenuItem value="">Todos los eventos</MenuItem>
+              {servicios.map((s) => (
+                <MenuItem key={s.id} value={s.id}>
+                  {s.nombre}
                 </MenuItem>
               ))}
             </Select>
           </FormControl>
-        </Grid>
-        <Grid item xs={12} sm={1}>
-          <Button fullWidth variant="outlined" onClick={buscar} startIcon={<SearchIcon />} sx={{ height: "100%" }}>
-            Buscar
-          </Button>
         </Grid>
       </Grid>
 
@@ -225,13 +216,85 @@ export default function ReservasPage() {
 
       {cargando ? (
         <Loader />
+      ) : agendasDia.length === 0 ? (
+        <Typography variant="body2" color="text.secondary">
+          No hay agendas activas.
+        </Typography>
       ) : (
-        <DataTable
-          columnas={columnas}
-          filas={reservas}
-          obtenerId={(r) => r.id}
-          mensajeVacio={buscado ? "No se encontraron reservas con esos filtros." : "Sin resultados."}
-        />
+        <>
+          <Typography variant="h6" sx={{ mb: 2, textTransform: "capitalize" }}>
+            {formatearFecha(fecha)}
+          </Typography>
+          <Stack spacing={2}>
+            {agendasDia.map((agenda) => (
+              <Paper key={agenda.agenda_id} variant="outlined">
+                <Box sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: "divider" }}>
+                  <Typography variant="subtitle1">
+                    {agenda.area_nombre} — {agenda.evento_nombre}{" "}
+                    <Typography component="span" variant="body2" color="text.secondary">
+                      ({agenda.agenda_nombre})
+                    </Typography>
+                  </Typography>
+                </Box>
+                {agenda.slots.length === 0 ? (
+                  <Box sx={{ px: 2, py: 2 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Sin turnos este día.
+                    </Typography>
+                  </Box>
+                ) : (
+                  <TableContainer sx={{ overflowX: "auto" }}>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Hora</TableCell>
+                          <TableCell>Estado</TableCell>
+                          <TableCell>Colaborador</TableCell>
+                          <TableCell>Correo</TableCell>
+                          <TableCell>Notas</TableCell>
+                          {puedeGestionar && <TableCell align="right">Acciones</TableCell>}
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {agenda.slots.map((slot) => (
+                          <TableRow key={slot.hora_inicio} hover>
+                            <TableCell>{slot.hora_inicio.slice(0, 5)} – {slot.hora_fin.slice(0, 5)}</TableCell>
+                            <TableCell>
+                              <Chip
+                                size="small"
+                                label={ETIQUETA_ESTADO_SLOT[slot.estado]}
+                                color={COLOR_ESTADO_SLOT[slot.estado]}
+                                variant={slot.estado === "disponible" ? "outlined" : "filled"}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              {slot.usuario_nombre ? `${slot.usuario_nombre} ${slot.usuario_apellido ?? ""}` : "—"}
+                            </TableCell>
+                            <TableCell>{slot.usuario_correo || "—"}</TableCell>
+                            <TableCell>{slot.notes || "—"}</TableCell>
+                            {puedeGestionar && (
+                              <TableCell align="right">
+                                {slot.estado === "ocupado" && slot.reserva_id && (
+                                  <Button
+                                    size="small"
+                                    color="error"
+                                    onClick={() => { setDialogCancelar({ agenda, slot }); setErrorCancelar(null); }}
+                                  >
+                                    Cancelar
+                                  </Button>
+                                )}
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                )}
+              </Paper>
+            ))}
+          </Stack>
+        </>
       )}
 
       <ConfirmDialog
@@ -240,9 +303,9 @@ export default function ReservasPage() {
         contenido={
           dialogCancelar && (
             <span>
-              ¿Confirmas cancelar la reserva del {dialogCancelar.fecha} a las{" "}
-              {dialogCancelar.hora_inicio?.slice(0, 5)} en {nombreAgenda(dialogCancelar.agenda_id)}? Esta acción no
-              se puede deshacer.
+              ¿Confirmas cancelar la reserva de {dialogCancelar.slot.usuario_nombre} {dialogCancelar.slot.usuario_apellido} el{" "}
+              {fecha} a las {dialogCancelar.slot.hora_inicio.slice(0, 5)} en {dialogCancelar.agenda.evento_nombre}?
+              Esta acción no se puede deshacer.
             </span>
           )
         }

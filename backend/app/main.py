@@ -2,6 +2,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -9,6 +10,7 @@ from app.api.v1.router import api_router
 from app.config import settings
 from app.services.errors import DomainError
 from app.utils.limiter import limiter
+from app.utils.uploads import PUBLIC_PREFIX, UPLOAD_DIR
 
 app = FastAPI(
     title="Reservas de Bienestar",
@@ -39,3 +41,7 @@ def health():
 
 
 app.include_router(api_router, prefix="/api/v1")
+
+# Imágenes subidas desde el panel (ver app/utils/uploads.py). Servidas bajo /api/ para que
+# el proxy inverso del frontend (nginx, location /api/) las alcance sin configuración aparte.
+app.mount(PUBLIC_PREFIX, StaticFiles(directory=UPLOAD_DIR), name="uploads")

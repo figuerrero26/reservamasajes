@@ -3,7 +3,7 @@ from datetime import date
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_admin
+from app.api.deps import get_current_admin_full
 from app.database.session import get_db
 from app.schemas.configuracion import SemanaActivaSet
 from app.services.configuracion_service import ConfiguracionService
@@ -20,13 +20,13 @@ def obtener_semana_activa(db: Session = Depends(get_db)):
 
 @router.put("/activa", status_code=204)
 def definir_semana_activa(data: SemanaActivaSet, db: Session = Depends(get_db),
-                          admin: dict = Depends(get_current_admin)):
+                          admin: dict = Depends(get_current_admin_full)):
     ConfiguracionService(db).definir_semana_activa(data, admin["id"])
 
 
 @router.post("/reiniciar")
 def reiniciar_semana(fecha_lunes: date, db: Session = Depends(get_db),
-                     admin: dict = Depends(get_current_admin)):
+                     admin: dict = Depends(get_current_admin_full)):
     """Cambia a 'cancelada' las reservas activas de la semana indicada. Nunca elimina filas."""
     afectadas = ReservaService(db).reiniciar_semana(fecha_lunes, admin["id"])
     return {"reservas_afectadas": afectadas}

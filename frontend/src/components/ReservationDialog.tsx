@@ -5,6 +5,8 @@ import {
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import type { AgendaPublica, ReservaCreada, Slot } from "../types";
 import { crearReserva, misReservas } from "../services/reservas";
+import { obtenerPerfil } from "../services/cuenta";
+import { obtenerConfiguracion } from "../services/configuracion";
 import { mensajeError, esConflicto } from "../utils/errors";
 import { formatearFecha, formatearHora, nombreDia } from "../utils/fechas";
 import { useUsuarioAuth } from "../hooks/useUsuarioAuth";
@@ -24,6 +26,7 @@ interface Props {
 }
 
 const MENSAJE_EVENTO_DIA = "Ya tienes una reserva para este evento en esta fecha.";
+const MENSAJE_EVENTO_SEMANA = "Ya tienes una reserva para este evento esta semana.";
 
 function Fila({ label, valor }: { label: string; valor: string }) {
   return (
@@ -46,22 +49,31 @@ export default function ReservationDialog({ open, agenda, fecha, slot, onClose, 
   const [error, setError] = useState<string | null>(null);
   const [reservaCreada, setReservaCreada] = useState<ReservaCreada | null>(null);
   const [yaReservado, setYaReservado] = useState(false);
+  const [conflictoSemana, setConflictoSemana] = useState(false);
   const [verificando, setVerificando] = useState(true);
 
   // Validación en el frontend, en espejo de la regla del backend: como máximo una reserva
-  // activa por usuario+evento+día. La barrera real está en la base de datos (índice único);
-  // esto solo evita un viaje innecesario al servidor y avisa antes de que el usuario confirme.
+  // activa por usuario+evento+día (o por usuario+evento+semana activa completa, si el admin
+  // activó `evento_unico_por_semana`), salvo que el administrador le haya habilitado la
+  // excepción (permite_reservas_multiples) a este colaborador. La barrera real está en el
+  // backend; esto solo evita un viaje innecesario al servidor y avisa antes de confirmar.
   useEffect(() => {
     let cancelado = false;
     setVerificando(true);
     setYaReservado(false);
-    misReservas()
-      .then((reservas) => {
+    Promise.all([misReservas(), obtenerPerfil(), obtenerConfiguracion().catch(() => null)])
+      .then(([reservas, perfil, config]) => {
         if (cancelado) return;
-        const conflicto = reservas.some(
-          (r) => r.estado === "activa" && r.servicio_id === agenda.servicio_id && r.fecha === fecha
-        );
-        setYaReservado(conflicto);
+        const rango =
+          config?.evento_unico_por_semana && config.semana_activa_inicio && config.semana_activa_fin
+            ? { inicio: config.semana_activa_inicio, fin: config.semana_activa_fin }
+            : null;
+        const otra = reservas.find((r) => {
+          if (r.estado !== "activa" || r.servicio_id !== agenda.servicio_id) return false;
+          return rango ? r.fecha >= rango.inicio && r.fecha <= rango.fin : r.fecha === fecha;
+        });
+        setConflictoSemana(!!otra && !!rango && otra.fecha !== fecha);
+        setYaReservado(!!otra && !perfil.permite_reservas_multiples);
       })
       .catch(() => undefined) // si falla la verificación, el backend igual protege al confirmar
       .finally(() => {
@@ -113,7 +125,9 @@ export default function ReservationDialog({ open, agenda, fecha, slot, onClose, 
       <DialogTitle>Confirmar reserva</DialogTitle>
       <DialogContent>
         <Stack spacing={1.25} sx={{ mt: 0.5 }}>
-          {yaReservado && <Alert severity="warning">{MENSAJE_EVENTO_DIA}</Alert>}
+          {yaReservado && (
+            <Alert severity="warning">{conflictoSemana ? MENSAJE_EVENTO_SEMANA : MENSAJE_EVENTO_DIA}</Alert>
+          )}
           {error && <Alert severity="error">{error}</Alert>}
           <Fila label="Colaborador" valor={nombre ?? ""} />
           <Fila label="Correo" valor={correo ?? ""} />

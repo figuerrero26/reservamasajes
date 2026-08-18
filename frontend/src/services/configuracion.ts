@@ -9,6 +9,13 @@ export const obtenerConfiguracion = async () =>
 export const actualizarConfiguracion = async (clave: string, valor: string | null) =>
   api.put("/configuracion", { clave, valor });
 
+export const subirImagenBienvenida = async (archivo: File) => {
+  const form = new FormData();
+  form.append("archivo", archivo);
+  return (await api.post<{ imagen_bienvenida_url: string }>("/configuracion/imagen-bienvenida", form))
+    .data.imagen_bienvenida_url;
+};
+
 export const obtenerSemanaActiva = async () =>
   (await api.get<{ inicio: string | null; fin: string | null }>("/semana/activa")).data;
 

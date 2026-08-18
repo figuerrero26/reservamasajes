@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "cambie-esta-clave-en-produccion"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 480
+    # Token de restablecimiento de contraseña del colaborador: vida corta a propósito.
+    RESET_PASSWORD_EXPIRE_MINUTES: int = 30
+
+    # Origen público del portal (sin ruta ni barra final), usado solo para armar el enlace
+    # de restablecimiento de contraseña que se envía por correo — no afecta CORS ni nada más.
+    FRONTEND_URL: str = "http://localhost:8080"
 
     # Zona horaria única de la aplicación (fuente de verdad para toda la lógica de negocio)
     APP_TIMEZONE: str = "America/Bogota"

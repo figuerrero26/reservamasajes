@@ -15,3 +15,6 @@ export const resetearPasswordUsuario = async (id: number, password_nueva: string
 
 export const setReservasMultiples = async (id: number, permitir: boolean) =>
   api.post(`/usuarios/${id}/reservas-multiples`, null, { params: { permitir } });
+
+export const eliminarUsuario = async (id: number) =>
+  (await api.delete<{ reservas_futuras_canceladas: number }>(`/usuarios/${id}`)).data;

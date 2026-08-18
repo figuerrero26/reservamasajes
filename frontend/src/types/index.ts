@@ -80,13 +80,35 @@ export interface HorariosResponse {
   slots: Slot[];
 }
 
+/** Un turno del día para una agenda, vista administrativa: si está ocupado, trae quién lo
+ * reservó (ver GET /reservas/dia). */
+export interface SlotDia {
+  hora_inicio: string;
+  hora_fin: string;
+  estado: EstadoSlot;
+  reserva_id: number | null;
+  usuario_nombre?: string | null;
+  usuario_apellido?: string | null;
+  usuario_correo?: string | null;
+  notes?: string | null;
+}
+
+/** Agenda completa (todos sus turnos) de un día — vista "por día" del panel admin. */
+export interface AgendaDia {
+  agenda_id: number;
+  agenda_nombre: string;
+  area_nombre: string;
+  evento_nombre: string;
+  slots: SlotDia[];
+}
+
 export type EstadoReserva = "activa" | "cancelada" | "completada" | "no_asistio";
 
 export interface Reserva {
   id: number;
   agenda_id: number;
   servicio_id: number;
-  usuario_id: number;
+  usuario_id: number | null;
   fecha: string;
   hora_inicio: string;
   hora_fin: string;
@@ -96,6 +118,17 @@ export interface Reserva {
   updated_at: string;
   cancelled_at?: string | null;
   cancelled_by?: string | null;
+}
+
+/** Vista administrativa de una reserva: agrega identidad del colaborador y nombres
+ * legibles de evento/área/agenda (ver GET /reservas, solo para el panel). */
+export interface ReservaAdmin extends Reserva {
+  usuario_nombre: string;
+  usuario_apellido: string;
+  usuario_correo?: string | null;
+  evento_nombre: string;
+  area_nombre: string;
+  agenda_nombre: string;
 }
 
 export type EstadoCorreoConfirmacion = "pendiente" | "enviado" | "fallido";
@@ -142,6 +175,15 @@ export interface PerfilUsuario {
   permite_reservas_multiples: boolean;
 }
 
+export interface OlvidePasswordRequest {
+  correo: string;
+}
+
+export interface RestablecerPasswordRequest {
+  token: string;
+  password_nueva: string;
+}
+
 /** Vista administrativa del colaborador (uso interno, nunca expuesta al portal público).
  * Solo lo mínimo: identidad, correo, estado de la cuenta y campos técnicos. */
 export interface Usuario {
@@ -184,9 +226,23 @@ export interface ConfiguracionGeneral {
   logo_url?: string | null;
   color_primario?: string | null;
   color_secundario?: string | null;
+  mensaje_bienvenida?: string | null;
+  imagen_bienvenida_url?: string | null;
+  color_boton_disponibilidad?: string | null;
+  color_fondo_bienvenida?: string | null;
+  evento_unico_por_semana?: boolean;
   zona_horaria: string;
   semana_activa_inicio?: string | null;
   semana_activa_fin?: string | null;
+}
+
+export interface Administrador {
+  id: number;
+  usuario: string;
+  nombre: string;
+  rol: string;
+  activo: boolean;
+  created_at: string;
 }
 
 export interface SmtpConfig {

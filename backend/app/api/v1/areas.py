@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_admin
+from app.api.deps import get_current_admin_full
 from app.database.session import get_db
 from app.schemas.area import AreaCreate, AreaOut, AreaUpdate
 from app.services.area_service import AreaService
@@ -10,21 +10,21 @@ router = APIRouter(prefix="/areas", tags=["areas"])
 
 
 @router.get("", response_model=list[AreaOut])
-def listar(db: Session = Depends(get_db), _: dict = Depends(get_current_admin)):
+def listar(db: Session = Depends(get_db), _: dict = Depends(get_current_admin_full)):
     return AreaService(db).listar()
 
 
 @router.post("", response_model=AreaOut, status_code=status.HTTP_201_CREATED)
-def crear(data: AreaCreate, db: Session = Depends(get_db), admin: dict = Depends(get_current_admin)):
+def crear(data: AreaCreate, db: Session = Depends(get_db), admin: dict = Depends(get_current_admin_full)):
     return AreaService(db).crear(data, admin["id"])
 
 
 @router.put("/{area_id}", response_model=AreaOut)
 def actualizar(area_id: int, data: AreaUpdate, db: Session = Depends(get_db),
-               admin: dict = Depends(get_current_admin)):
+               admin: dict = Depends(get_current_admin_full)):
     return AreaService(db).actualizar(area_id, data, admin["id"])
 
 
 @router.post("/{area_id}/desactivar", response_model=AreaOut)
-def desactivar(area_id: int, db: Session = Depends(get_db), admin: dict = Depends(get_current_admin)):
+def desactivar(area_id: int, db: Session = Depends(get_db), admin: dict = Depends(get_current_admin_full)):
     return AreaService(db).desactivar(area_id, admin["id"])

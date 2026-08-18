@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -21,9 +21,12 @@ import {
   obtenerConfiguracionSmtp,
   obtenerSemanaActiva,
   reiniciarSemana,
+  subirImagenBienvenida,
 } from "../../services/configuracion";
 import { mensajeError } from "../../utils/errors";
+import { esVideo } from "../../utils/media";
 import Loader from "../../components/Loader";
+import MutedVideo from "../../components/MutedVideo";
 import ConfirmDialog from "../../components/ConfirmDialog";
 
 interface FormularioSmtp {
@@ -48,7 +51,9 @@ function aFormularioSmtp(c: SmtpConfig): FormularioSmtp {
   };
 }
 
-type ClaveConfiguracion = "empresa_nombre" | "sistema_nombre" | "logo_url" | "color_primario" | "color_secundario";
+type ClaveConfiguracion =
+  | "empresa_nombre" | "sistema_nombre" | "logo_url" | "color_primario" | "color_secundario"
+  | "mensaje_bienvenida" | "color_boton_disponibilidad" | "color_fondo_bienvenida";
 
 interface FormularioGeneral {
   empresa_nombre: string;
@@ -56,6 +61,9 @@ interface FormularioGeneral {
   logo_url: string;
   color_primario: string;
   color_secundario: string;
+  mensaje_bienvenida: string;
+  color_boton_disponibilidad: string;
+  color_fondo_bienvenida: string;
 }
 
 function aFormulario(c: ConfiguracionGeneral): FormularioGeneral {
@@ -65,6 +73,9 @@ function aFormulario(c: ConfiguracionGeneral): FormularioGeneral {
     logo_url: c.logo_url ?? "",
     color_primario: c.color_primario || "#1F3A5F",
     color_secundario: c.color_secundario || "#2E6DA4",
+    mensaje_bienvenida: c.mensaje_bienvenida ?? "",
+    color_boton_disponibilidad: c.color_boton_disponibilidad || c.color_primario || "#1F3A5F",
+    color_fondo_bienvenida: c.color_fondo_bienvenida || c.color_primario || "#1F3A5F",
   };
 }
 
@@ -78,11 +89,21 @@ export default function ConfiguracionPage() {
   const [exitoGeneral, setExitoGeneral] = useState<string | null>(null);
   const [errorGeneral, setErrorGeneral] = useState<string | null>(null);
 
+  const [imagenBienvenidaUrl, setImagenBienvenidaUrl] = useState("");
+  const [subiendoImagen, setSubiendoImagen] = useState(false);
+  const [errorImagen, setErrorImagen] = useState<string | null>(null);
+  const inputImagenRef = useRef<HTMLInputElement>(null);
+
   const [semanaInicio, setSemanaInicio] = useState("");
   const [semanaFin, setSemanaFin] = useState("");
   const [guardandoSemana, setGuardandoSemana] = useState(false);
   const [errorSemana, setErrorSemana] = useState<string | null>(null);
   const [exitoSemana, setExitoSemana] = useState<string | null>(null);
+
+  const [eventoUnicoPorSemana, setEventoUnicoPorSemana] = useState(false);
+  const [guardandoRestriccion, setGuardandoRestriccion] = useState(false);
+  const [errorRestriccion, setErrorRestriccion] = useState<string | null>(null);
+  const [exitoRestriccion, setExitoRestriccion] = useState<string | null>(null);
 
   const [fechaLunes, setFechaLunes] = useState("");
   const [dialogReiniciar, setDialogReiniciar] = useState(false);
@@ -113,6 +134,8 @@ export default function ConfiguracionPage() {
       const f = aFormulario(config);
       setOriginal(f);
       setForm(f);
+      setImagenBienvenidaUrl(config.imagen_bienvenida_url ?? "");
+      setEventoUnicoPorSemana(config.evento_unico_por_semana ?? false);
       setSemanaInicio(semana.inicio ?? "");
       setSemanaFin(semana.fin ?? "");
       setSmtp(aFormularioSmtp(configSmtp));
@@ -151,6 +174,33 @@ export default function ConfiguracionPage() {
     }
   }
 
+  async function subirImagen(archivo: File) {
+    setSubiendoImagen(true);
+    setErrorImagen(null);
+    try {
+      const url = await subirImagenBienvenida(archivo);
+      setImagenBienvenidaUrl(url);
+    } catch (e) {
+      setErrorImagen(mensajeError(e, "No se pudo subir la imagen."));
+    } finally {
+      setSubiendoImagen(false);
+      if (inputImagenRef.current) inputImagenRef.current.value = "";
+    }
+  }
+
+  async function quitarImagen() {
+    setSubiendoImagen(true);
+    setErrorImagen(null);
+    try {
+      await actualizarConfiguracion("imagen_bienvenida_url", null);
+      setImagenBienvenidaUrl("");
+    } catch (e) {
+      setErrorImagen(mensajeError(e, "No se pudo quitar la imagen."));
+    } finally {
+      setSubiendoImagen(false);
+    }
+  }
+
   async function guardarSemana() {
     if (!semanaInicio || !semanaFin) return;
     setGuardandoSemana(true);
@@ -163,6 +213,26 @@ export default function ConfiguracionPage() {
       setErrorSemana(mensajeError(e, "No se pudo definir la semana activa."));
     } finally {
       setGuardandoSemana(false);
+    }
+  }
+
+  async function guardarRestriccion(valor: boolean) {
+    setEventoUnicoPorSemana(valor);
+    setGuardandoRestriccion(true);
+    setErrorRestriccion(null);
+    setExitoRestriccion(null);
+    try {
+      await actualizarConfiguracion("evento_unico_por_semana", String(valor));
+      setExitoRestriccion(
+        valor
+          ? "Cada evento ahora se puede reservar como máximo una vez por semana activa."
+          : "Restricción desactivada: un mismo evento puede reservarse cualquier día."
+      );
+    } catch (e) {
+      setEventoUnicoPorSemana(!valor);
+      setErrorRestriccion(mensajeError(e, "No se pudo guardar el cambio."));
+    } finally {
+      setGuardandoRestriccion(false);
     }
   }
 
@@ -281,6 +351,87 @@ export default function ConfiguracionPage() {
                 fullWidth
               />
             </Grid>
+            <Grid item xs={12}>
+              <TextField
+                label="Mensaje de bienvenida"
+                value={form.mensaje_bienvenida}
+                onChange={(e) => setForm({ ...form, mensaje_bienvenida: e.target.value })}
+                placeholder="Ej: Aparta un momento para relajarte en la semana"
+                helperText="Se muestra destacado en la pantalla principal del portal. Déjalo en blanco para ocultarlo."
+                multiline
+                minRows={2}
+                fullWidth
+              />
+            </Grid>
+            <Grid item xs={6} sm={3}>
+              <TextField
+                label="Color del botón 'Ver disponibilidad'"
+                type="color"
+                value={form.color_boton_disponibilidad}
+                onChange={(e) => setForm({ ...form, color_boton_disponibilidad: e.target.value })}
+                fullWidth
+              />
+            </Grid>
+            <Grid item xs={6} sm={3}>
+              <TextField
+                label="Color de fondo de la bienvenida"
+                type="color"
+                value={form.color_fondo_bienvenida}
+                onChange={(e) => setForm({ ...form, color_fondo_bienvenida: e.target.value })}
+                fullWidth
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                Imagen o video de bienvenida
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                Fondo del banner de bienvenida en la pantalla principal del portal. Imagen (JPG, PNG, WEBP hasta
+                5 MB; GIF hasta 10 MB) o video (MP4, WEBM, MOV hasta 30 MB).
+              </Typography>
+              {errorImagen && <Alert severity="error" sx={{ mb: 1 }}>{errorImagen}</Alert>}
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
+                {imagenBienvenidaUrl && (
+                  esVideo(imagenBienvenidaUrl) ? (
+                    <MutedVideo
+                      src={imagenBienvenidaUrl}
+                      sx={{ width: 160, height: 90, objectFit: "cover", borderRadius: 1, border: 1, borderColor: "divider" }}
+                    />
+                  ) : (
+                    <Box
+                      component="img"
+                      src={imagenBienvenidaUrl}
+                      alt="Vista previa de la imagen de bienvenida"
+                      sx={{ width: 160, height: 90, objectFit: "cover", borderRadius: 1, border: 1, borderColor: "divider" }}
+                    />
+                  )
+                )}
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    variant="outlined"
+                    component="label"
+                    disabled={subiendoImagen}
+                  >
+                    {subiendoImagen ? "Subiendo..." : imagenBienvenidaUrl ? "Cambiar archivo" : "Subir imagen o video"}
+                    <input
+                      ref={inputImagenRef}
+                      type="file"
+                      hidden
+                      accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
+                      onChange={(e) => {
+                        const archivo = e.target.files?.[0];
+                        if (archivo) subirImagen(archivo);
+                      }}
+                    />
+                  </Button>
+                  {imagenBienvenidaUrl && (
+                    <Button color="error" onClick={quitarImagen} disabled={subiendoImagen}>
+                      Quitar
+                    </Button>
+                  )}
+                </Stack>
+              </Stack>
+            </Grid>
           </Grid>
           <Box sx={{ mt: 2 }}>
             <Button variant="contained" onClick={guardarGeneral} disabled={guardando}>
@@ -318,6 +469,28 @@ export default function ConfiguracionPage() {
             Guardar semana
           </Button>
         </Stack>
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" sx={{ mb: 2 }}>
+          Restricción de reservas
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Los días del calendario del portal siempre se muestran completos — esto no oculta ningún día, solo
+          decide si un colaborador puede repetir el mismo evento en un día distinto de la semana activa.
+        </Typography>
+        {errorRestriccion && <Alert severity="error" sx={{ mb: 2 }}>{errorRestriccion}</Alert>}
+        {exitoRestriccion && <Alert severity="success" sx={{ mb: 2 }}>{exitoRestriccion}</Alert>}
+        <FormControlLabel
+          control={
+            <Switch
+              checked={eventoUnicoPorSemana}
+              disabled={guardandoRestriccion}
+              onChange={(e) => guardarRestriccion(e.target.checked)}
+            />
+          }
+          label="Cada evento se puede reservar como máximo una vez por semana activa (si ya lo reservó, no puede repetirlo otro día — sí puede reservar un evento distinto)"
+        />
       </Paper>
 
       <Paper variant="outlined" sx={{ p: 3 }}>

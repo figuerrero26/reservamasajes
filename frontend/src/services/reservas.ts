@@ -1,6 +1,6 @@
 import api from "./api";
 import apiUsuario from "./apiUsuario";
-import type { HorariosResponse, Reserva, ReservaCreada } from "../types";
+import type { AgendaDia, HorariosResponse, Reserva, ReservaAdmin, ReservaCreada } from "../types";
 
 // ---- Portal público (requiere sesión de usuario, salvo horarios que es abierto) ----
 export async function obtenerHorarios(agendaId: number, fecha: string): Promise<HorariosResponse> {
@@ -30,10 +30,18 @@ export async function cancelarReservaPropia(id: number): Promise<Reserva> {
 }
 
 // ---- Administración ----
+export async function obtenerDia(fecha: string, servicioId?: number): Promise<AgendaDia[]> {
+  const { data } = await api.get<AgendaDia[]>("/reservas/dia", {
+    params: { fecha, servicio_id: servicioId },
+  });
+  return data;
+}
+
 export async function buscarReservas(params: {
-  nombre?: string; correo?: string; fecha?: string; agenda_id?: number;
-}): Promise<Reserva[]> {
-  const { data } = await api.get<Reserva[]>("/reservas", { params });
+  nombre?: string; correo?: string; fecha?: string; agenda_id?: number; servicio_id?: number;
+  estado?: string;
+}): Promise<ReservaAdmin[]> {
+  const { data } = await api.get<ReservaAdmin[]>("/reservas", { params });
   return data;
 }
 

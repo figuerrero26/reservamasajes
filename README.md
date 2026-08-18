@@ -19,6 +19,7 @@ Toda la operación usa la zona horaria única **America/Bogota**.
 - [Flujo de reserva](#flujo-de-reserva)
 - [Regla de reservas: una por evento y por día](#regla-de-reservas-una-por-evento-y-por-día)
 - [Cuentas de usuario](#cuentas-de-usuario)
+- [Restablecer contraseña](#restablecer-contraseña)
 - [Zona horaria: estrategia](#zona-horaria-estrategia)
 - [Concurrencia y control de duplicados](#concurrencia-y-control-de-duplicados)
 - [Requisitos](#requisitos)
@@ -311,6 +312,27 @@ reservas se conserva íntegro) y **restablecer la contraseña** de un usuario
 (`POST /api/v1/usuarios/{id}/resetear-password`). Las tres acciones quedan registradas en la
 auditoría (`bloquear_usuario`, `desbloquear_usuario`, `resetear_password_usuario`).
 
+## Restablecer contraseña
+
+Flujo de autoservicio para que un colaborador que olvidó su contraseña la restablezca sin
+depender de un administrador, desde el login (`/login` → "¿Olvidaste tu contraseña?").
+
+1. `POST /api/v1/cuenta/olvide-password` (`{correo}`): responde `204` **exista o no** esa
+   cuenta, para no revelar qué correos están registrados. Si el correo corresponde a una
+   cuenta activa, se genera un JWT de un solo uso (`scope=reset_password`,
+   `RESET_PASSWORD_EXPIRE_MINUTES` de vigencia — 30 min por defecto) y se envía por correo un
+   enlace a `{FRONTEND_URL}/restablecer-password?token=...`, en una `BackgroundTask` (mismo
+   patrón que el correo de confirmación de reserva).
+2. `POST /api/v1/cuenta/restablecer-password` (`{token, password_nueva}`): valida el token y
+   actualiza la contraseña.
+
+El token no se guarda en la base de datos: lleva como claim una huella corta
+(`sha256(password_hash)[:16]`) de la contraseña vigente al emitirlo. Al redimirlo se compara
+contra la huella *actual* del usuario — si ya cambió (porque el token ya se usó, o la
+contraseña cambió por otra vía, p. ej. un reseteo del admin), la huella no coincide y el
+enlace queda invalidado automáticamente, sin necesidad de una tabla de tokens ni de marcar
+nada como "usado".
+
 ## Zona horaria: estrategia
 
 Todo el sistema usa **America/Bogota** como única fuente de verdad, de forma consistente en
@@ -410,6 +432,7 @@ Ver `.env.example` en la raíz (backend) y `frontend/.env.example` (build del fr
 | `APP_ENV` | `development` \| `production` |
 | `APP_TIMEZONE` | Zona horaria única del sistema (`America/Bogota`) |
 | `CORS_ORIGINS` | Orígenes permitidos, separados por coma |
+| `FRONTEND_URL` | Origen público del portal (sin barra final), usado solo para armar el enlace de restablecimiento de contraseña que se envía por correo — ver [Restablecer contraseña](#restablecer-contraseña) |
 | `BACKEND_PORT` | Puerto del host publicado hacia el backend (por defecto `8001`; cámbielo si ya está en uso) |
 | `ADMIN_USER`, `ADMIN_INITIAL_PASSWORD` | Credenciales del administrador inicial (cámbielas tras el primer login) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_TLS`, `SMTP_FROM`, `SMTP_FROM_NAME` | Configuración SMTP por defecto (fallback si no hay una guardada desde el panel — ver [Configuración SMTP](#configuración-smtp-y-notificaciones)) |

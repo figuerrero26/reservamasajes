@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Alert,
   AppBar,
@@ -29,12 +29,14 @@ import PeopleIcon from "@mui/icons-material/People";
 import BlockIcon from "@mui/icons-material/Block";
 import CelebrationIcon from "@mui/icons-material/Celebration";
 import SettingsIcon from "@mui/icons-material/Settings";
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import HistoryIcon from "@mui/icons-material/History";
 import LockResetIcon from "@mui/icons-material/LockReset";
 import { Link, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { cambiarPassword } from "../services/auth";
 import { mensajeError } from "../utils/errors";
+import { ROL_VISOR_RESERVAS } from "../constants/roles";
 
 const DRAWER_WIDTH = 240;
 
@@ -54,6 +56,7 @@ const SECCIONES: Seccion[] = [
   { texto: "Bloqueos", ruta: "/admin/bloqueos", icono: <BlockIcon /> },
   { texto: "Festivos", ruta: "/admin/festivos", icono: <CelebrationIcon /> },
   { texto: "Configuración", ruta: "/admin/configuracion", icono: <SettingsIcon /> },
+  { texto: "Administradores", ruta: "/admin/administradores", icono: <AdminPanelSettingsIcon /> },
   { texto: "Auditoría", ruta: "/admin/auditoria", icono: <HistoryIcon /> },
 ];
 
@@ -138,11 +141,22 @@ function CambiarPasswordDialog({ abierto, onCerrar }: { abierto: boolean; onCerr
 }
 
 export default function AdminLayout() {
-  const { token, nombre, cerrarSesion } = useAuth();
+  const { token, nombre, rol, cerrarSesion } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [drawerAbierto, setDrawerAbierto] = useState(false);
   const [dialogPasswordAbierto, setDialogPasswordAbierto] = useState(false);
+
+  const esVisorReservas = rol === ROL_VISOR_RESERVAS;
+  const secciones = esVisorReservas
+    ? SECCIONES.filter((s) => s.ruta === "/admin/reservas")
+    : SECCIONES;
+
+  useEffect(() => {
+    if (esVisorReservas && location.pathname !== "/admin/reservas") {
+      navigate("/admin/reservas", { replace: true });
+    }
+  }, [esVisorReservas, location.pathname, navigate]);
 
   if (!token) return <Navigate to="/admin/login" replace />;
 
@@ -159,7 +173,7 @@ export default function AdminLayout() {
       </Toolbar>
       <Divider />
       <List>
-        {SECCIONES.map((s) => (
+        {secciones.map((s) => (
           <ListItemButton
             key={s.ruta}
             component={Link}

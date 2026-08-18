@@ -1,12 +1,13 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
-    agendas, areas, auditoria, auth, bloqueos, configuracion, cuenta, eventos, festivos,
-    reservas, semana, servicios, usuarios,
+    administradores, agendas, areas, auditoria, auth, bloqueos, configuracion, cuenta, eventos,
+    festivos, reservas, semana, servicios, usuarios,
 )
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
+api_router.include_router(administradores.router)
 api_router.include_router(cuenta.router)
 api_router.include_router(eventos.router)
 api_router.include_router(areas.router)

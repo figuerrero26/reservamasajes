@@ -56,6 +56,9 @@ export default function LoginUsuarioPage() {
               {cargando ? "Ingresando..." : "Ingresar"}
             </Button>
             <Typography variant="body2" align="center">
+              <Link component={RouterLink} to="/olvide-password">¿Olvidaste tu contraseña?</Link>
+            </Typography>
+            <Typography variant="body2" align="center">
               ¿No tienes cuenta?{" "}
               <Link component={RouterLink} to={`/registro?next=${encodeURIComponent(next)}`}>
                 Regístrate

@@ -24,8 +24,18 @@ def _decodificar(creds: HTTPAuthorizationCredentials | None, scope_esperado: str
 def get_current_admin(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer),
 ) -> dict:
-    """Valida el JWT y devuelve el payload del administrador autenticado."""
+    """Valida el JWT y devuelve el payload del administrador autenticado (cualquier rol,
+    incluido `visor_reservas`)."""
     return _decodificar(creds, "admin")
+
+
+def get_current_admin_full(admin: dict = Depends(get_current_admin)) -> dict:
+    """Como get_current_admin, pero excluye roles restringidos (ej. `visor_reservas`, que
+    solo puede consultar el listado de reservas). El claim `rol` viaja en el JWT desde el
+    login (ver AuthService.login), así que esto no requiere una consulta extra a la BD."""
+    if admin.get("rol") != "administrador":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No tiene permisos para esta acción")
+    return admin
 
 
 def get_current_usuario(

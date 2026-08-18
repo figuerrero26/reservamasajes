@@ -18,13 +18,17 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 
-def create_access_token(subject: str, scope: str, entity_id: int, **extra: str) -> str:
-    """Emite un JWT para un administrador (scope='admin') o un usuario (scope='usuario').
+def create_access_token(
+    subject: str, scope: str, entity_id: int, expires_minutes: int | None = None, **extra: str,
+) -> str:
+    """Emite un JWT para un administrador (scope='admin'), un usuario (scope='usuario') o un
+    token de un solo uso (ej. scope='reset_password', con `expires_minutes` propio y más
+    corto que la sesión normal).
 
     El claim `scope` es lo que impide que un token de un tipo se use en endpoints del otro,
     aunque ambos se firmen con el mismo JWT_SECRET.
     """
-    expire = now() + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
+    expire = now() + timedelta(minutes=expires_minutes or settings.JWT_EXPIRE_MINUTES)
     payload = {"sub": subject, "scope": scope, "id": entity_id, "exp": expire, **extra}
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 

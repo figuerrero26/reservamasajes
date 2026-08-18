@@ -7,7 +7,7 @@ export function hoyBogota(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: ZONA }).format(new Date());
 }
 
-function sumarDias(fechaISO: string, dias: number): string {
+export function sumarDias(fechaISO: string, dias: number): string {
   const [y, m, d] = fechaISO.split("-").map(Number);
   const base = new Date(Date.UTC(y, m - 1, d));
   base.setUTCDate(base.getUTCDate() + dias);
@@ -31,9 +31,19 @@ export function diasHabilesSemana(fechaISO: string): string[] {
   return [0, 1, 2, 3, 4].map((i) => sumarDias(lunes, i));
 }
 
-/** Recorta el rango lunes-viernes a los límites [inicio, fin] de la semana activa, si existen. */
-export function acotarRango(dias: string[], inicio?: string | null, fin?: string | null): string[] {
-  return dias.filter((d) => (!inicio || d >= inicio) && (!fin || d <= fin));
+/** Todos los días entre [inicio, fin] (ambos incluidos, en cualquier orden de la semana —
+ * incluye sábados y domingos si están dentro del rango). `maxDias` es un límite de
+ * seguridad: cada día dispara una consulta de horarios por agenda, así que un rango mal
+ * configurado (por error, años de longitud) no debe intentar traer miles de días. */
+export function rangoFechas(inicio: string, fin: string, maxDias = 31): string[] {
+  if (fin < inicio) return [];
+  const dias: string[] = [];
+  let cursor = inicio;
+  while (cursor <= fin && dias.length < maxDias) {
+    dias.push(cursor);
+    cursor = sumarDias(cursor, 1);
+  }
+  return dias;
 }
 
 const NOMBRES_DIA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];

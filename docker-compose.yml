@@ -42,10 +42,13 @@ services:
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root}
       JWT_SECRET: ${JWT_SECRET:-cambie-esta-clave-en-produccion}
       APP_TIMEZONE: ${APP_TIMEZONE:-America/Bogota}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
       ADMIN_USER: ${ADMIN_USER:-admin_sigra}
       ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-T3cn0z1gr@67!}
       TZ: ${APP_TIMEZONE:-America/Bogota}
+    volumes:
+      - ./data/uploads:/app/uploads
     ports:
       - "${BACKEND_PORT:-8001}:8000"
 

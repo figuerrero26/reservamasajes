@@ -28,3 +28,12 @@ class PerfilUsuarioOut(BaseModel):
     apellido: str
     correo: str
     permite_reservas_multiples: bool
+
+
+class OlvidePasswordRequest(BaseModel):
+    correo: EmailStr
+
+
+class RestablecerPasswordRequest(BaseModel):
+    token: str
+    password_nueva: str = Field(min_length=8, max_length=72)

@@ -45,7 +45,7 @@ class ReservaOut(BaseModel):
     id: int
     agenda_id: int
     servicio_id: int
-    usuario_id: int
+    usuario_id: int | None = None
     fecha: date
     hora_inicio: time
     hora_fin: time
@@ -57,10 +57,44 @@ class ReservaOut(BaseModel):
     cancelled_by: str | None = None
 
 
+class ReservaAdminOut(ReservaOut):
+    """Vista administrativa: agrega identidad del colaborador y nombres legibles de
+    evento/área/agenda, para listar quién reservó qué (uso exclusivo del panel)."""
+    usuario_nombre: str
+    usuario_apellido: str
+    usuario_correo: str | None = None
+    evento_nombre: str
+    area_nombre: str
+    agenda_nombre: str
+
+
 class ReservaCreadaOut(ReservaOut):
     """Respuesta de los endpoints de creación: informa si el correo de confirmación
     pudo enviarse sin bloquear ni revertir la reserva si el envío falla."""
     correo_confirmacion: str = "pendiente"
+
+
+class SlotDia(BaseModel):
+    """Un turno del día para una agenda: si está ocupado, trae quién lo reservó."""
+    hora_inicio: time
+    hora_fin: time
+    estado: EstadoSlot
+    reserva_id: int | None = None
+    usuario_nombre: str | None = None
+    usuario_apellido: str | None = None
+    usuario_correo: str | None = None
+    notes: str | None = None
+
+
+class AgendaDia(BaseModel):
+    """Agenda completa (todos sus turnos) de un día, para la vista "por día" del panel:
+    muestra los espacios disponibles y ocupados de cualquier área/evento, no solo lo ya
+    reservado."""
+    agenda_id: int
+    agenda_nombre: str
+    area_nombre: str
+    evento_nombre: str
+    slots: list[SlotDia]
 
 
 class ReservaConfirmacion(BaseModel):

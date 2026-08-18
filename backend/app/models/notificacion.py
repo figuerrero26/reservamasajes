@@ -21,7 +21,11 @@ class Notificacion(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     reserva_id: Mapped[int | None] = mapped_column(ForeignKey("reservas.id"), nullable=True, index=True)
-    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
+    # ON DELETE SET NULL: una notificación ya enviada sobrevive a que se elimine la cuenta
+    # del colaborador (ver Reserva.usuario_id); `destinatario` ya guarda el correo aparte.
+    usuario_id: Mapped[int | None] = mapped_column(
+        ForeignKey("usuarios.id", ondelete="SET NULL"), index=True, nullable=True
+    )
     tipo: Mapped[str] = mapped_column(String(40), default="confirmacion")
     destinatario: Mapped[str] = mapped_column(String(160))
     estado: Mapped[str] = mapped_column(String(20), default=EstadoNotificacion.PENDIENTE.value, index=True)

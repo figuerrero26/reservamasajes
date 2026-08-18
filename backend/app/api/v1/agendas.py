@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_admin
+from app.api.deps import get_current_admin, get_current_admin_full
 from app.database.session import get_db
 from app.schemas.agenda import AgendaCreate, AgendaOut, AgendaPublica, AgendaUpdate
 from app.services.agenda_service import AgendaService
@@ -23,17 +23,17 @@ def listar(db: Session = Depends(get_db), _: dict = Depends(get_current_admin)):
 
 @router.post("", response_model=AgendaOut, status_code=status.HTTP_201_CREATED)
 def crear(data: AgendaCreate, db: Session = Depends(get_db),
-          admin: dict = Depends(get_current_admin)):
+          admin: dict = Depends(get_current_admin_full)):
     return AgendaService(db).crear(data, admin["id"])
 
 
 @router.put("/{agenda_id}", response_model=AgendaOut)
 def actualizar(agenda_id: int, data: AgendaUpdate, db: Session = Depends(get_db),
-               admin: dict = Depends(get_current_admin)):
+               admin: dict = Depends(get_current_admin_full)):
     return AgendaService(db).actualizar(agenda_id, data, admin["id"])
 
 
 @router.patch("/{agenda_id}/estado", response_model=AgendaOut)
 def cambiar_estado(agenda_id: int, activa: bool, db: Session = Depends(get_db),
-                   admin: dict = Depends(get_current_admin)):
+                   admin: dict = Depends(get_current_admin_full)):
     return AgendaService(db).cambiar_estado(agenda_id, activa, admin["id"])

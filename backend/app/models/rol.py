@@ -3,9 +3,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
 
+# Nombres de rol reconocidos por el backend (ver app/api/deps.py:get_current_admin_full).
+ROL_ADMINISTRADOR = "administrador"
+ROL_VISOR_RESERVAS = "visor_reservas"
+ROLES_DISPONIBLES = (ROL_ADMINISTRADOR, ROL_VISOR_RESERVAS)
+
 
 class Rol(Base):
-    """Rol administrativo. Hoy solo se usa 'administrador', el modelo soporta más a futuro."""
+    """Rol administrativo: 'administrador' (acceso total) o 'visor_reservas' (acceso de
+    solo lectura, únicamente al listado de reservas — ver get_current_admin_full)."""
     __tablename__ = "roles"
 
     id: Mapped[int] = mapped_column(primary_key=True)

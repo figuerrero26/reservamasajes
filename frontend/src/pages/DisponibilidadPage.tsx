@@ -10,7 +10,7 @@ import { obtenerEvento } from "../services/eventos";
 import { listarAgendasPublicas } from "../services/agendas";
 import { obtenerConfiguracion } from "../services/configuracion";
 import { mensajeError } from "../utils/errors";
-import { acotarRango, diasHabilesSemana, hoyBogota } from "../utils/fechas";
+import { diasHabilesSemana, hoyBogota, rangoFechas } from "../utils/fechas";
 import { useUsuarioAuth } from "../hooks/useUsuarioAuth";
 
 const CLAVE_RESERVA_PENDIENTE = "reserva_pendiente";
@@ -55,8 +55,15 @@ export default function DisponibilidadPage() {
         setEvento(eventoData);
         setAgendas(agendasData);
         if (agendasData.length === 1) setAgendaSeleccionada(agendasData[0]);
-        const semana = diasHabilesSemana(hoyBogota());
-        setDias(config ? acotarRango(semana, config.semana_activa_inicio, config.semana_activa_fin) : semana);
+
+        const hoy = hoyBogota();
+        const inicio = config?.semana_activa_inicio;
+        const fin = config?.semana_activa_fin;
+        if (inicio && fin) {
+          setDias(rangoFechas(inicio, fin));
+        } else {
+          setDias(diasHabilesSemana(hoy));
+        }
       })
       .catch((e) => setError(mensajeError(e, "No se pudo cargar el evento.")))
       .finally(() => setCargando(false));

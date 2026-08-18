@@ -9,17 +9,22 @@ from app.auth.security import hash_password
 from app.config import settings
 from app.database.session import SessionLocal
 from app.models import Administrador, Agenda, Area, Rol, Servicio
+from app.models.rol import ROL_ADMINISTRADOR, ROL_VISOR_RESERVAS
 
 
 def run() -> None:
     db = SessionLocal()
     try:
-        rol_admin = db.query(Rol).filter_by(nombre="administrador").one_or_none()
+        rol_admin = db.query(Rol).filter_by(nombre=ROL_ADMINISTRADOR).one_or_none()
         if rol_admin is None:
-            rol_admin = Rol(nombre="administrador", descripcion="Acceso total al panel administrativo")
+            rol_admin = Rol(nombre=ROL_ADMINISTRADOR, descripcion="Acceso total al panel administrativo")
             db.add(rol_admin)
             db.flush()
             print("[seed] Rol 'administrador' creado.")
+
+        if db.query(Rol).filter_by(nombre=ROL_VISOR_RESERVAS).one_or_none() is None:
+            db.add(Rol(nombre=ROL_VISOR_RESERVAS, descripcion="Solo puede consultar el listado de reservas"))
+            print("[seed] Rol 'visor_reservas' creado.")
 
         admin = db.query(Administrador).filter_by(usuario=settings.ADMIN_USER).one_or_none()
         if admin is None:

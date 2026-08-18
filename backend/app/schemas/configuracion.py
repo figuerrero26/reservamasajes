@@ -15,6 +15,11 @@ class ConfiguracionGeneralOut(BaseModel):
     logo_url: str | None = None
     color_primario: str | None = None
     color_secundario: str | None = None
+    mensaje_bienvenida: str | None = None
+    imagen_bienvenida_url: str | None = None
+    color_boton_disponibilidad: str | None = None
+    color_fondo_bienvenida: str | None = None
+    evento_unico_por_semana: bool = False
     zona_horaria: str
     semana_activa_inicio: date | None = None
     semana_activa_fin: date | None = None

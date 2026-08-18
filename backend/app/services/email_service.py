@@ -75,9 +75,9 @@ def enviar_correo(config: SmtpConfig, destinatario: str, asunto: str, cuerpo_tex
         return False, str(exc)
 
 
-def _cuerpo_confirmacion(usuario: Usuario, reserva: Reserva, agenda: Agenda) -> str:
+def _cuerpo_confirmacion(reserva: Reserva, agenda: Agenda) -> str:
     lineas = [
-        f"Hola {usuario.nombre},",
+        f"Hola {reserva.usuario_nombre},",
         "",
         f"Tu reserva fue confirmada. Aquí el detalle:",
         f"- Evento: {agenda.servicio.nombre}",
@@ -100,14 +100,13 @@ def enviar_confirmacion_reserva(reserva_id: int) -> None:
         reserva = db.get(Reserva, reserva_id)
         if not reserva:
             return
-        usuario = db.get(Usuario, reserva.usuario_id)
         agenda = db.get(Agenda, reserva.agenda_id)
-        if not usuario or not usuario.correo or not agenda:
+        if not reserva.usuario_correo or not agenda:
             return
 
         notificacion = Notificacion(
-            reserva_id=reserva.id, usuario_id=usuario.id, tipo="confirmacion",
-            destinatario=usuario.correo, estado=EstadoNotificacion.PENDIENTE.value, intentos=0,
+            reserva_id=reserva.id, usuario_id=reserva.usuario_id, tipo="confirmacion",
+            destinatario=reserva.usuario_correo, estado=EstadoNotificacion.PENDIENTE.value, intentos=0,
         )
         db.add(notificacion)
         db.flush()
@@ -121,7 +120,56 @@ def enviar_confirmacion_reserva(reserva_id: int) -> None:
             return
 
         asunto = f"Confirmación de reserva - {agenda.servicio.nombre}"
-        cuerpo = _cuerpo_confirmacion(usuario, reserva, agenda)
+        cuerpo = _cuerpo_confirmacion(reserva, agenda)
+        exito, error = enviar_correo(config, reserva.usuario_correo, asunto, cuerpo)
+
+        notificacion.estado = EstadoNotificacion.ENVIADO.value if exito else EstadoNotificacion.FALLIDO.value
+        notificacion.error_mensaje = error
+        notificacion.enviado_en = now() if exito else None
+        db.commit()
+    finally:
+        db.close()
+
+
+def _cuerpo_restablecimiento(usuario: Usuario, enlace: str) -> str:
+    return "\n".join([
+        f"Hola {usuario.nombre},",
+        "",
+        "Recibimos una solicitud para restablecer tu contraseña.",
+        f"Si fuiste tú, ingresa a este enlace (válido por {settings.RESET_PASSWORD_EXPIRE_MINUTES} minutos):",
+        enlace,
+        "",
+        "Si no fuiste tú, ignora este correo: tu contraseña actual sigue funcionando igual.",
+    ])
+
+
+def enviar_restablecimiento_password(usuario_id: int, token: str) -> None:
+    """Punto de entrada para la BackgroundTask, igual patrón que enviar_confirmacion_reserva:
+    sesión propia porque corre después de que la request original ya respondió."""
+    db = SessionLocal()
+    try:
+        usuario = db.get(Usuario, usuario_id)
+        if not usuario or not usuario.correo:
+            return
+
+        enlace = f"{settings.FRONTEND_URL.rstrip('/')}/restablecer-password?token={token}"
+        notificacion = Notificacion(
+            reserva_id=None, usuario_id=usuario.id, tipo="restablecer_password",
+            destinatario=usuario.correo, estado=EstadoNotificacion.PENDIENTE.value, intentos=0,
+        )
+        db.add(notificacion)
+        db.flush()
+
+        config = resolver_config_smtp(db)
+        notificacion.intentos = 1
+        if config is None:
+            notificacion.estado = EstadoNotificacion.FALLIDO.value
+            notificacion.error_mensaje = "SMTP no configurado"
+            db.commit()
+            return
+
+        asunto = "Restablecer tu contraseña"
+        cuerpo = _cuerpo_restablecimiento(usuario, enlace)
         exito, error = enviar_correo(config, usuario.correo, asunto, cuerpo)
 
         notificacion.estado = EstadoNotificacion.ENVIADO.value if exito else EstadoNotificacion.FALLIDO.value

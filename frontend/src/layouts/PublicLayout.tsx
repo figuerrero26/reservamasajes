@@ -1,4 +1,4 @@
-import { AppBar, Avatar, Box, Button, Container, Stack, Toolbar, Typography } from "@mui/material";
+import { AppBar, Box, Button, Container, Stack, Toolbar, Typography } from "@mui/material";
 import SpaIcon from "@mui/icons-material/Spa";
 import { Link as RouterLink, Outlet } from "react-router-dom";
 import { useConfig } from "../hooks/useConfig";
@@ -14,7 +14,12 @@ export default function PublicLayout() {
         <Toolbar sx={{ flexWrap: "wrap", gap: 1, py: 1 }}>
           <Box sx={{ display: "flex", alignItems: "center", flexGrow: 1 }}>
             {config.logo_url ? (
-              <Avatar src={config.logo_url} variant="rounded" sx={{ mr: 1.5, width: 32, height: 32 }} />
+              <Box
+                component="img"
+                src={config.logo_url}
+                alt=""
+                sx={{ mr: 1.5, height: 40, maxWidth: 160, width: "auto", objectFit: "contain" }}
+              />
             ) : (
               <SpaIcon sx={{ mr: 1.5 }} />
             )}

@@ -17,11 +17,13 @@ import {
 import SearchIcon from "@mui/icons-material/Search";
 import type { Usuario } from "../../types";
 import {
-  activarUsuario, buscarUsuarios, desactivarUsuario, resetearPasswordUsuario, setReservasMultiples,
+  activarUsuario, buscarUsuarios, desactivarUsuario, eliminarUsuario, resetearPasswordUsuario,
+  setReservasMultiples,
 } from "../../services/usuarios";
 import { mensajeError } from "../../utils/errors";
 import Loader from "../../components/Loader";
 import DataTable, { type ColumnaDataTable } from "../../components/DataTable";
+import ConfirmDialog from "../../components/ConfirmDialog";
 
 export default function UsuariosPage() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -36,6 +38,10 @@ export default function UsuariosPage() {
   const [guardandoPassword, setGuardandoPassword] = useState(false);
   const [errorPassword, setErrorPassword] = useState<string | null>(null);
   const [exitoPassword, setExitoPassword] = useState(false);
+
+  const [dialogEliminar, setDialogEliminar] = useState<Usuario | null>(null);
+  const [eliminando, setEliminando] = useState(false);
+  const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
 
   async function buscar() {
     setCargando(true);
@@ -87,6 +93,21 @@ export default function UsuariosPage() {
     setPasswordNueva("");
     setErrorPassword(null);
     setExitoPassword(false);
+  }
+
+  async function confirmarEliminar() {
+    if (!dialogEliminar) return;
+    setEliminando(true);
+    setErrorEliminar(null);
+    try {
+      await eliminarUsuario(dialogEliminar.id);
+      setDialogEliminar(null);
+      await buscar();
+    } catch (e) {
+      setErrorEliminar(mensajeError(e, "No se pudo eliminar el colaborador."));
+    } finally {
+      setEliminando(false);
+    }
   }
 
   async function guardarPassword() {
@@ -150,6 +171,9 @@ export default function UsuariosPage() {
             onClick={() => alternarActivo(u)}
           >
             {u.activo ? "Bloquear" : "Desbloquear"}
+          </Button>
+          <Button size="small" color="error" onClick={() => { setDialogEliminar(u); setErrorEliminar(null); }}>
+            Eliminar
           </Button>
         </Stack>
       ),
@@ -230,6 +254,26 @@ export default function UsuariosPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        abierto={!!dialogEliminar}
+        titulo="Eliminar colaborador"
+        contenido={
+          dialogEliminar && (
+            <span>
+              Esta acción elimina la cuenta de {dialogEliminar.nombre} {dialogEliminar.apellido} de forma
+              permanente (no es un bloqueo). Sus reservas activas que todavía no han ocurrido se cancelarán;
+              las reservas ya pasadas quedarán en el historial con su nombre y correo, tal como están hoy.
+            </span>
+          )
+        }
+        textoConfirmar="Eliminar cuenta"
+        colorConfirmar="error"
+        cargando={eliminando}
+        error={errorEliminar}
+        onConfirmar={confirmarEliminar}
+        onCancelar={() => setDialogEliminar(null)}
+      />
     </Box>
   );
 }

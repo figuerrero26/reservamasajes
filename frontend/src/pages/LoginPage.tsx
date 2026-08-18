@@ -19,8 +19,8 @@ export default function LoginPage() {
     setError(null);
     try {
       const r = await login(usuario.trim(), password);
-      iniciarSesion(r.access_token, r.nombre);
-      navigate("/admin");
+      iniciarSesion(r.access_token, r.nombre, r.rol);
+      navigate(r.rol === "administrador" ? "/admin" : "/admin/reservas");
     } catch {
       setError("Credenciales inválidas");
     } finally {
