@@ -21,8 +21,10 @@ import {
   obtenerConfiguracionSmtp,
   obtenerPlantillaCorreo,
   obtenerSemanaActiva,
+  previsualizarPlantillaCorreo,
   reiniciarSemana,
   subirImagenBienvenida,
+  subirImagenCorreo,
 } from "../../services/configuracion";
 import { mensajeError } from "../../utils/errors";
 import { esVideo } from "../../utils/media";
@@ -129,6 +131,14 @@ export default function ConfiguracionPage() {
   const [guardandoPlantilla, setGuardandoPlantilla] = useState(false);
   const [errorPlantilla, setErrorPlantilla] = useState<string | null>(null);
   const [exitoPlantilla, setExitoPlantilla] = useState<string | null>(null);
+
+  const [imagenCorreoUrl, setImagenCorreoUrl] = useState("");
+  const [subiendoImagenCorreo, setSubiendoImagenCorreo] = useState(false);
+  const [errorImagenCorreo, setErrorImagenCorreo] = useState<string | null>(null);
+  const inputImagenCorreoRef = useRef<HTMLInputElement>(null);
+
+  const [previewHtml, setPreviewHtml] = useState("");
+  const [cargandoPreview, setCargandoPreview] = useState(false);
 
   async function cargar() {
     setCargando(true);
@@ -289,8 +299,27 @@ export default function ConfiguracionPage() {
   function aplicarPlantilla(p: PlantillaCorreo) {
     setPlantillaAsunto(p.asunto);
     setPlantillaCuerpo(p.cuerpo);
+    setImagenCorreoUrl(p.imagen_url ?? "");
     setPlaceholders(p.placeholders);
   }
+
+  // Vista previa en vivo: se recalcula al escribir (con una pequeña pausa) y al subir/quitar
+  // la imagen, para que el admin vea el correo completo (saludo + detalle de la reserva +
+  // imagen) sin tener que guardar primero.
+  useEffect(() => {
+    if (!plantillaCuerpo.trim()) {
+      setPreviewHtml("");
+      return;
+    }
+    const temporizador = setTimeout(() => {
+      setCargandoPreview(true);
+      previsualizarPlantillaCorreo(plantillaCuerpo)
+        .then(setPreviewHtml)
+        .catch(() => undefined)
+        .finally(() => setCargandoPreview(false));
+    }, 400);
+    return () => clearTimeout(temporizador);
+  }, [plantillaCuerpo, imagenCorreoUrl]);
 
   async function guardarPlantilla() {
     if (!plantillaAsunto.trim() || !plantillaCuerpo.trim()) return;
@@ -325,6 +354,33 @@ export default function ConfiguracionPage() {
       setErrorPlantilla(mensajeError(e, "No se pudo restaurar la plantilla."));
     } finally {
       setGuardandoPlantilla(false);
+    }
+  }
+
+  async function subirImagenDelCorreo(archivo: File) {
+    setSubiendoImagenCorreo(true);
+    setErrorImagenCorreo(null);
+    try {
+      const url = await subirImagenCorreo(archivo);
+      setImagenCorreoUrl(url);
+    } catch (e) {
+      setErrorImagenCorreo(mensajeError(e, "No se pudo subir la imagen."));
+    } finally {
+      setSubiendoImagenCorreo(false);
+      if (inputImagenCorreoRef.current) inputImagenCorreoRef.current.value = "";
+    }
+  }
+
+  async function quitarImagenDelCorreo() {
+    setSubiendoImagenCorreo(true);
+    setErrorImagenCorreo(null);
+    try {
+      await actualizarConfiguracion("email_confirmacion_imagen_url", null);
+      setImagenCorreoUrl("");
+    } catch (e) {
+      setErrorImagenCorreo(mensajeError(e, "No se pudo quitar la imagen."));
+    } finally {
+      setSubiendoImagenCorreo(false);
     }
   }
 
@@ -685,8 +741,10 @@ export default function ConfiguracionPage() {
           Plantilla del correo de confirmación
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Correo que recibe el colaborador al reservar. El diseño (logo, color, detalle de la reserva) se toma
-          automáticamente de la configuración del sistema; aquí solo se edita el asunto y el mensaje de saludo.
+          Correo que recibe el colaborador al reservar. El logo y el color se toman de la configuración
+          general; el detalle de la reserva (evento, fecha, hora, código) siempre se agrega automáticamente,
+          con el mismo formato, debajo de lo que escribas aquí — la vista previa de la derecha muestra el
+          correo completo, tal como llegaría.
         </Typography>
         {placeholders.length > 0 && (
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 2 }}>
@@ -695,35 +753,99 @@ export default function ConfiguracionPage() {
         )}
         {errorPlantilla && <Alert severity="error" sx={{ mb: 2 }}>{errorPlantilla}</Alert>}
         {exitoPlantilla && <Alert severity="success" sx={{ mb: 2 }}>{exitoPlantilla}</Alert>}
-        <Stack spacing={2}>
-          <TextField
-            label="Asunto"
-            value={plantillaAsunto}
-            onChange={(e) => setPlantillaAsunto(e.target.value)}
-            fullWidth
-          />
-          <TextField
-            label="Mensaje de saludo"
-            value={plantillaCuerpo}
-            onChange={(e) => setPlantillaCuerpo(e.target.value)}
-            helperText="Debajo de este mensaje, el correo siempre agrega el detalle de la reserva (evento, fecha, hora, código)."
-            multiline
-            minRows={3}
-            fullWidth
-          />
-        </Stack>
-        <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
-          <Button
-            variant="contained"
-            onClick={guardarPlantilla}
-            disabled={guardandoPlantilla || !plantillaAsunto.trim() || !plantillaCuerpo.trim()}
-          >
-            Guardar plantilla
-          </Button>
-          <Button variant="outlined" onClick={restaurarPlantilla} disabled={guardandoPlantilla}>
-            Restaurar por defecto
-          </Button>
-        </Stack>
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={6}>
+            <Stack spacing={2}>
+              <TextField
+                label="Asunto"
+                value={plantillaAsunto}
+                onChange={(e) => setPlantillaAsunto(e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Mensaje de saludo"
+                value={plantillaCuerpo}
+                onChange={(e) => setPlantillaCuerpo(e.target.value)}
+                helperText="Debajo de este mensaje, el correo siempre agrega el detalle de la reserva (evento, fecha, hora, código)."
+                multiline
+                minRows={3}
+                fullWidth
+              />
+              <Box>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  Imagen del correo (opcional)
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                  Banner que aparece debajo del encabezado. JPG, PNG o WEBP hasta 3 MB; GIF hasta 5 MB.
+                </Typography>
+                {errorImagenCorreo && <Alert severity="error" sx={{ mb: 1 }}>{errorImagenCorreo}</Alert>}
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
+                  {imagenCorreoUrl && (
+                    <Box
+                      component="img"
+                      src={imagenCorreoUrl}
+                      alt="Vista previa de la imagen del correo"
+                      sx={{ width: 160, height: 60, objectFit: "cover", borderRadius: 1, border: 1, borderColor: "divider" }}
+                    />
+                  )}
+                  <Stack direction="row" spacing={1}>
+                    <Button variant="outlined" component="label" disabled={subiendoImagenCorreo}>
+                      {subiendoImagenCorreo ? "Subiendo..." : imagenCorreoUrl ? "Cambiar imagen" : "Subir imagen"}
+                      <input
+                        ref={inputImagenCorreoRef}
+                        type="file"
+                        hidden
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        onChange={(e) => {
+                          const archivo = e.target.files?.[0];
+                          if (archivo) subirImagenDelCorreo(archivo);
+                        }}
+                      />
+                    </Button>
+                    {imagenCorreoUrl && (
+                      <Button color="error" onClick={quitarImagenDelCorreo} disabled={subiendoImagenCorreo}>
+                        Quitar
+                      </Button>
+                    )}
+                  </Stack>
+                </Stack>
+              </Box>
+            </Stack>
+            <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
+              <Button
+                variant="contained"
+                onClick={guardarPlantilla}
+                disabled={guardandoPlantilla || !plantillaAsunto.trim() || !plantillaCuerpo.trim()}
+              >
+                Guardar plantilla
+              </Button>
+              <Button variant="outlined" onClick={restaurarPlantilla} disabled={guardandoPlantilla}>
+                Restaurar por defecto
+              </Button>
+            </Stack>
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              Vista previa {cargandoPreview && "(actualizando...)"}
+            </Typography>
+            <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, overflow: "hidden", bgcolor: "#F4F7FB" }}>
+              {previewHtml ? (
+                <Box
+                  component="iframe"
+                  title="Vista previa del correo de confirmación"
+                  srcDoc={previewHtml}
+                  sx={{ width: "100%", height: 520, border: 0, display: "block" }}
+                />
+              ) : (
+                <Box sx={{ p: 3 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Escribe un mensaje de saludo para ver la vista previa.
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Grid>
+        </Grid>
       </Paper>
 
       <ConfirmDialog

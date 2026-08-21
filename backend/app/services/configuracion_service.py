@@ -11,6 +11,7 @@ from app.schemas.configuracion import ConfiguracionGeneralOut, PlantillaCorreoOu
 from app.services import auditoria_service
 from app.services.email_service import (
     ASUNTO_CONFIRMACION_DEFAULT, CUERPO_CONFIRMACION_DEFAULT, PLACEHOLDERS_CONFIRMACION,
+    generar_vista_previa,
 )
 from app.services.errors import DomainError
 from app.utils.uploads import PUBLIC_PREFIX, UPLOAD_DIR
@@ -22,6 +23,7 @@ CLAVES_PUBLICAS = [
 ]
 CLAVES_ADMIN = CLAVES_PUBLICAS + [
     "cancelacion_horas_minimas", "email_confirmacion_asunto", "email_confirmacion_cuerpo",
+    "email_confirmacion_imagen_url",
 ]
 
 # Extensión y tamaño máximo (bytes) por tipo MIME aceptado para el banner de bienvenida:
@@ -35,6 +37,15 @@ TIPOS_BIENVENIDA_PERMITIDOS: dict[str, tuple[str, int]] = {
     "video/mp4": (".mp4", 30 * _MB),
     "video/webm": (".webm", 30 * _MB),
     "video/quicktime": (".mov", 30 * _MB),
+}
+
+# El banner del correo solo admite imágenes (nunca video: no se puede incrustar en un correo)
+# y con un tope menor, para que el mensaje no quede pesado.
+TIPOS_IMAGEN_CORREO_PERMITIDOS: dict[str, tuple[str, int]] = {
+    "image/jpeg": (".jpg", 3 * _MB),
+    "image/png": (".png", 3 * _MB),
+    "image/webp": (".webp", 3 * _MB),
+    "image/gif": (".gif", 5 * _MB),
 }
 
 
@@ -74,35 +85,55 @@ class ConfiguracionService:
         )
         self.db.commit()
 
-    async def guardar_imagen_bienvenida(self, archivo: UploadFile, admin_id: int) -> str:
-        info = TIPOS_BIENVENIDA_PERMITIDOS.get(archivo.content_type)
+    async def _guardar_archivo(
+        self, archivo: UploadFile, admin_id: int, *, clave: str, prefijo_nombre: str,
+        tipos_permitidos: dict[str, tuple[str, int]], mensaje_formato: str,
+    ) -> str:
+        info = tipos_permitidos.get(archivo.content_type)
         if not info:
-            raise DomainError(
-                "Formato no soportado. Use una imagen (JPG, PNG, WEBP, GIF) o un video (MP4, WEBM, MOV)."
-            )
+            raise DomainError(mensaje_formato)
         extension, tamano_maximo = info
         contenido = await archivo.read()
         if len(contenido) > tamano_maximo:
             raise DomainError(f"El archivo no puede superar {tamano_maximo // _MB} MB.")
 
-        anterior = self.repo.get("imagen_bienvenida_url")
-        nombre = f"bienvenida_{uuid.uuid4().hex}{extension}"
+        anterior = self.repo.get(clave)
+        nombre = f"{prefijo_nombre}_{uuid.uuid4().hex}{extension}"
         (UPLOAD_DIR / nombre).write_bytes(contenido)
         url = f"{PUBLIC_PREFIX}/{nombre}"
 
-        self.actualizar("imagen_bienvenida_url", url, admin_id)
+        self.actualizar(clave, url, admin_id)
 
         if anterior and anterior.startswith(f"{PUBLIC_PREFIX}/"):
             (UPLOAD_DIR / Path(anterior).name).unlink(missing_ok=True)
 
         return url
 
+    async def guardar_imagen_bienvenida(self, archivo: UploadFile, admin_id: int) -> str:
+        return await self._guardar_archivo(
+            archivo, admin_id, clave="imagen_bienvenida_url", prefijo_nombre="bienvenida",
+            tipos_permitidos=TIPOS_BIENVENIDA_PERMITIDOS,
+            mensaje_formato="Formato no soportado. Use una imagen (JPG, PNG, WEBP, GIF) o un video (MP4, WEBM, MOV).",
+        )
+
+    async def guardar_imagen_correo(self, archivo: UploadFile, admin_id: int) -> str:
+        return await self._guardar_archivo(
+            archivo, admin_id, clave="email_confirmacion_imagen_url", prefijo_nombre="correo",
+            tipos_permitidos=TIPOS_IMAGEN_CORREO_PERMITIDOS,
+            mensaje_formato="Formato no soportado. Use una imagen (JPG, PNG, WEBP o GIF).",
+        )
+
     def obtener_plantilla_correo(self) -> PlantillaCorreoOut:
         return PlantillaCorreoOut(
             asunto=self.repo.get("email_confirmacion_asunto") or ASUNTO_CONFIRMACION_DEFAULT,
             cuerpo=self.repo.get("email_confirmacion_cuerpo") or CUERPO_CONFIRMACION_DEFAULT,
+            imagen_url=self.repo.get("email_confirmacion_imagen_url"),
             placeholders=PLACEHOLDERS_CONFIRMACION,
         )
+
+    def previsualizar_plantilla_correo(self, cuerpo: str) -> str:
+        config_general = self.repo.get_all()
+        return generar_vista_previa(cuerpo, config_general, config_general.get("email_confirmacion_imagen_url"))
 
     def semana_activa(self) -> tuple[date | None, date | None]:
         inicio = self.repo.get("semana_activa_inicio")

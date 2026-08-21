@@ -3,7 +3,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin_full
 from app.database.session import get_db
-from app.schemas.configuracion import ConfiguracionGeneralOut, ConfiguracionValor, PlantillaCorreoOut
+from app.schemas.configuracion import (
+    ConfiguracionGeneralOut, ConfiguracionValor, PlantillaCorreoOut, VistaPreviaCorreoIn, VistaPreviaCorreoOut,
+)
 from app.schemas.smtp import SmtpConfigOut, SmtpConfigUpdate, SmtpPruebaRequest
 from app.services.configuracion_service import ConfiguracionService
 from app.services.smtp_config_service import SmtpConfigService
@@ -28,11 +30,24 @@ def obtener_plantilla_correo(db: Session = Depends(get_db), _: dict = Depends(ge
     return ConfiguracionService(db).obtener_plantilla_correo()
 
 
+@router.post("/plantilla-correo/vista-previa", response_model=VistaPreviaCorreoOut)
+def previsualizar_plantilla_correo(data: VistaPreviaCorreoIn, db: Session = Depends(get_db),
+                                    _: dict = Depends(get_current_admin_full)):
+    return VistaPreviaCorreoOut(html=ConfiguracionService(db).previsualizar_plantilla_correo(data.cuerpo))
+
+
 @router.post("/imagen-bienvenida")
 async def subir_imagen_bienvenida(archivo: UploadFile = File(...), db: Session = Depends(get_db),
                                    admin: dict = Depends(get_current_admin_full)):
     url = await ConfiguracionService(db).guardar_imagen_bienvenida(archivo, admin["id"])
     return {"imagen_bienvenida_url": url}
+
+
+@router.post("/imagen-correo")
+async def subir_imagen_correo(archivo: UploadFile = File(...), db: Session = Depends(get_db),
+                               admin: dict = Depends(get_current_admin_full)):
+    url = await ConfiguracionService(db).guardar_imagen_correo(archivo, admin["id"])
+    return {"email_confirmacion_imagen_url": url}
 
 
 @router.get("/smtp", response_model=SmtpConfigOut)

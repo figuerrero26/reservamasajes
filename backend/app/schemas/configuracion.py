@@ -35,4 +35,13 @@ class PlantillaCorreoOut(BaseModel):
     personalizado, trae los valores por defecto (nunca vacía)."""
     asunto: str
     cuerpo: str
+    imagen_url: str | None = None
     placeholders: list[str]
+
+
+class VistaPreviaCorreoIn(BaseModel):
+    cuerpo: str
+
+
+class VistaPreviaCorreoOut(BaseModel):
+    html: str

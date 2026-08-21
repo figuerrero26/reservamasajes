@@ -244,6 +244,7 @@ export interface ConfiguracionGeneral {
 export interface PlantillaCorreo {
   asunto: string;
   cuerpo: string;
+  imagen_url?: string | null;
   placeholders: string[];
 }
 

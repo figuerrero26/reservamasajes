@@ -119,38 +119,38 @@ def _aplicar_plantilla(texto: str, valores: dict[str, str]) -> str:
     return resultado
 
 
-def _cuerpo_confirmacion_texto(intro: str, agenda: Agenda, reserva: Reserva) -> str:
-    lineas = [
-        intro, "",
-        f"- Evento: {agenda.servicio.nombre}",
-        f"- Área: {agenda.area.nombre}",
-        f"- Fecha: {reserva.fecha.isoformat()}",
-        f"- Hora: {reserva.hora_inicio.strftime('%H:%M')} - {reserva.hora_fin.strftime('%H:%M')}",
-        f"- Duración: {agenda.duracion_minutos} minutos",
-        f"- Código de reserva: #{reserva.id}",
-    ]
-    if agenda.servicio.informacion_adicional:
-        lineas += ["", agenda.servicio.informacion_adicional]
+def _cuerpo_confirmacion_texto(intro: str, filas: list[tuple[str, str]], informacion_adicional: str | None) -> str:
+    lineas = [intro, "", *(f"- {k}: {v}" for k, v in filas)]
+    if informacion_adicional:
+        lineas += ["", informacion_adicional]
     return "\n".join(lineas)
 
 
-def _cuerpo_confirmacion_html(intro: str, agenda: Agenda, reserva: Reserva, config: dict[str, str | None]) -> str:
-    """HTML con la temática del sistema (color y logo configurados en el panel admin), para
-    que el correo se vea como parte de la misma aplicación en vez de un texto plano genérico."""
+def _url_absoluta(url: str | None) -> str | None:
+    """Los archivos subidos se guardan como ruta relativa (/api/uploads/...) para que el
+    portal la resuelva contra su propio origen — pero un correo no tiene "origen": hay que
+    anteponer el dominio público antes de usarla en un <img src>."""
+    if not url:
+        return None
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    return f"{settings.FRONTEND_URL.rstrip('/')}{url}"
+
+
+def _cuerpo_confirmacion_html(
+    intro: str, filas: list[tuple[str, str]], config: dict[str, str | None],
+    informacion_adicional: str | None = None, imagen_url: str | None = None,
+) -> str:
+    """HTML con la temática del sistema (color, logo y banner opcional configurados en el
+    panel admin), para que el correo se vea como parte de la misma aplicación en vez de un
+    texto plano genérico. No depende de modelos ORM: recibe valores ya resueltos, así también
+    se puede usar para generar la vista previa en el admin con datos de ejemplo."""
     color = config.get("color_primario") or "#1F3A5F"
-    logo_url = config.get("logo_url")
+    logo_url = _url_absoluta(config.get("logo_url"))
     sistema_nombre = config.get("sistema_nombre") or "Reservas de Bienestar"
     empresa_nombre = config.get("empresa_nombre") or ""
 
     intro_html = html.escape(intro).replace("\n", "<br>")
-    filas = [
-        ("Evento", agenda.servicio.nombre),
-        ("Área", agenda.area.nombre),
-        ("Fecha", reserva.fecha.isoformat()),
-        ("Hora", f"{reserva.hora_inicio.strftime('%H:%M')} - {reserva.hora_fin.strftime('%H:%M')}"),
-        ("Duración", f"{agenda.duracion_minutos} minutos"),
-        ("Código de reserva", f"#{reserva.id}"),
-    ]
     filas_html = "".join(
         f'<tr><td style="padding:8px 0;color:#5b6b7a;font-size:14px;">{html.escape(k)}</td>'
         f'<td style="padding:8px 0;color:#1a2733;font-size:14px;font-weight:600;text-align:right;">'
@@ -161,9 +161,16 @@ def _cuerpo_confirmacion_html(intro: str, agenda: Agenda, reserva: Reserva, conf
         f'<img src="{html.escape(logo_url)}" alt="" height="36" style="display:block;">'
         if logo_url else f'<span style="color:#ffffff;font-size:18px;font-weight:600;">{html.escape(sistema_nombre)}</span>'
     )
+    banner_html = ""
+    imagen_url_absoluta = _url_absoluta(imagen_url)
+    if imagen_url_absoluta:
+        banner_html = (
+            f'<tr><td><img src="{html.escape(imagen_url_absoluta)}" alt="" width="480" '
+            f'style="display:block;width:100%;max-width:480px;"></td></tr>'
+        )
     info_adicional_html = ""
-    if agenda.servicio.informacion_adicional:
-        texto = html.escape(agenda.servicio.informacion_adicional).replace("\n", "<br>")
+    if informacion_adicional:
+        texto = html.escape(informacion_adicional).replace("\n", "<br>")
         info_adicional_html = f'<p style="margin:20px 0 0;color:#5b6b7a;font-size:13px;">{texto}</p>'
 
     return f"""\
@@ -178,6 +185,7 @@ def _cuerpo_confirmacion_html(intro: str, agenda: Agenda, reserva: Reserva, conf
             <tr>
               <td style="background:{color};padding:20px 24px;">{logo_html}</td>
             </tr>
+            {banner_html}
             <tr>
               <td style="padding:28px 24px;">
                 <p style="margin:0 0 20px;color:#1a2733;font-size:15px;line-height:1.6;">{intro_html}</p>
@@ -199,6 +207,42 @@ def _cuerpo_confirmacion_html(intro: str, agenda: Agenda, reserva: Reserva, conf
     </table>
   </body>
 </html>"""
+
+
+def _filas_confirmacion(agenda: Agenda, reserva: Reserva) -> list[tuple[str, str]]:
+    return [
+        ("Evento", agenda.servicio.nombre),
+        ("Área", agenda.area.nombre),
+        ("Fecha", reserva.fecha.isoformat()),
+        ("Hora", f"{reserva.hora_inicio.strftime('%H:%M')} - {reserva.hora_fin.strftime('%H:%M')}"),
+        ("Duración", f"{agenda.duracion_minutos} minutos"),
+        ("Código de reserva", f"#{reserva.id}"),
+    ]
+
+
+def _placeholders_vista_previa(config: dict[str, str | None]) -> dict[str, str]:
+    """Datos de ejemplo para previsualizar la plantilla en el admin sin necesitar una
+    reserva real (ver ConfiguracionService.previsualizar_plantilla_correo)."""
+    return {
+        "nombre": "Juan", "apellido": "Pérez", "evento": "Masaje de relajación", "area": "Oficinas",
+        "fecha": now().date().isoformat(), "hora_inicio": "10:00", "hora_fin": "10:30",
+        "duracion": "30", "codigo": "123",
+        "empresa": config.get("empresa_nombre") or "",
+        "sistema": config.get("sistema_nombre") or "Reservas de Bienestar",
+    }
+
+
+def generar_vista_previa(cuerpo_plantilla: str, config: dict[str, str | None], imagen_url: str | None) -> str:
+    """Renderiza el correo de confirmación con datos de ejemplo, usando el texto que el admin
+    está editando (aún sin guardar) — así ve el correo completo, no solo el saludo."""
+    valores = _placeholders_vista_previa(config)
+    intro = _aplicar_plantilla(cuerpo_plantilla, valores)
+    filas = [
+        ("Evento", valores["evento"]), ("Área", valores["area"]), ("Fecha", valores["fecha"]),
+        ("Hora", f"{valores['hora_inicio']} - {valores['hora_fin']}"),
+        ("Duración", f"{valores['duracion']} minutos"), ("Código de reserva", f"#{valores['codigo']}"),
+    ]
+    return _cuerpo_confirmacion_html(intro, filas, config, None, imagen_url)
 
 
 def enviar_confirmacion_reserva(reserva_id: int) -> None:
@@ -236,8 +280,13 @@ def enviar_confirmacion_reserva(reserva_id: int) -> None:
         intro = _aplicar_plantilla(
             config_general.get("email_confirmacion_cuerpo") or CUERPO_CONFIRMACION_DEFAULT, valores,
         )
-        cuerpo_texto = _cuerpo_confirmacion_texto(intro, agenda, reserva)
-        cuerpo_html = _cuerpo_confirmacion_html(intro, agenda, reserva, config_general)
+        filas = _filas_confirmacion(agenda, reserva)
+        info_adicional = agenda.servicio.informacion_adicional
+        cuerpo_texto = _cuerpo_confirmacion_texto(intro, filas, info_adicional)
+        cuerpo_html = _cuerpo_confirmacion_html(
+            intro, filas, config_general, info_adicional,
+            config_general.get("email_confirmacion_imagen_url"),
+        )
         exito, error = enviar_correo(
             config_smtp, reserva.usuario_correo, asunto, cuerpo_texto, cuerpo_html,
         )
