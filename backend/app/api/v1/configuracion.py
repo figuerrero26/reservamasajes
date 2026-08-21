@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin_full
 from app.database.session import get_db
-from app.schemas.configuracion import ConfiguracionGeneralOut, ConfiguracionValor
+from app.schemas.configuracion import ConfiguracionGeneralOut, ConfiguracionValor, PlantillaCorreoOut
 from app.schemas.smtp import SmtpConfigOut, SmtpConfigUpdate, SmtpPruebaRequest
 from app.services.configuracion_service import ConfiguracionService
 from app.services.smtp_config_service import SmtpConfigService
@@ -21,6 +21,11 @@ def obtener(db: Session = Depends(get_db)):
 def actualizar(data: ConfiguracionValor, db: Session = Depends(get_db),
                admin: dict = Depends(get_current_admin_full)):
     ConfiguracionService(db).actualizar(data.clave, data.valor, admin["id"])
+
+
+@router.get("/plantilla-correo", response_model=PlantillaCorreoOut)
+def obtener_plantilla_correo(db: Session = Depends(get_db), _: dict = Depends(get_current_admin_full)):
+    return ConfiguracionService(db).obtener_plantilla_correo()
 
 
 @router.post("/imagen-bienvenida")

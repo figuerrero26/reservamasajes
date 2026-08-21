@@ -11,7 +11,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import type { ConfiguracionGeneral, SmtpConfig } from "../../types";
+import type { ConfiguracionGeneral, PlantillaCorreo, SmtpConfig } from "../../types";
 import {
   actualizarConfiguracion,
   actualizarConfiguracionSmtp,
@@ -19,6 +19,7 @@ import {
   enviarCorreoPrueba,
   obtenerConfiguracion,
   obtenerConfiguracionSmtp,
+  obtenerPlantillaCorreo,
   obtenerSemanaActiva,
   reiniciarSemana,
   subirImagenBienvenida,
@@ -122,14 +123,22 @@ export default function ConfiguracionPage() {
   const [errorPrueba, setErrorPrueba] = useState<string | null>(null);
   const [exitoPrueba, setExitoPrueba] = useState<string | null>(null);
 
+  const [plantillaAsunto, setPlantillaAsunto] = useState("");
+  const [plantillaCuerpo, setPlantillaCuerpo] = useState("");
+  const [placeholders, setPlaceholders] = useState<string[]>([]);
+  const [guardandoPlantilla, setGuardandoPlantilla] = useState(false);
+  const [errorPlantilla, setErrorPlantilla] = useState<string | null>(null);
+  const [exitoPlantilla, setExitoPlantilla] = useState<string | null>(null);
+
   async function cargar() {
     setCargando(true);
     setError(null);
     try {
-      const [config, semana, configSmtp] = await Promise.all([
+      const [config, semana, configSmtp, plantilla] = await Promise.all([
         obtenerConfiguracion(),
         obtenerSemanaActiva(),
         obtenerConfiguracionSmtp(),
+        obtenerPlantillaCorreo(),
       ]);
       const f = aFormulario(config);
       setOriginal(f);
@@ -140,6 +149,7 @@ export default function ConfiguracionPage() {
       setSemanaFin(semana.fin ?? "");
       setSmtp(aFormularioSmtp(configSmtp));
       setSmtpPasswordConfigurada(configSmtp.password_configurada);
+      aplicarPlantilla(plantilla);
     } catch (e) {
       setError(mensajeError(e, "No se pudo cargar la configuración."));
     } finally {
@@ -273,6 +283,48 @@ export default function ConfiguracionPage() {
       setErrorSmtp(mensajeError(e, "No se pudo guardar la configuración SMTP."));
     } finally {
       setGuardandoSmtp(false);
+    }
+  }
+
+  function aplicarPlantilla(p: PlantillaCorreo) {
+    setPlantillaAsunto(p.asunto);
+    setPlantillaCuerpo(p.cuerpo);
+    setPlaceholders(p.placeholders);
+  }
+
+  async function guardarPlantilla() {
+    if (!plantillaAsunto.trim() || !plantillaCuerpo.trim()) return;
+    setGuardandoPlantilla(true);
+    setErrorPlantilla(null);
+    setExitoPlantilla(null);
+    try {
+      await Promise.all([
+        actualizarConfiguracion("email_confirmacion_asunto", plantillaAsunto.trim()),
+        actualizarConfiguracion("email_confirmacion_cuerpo", plantillaCuerpo.trim()),
+      ]);
+      setExitoPlantilla("Plantilla de correo guardada.");
+    } catch (e) {
+      setErrorPlantilla(mensajeError(e, "No se pudo guardar la plantilla."));
+    } finally {
+      setGuardandoPlantilla(false);
+    }
+  }
+
+  async function restaurarPlantilla() {
+    setGuardandoPlantilla(true);
+    setErrorPlantilla(null);
+    setExitoPlantilla(null);
+    try {
+      await Promise.all([
+        actualizarConfiguracion("email_confirmacion_asunto", null),
+        actualizarConfiguracion("email_confirmacion_cuerpo", null),
+      ]);
+      aplicarPlantilla(await obtenerPlantillaCorreo());
+      setExitoPlantilla("Se restauró la plantilla por defecto.");
+    } catch (e) {
+      setErrorPlantilla(mensajeError(e, "No se pudo restaurar la plantilla."));
+    } finally {
+      setGuardandoPlantilla(false);
     }
   }
 
@@ -627,6 +679,52 @@ export default function ConfiguracionPage() {
           </Box>
         </Paper>
       )}
+
+      <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" sx={{ mb: 2 }}>
+          Plantilla del correo de confirmación
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Correo que recibe el colaborador al reservar. El diseño (logo, color, detalle de la reserva) se toma
+          automáticamente de la configuración del sistema; aquí solo se edita el asunto y el mensaje de saludo.
+        </Typography>
+        {placeholders.length > 0 && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 2 }}>
+            Puedes usar estos datos dentro del texto: {placeholders.map((p) => `{${p}}`).join("  ")}
+          </Typography>
+        )}
+        {errorPlantilla && <Alert severity="error" sx={{ mb: 2 }}>{errorPlantilla}</Alert>}
+        {exitoPlantilla && <Alert severity="success" sx={{ mb: 2 }}>{exitoPlantilla}</Alert>}
+        <Stack spacing={2}>
+          <TextField
+            label="Asunto"
+            value={plantillaAsunto}
+            onChange={(e) => setPlantillaAsunto(e.target.value)}
+            fullWidth
+          />
+          <TextField
+            label="Mensaje de saludo"
+            value={plantillaCuerpo}
+            onChange={(e) => setPlantillaCuerpo(e.target.value)}
+            helperText="Debajo de este mensaje, el correo siempre agrega el detalle de la reserva (evento, fecha, hora, código)."
+            multiline
+            minRows={3}
+            fullWidth
+          />
+        </Stack>
+        <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
+          <Button
+            variant="contained"
+            onClick={guardarPlantilla}
+            disabled={guardandoPlantilla || !plantillaAsunto.trim() || !plantillaCuerpo.trim()}
+          >
+            Guardar plantilla
+          </Button>
+          <Button variant="outlined" onClick={restaurarPlantilla} disabled={guardandoPlantilla}>
+            Restaurar por defecto
+          </Button>
+        </Stack>
+      </Paper>
 
       <ConfirmDialog
         abierto={dialogReiniciar}

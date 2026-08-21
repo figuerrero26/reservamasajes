@@ -240,6 +240,13 @@ export interface ConfiguracionGeneral {
   semana_activa_fin?: string | null;
 }
 
+/** Plantilla efectiva del correo de confirmación de reserva (ver GET /configuracion/plantilla-correo). */
+export interface PlantillaCorreo {
+  asunto: string;
+  cuerpo: string;
+  placeholders: string[];
+}
+
 export interface Administrador {
   id: number;
   usuario: string;

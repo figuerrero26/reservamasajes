@@ -1,5 +1,5 @@
 import api from "./api";
-import type { ConfiguracionGeneral, SmtpConfig, SmtpConfigUpdate } from "../types";
+import type { ConfiguracionGeneral, PlantillaCorreo, SmtpConfig, SmtpConfigUpdate } from "../types";
 
 // Endpoint público (sin autenticación); se usa tanto desde el portal como desde el admin
 // para precargar el formulario, por eso se deja en la instancia base.
@@ -35,3 +35,6 @@ export const actualizarConfiguracionSmtp = async (payload: SmtpConfigUpdate) =>
 
 export const enviarCorreoPrueba = async (destinatario: string) =>
   api.post("/configuracion/smtp/prueba", { destinatario });
+
+export const obtenerPlantillaCorreo = async () =>
+  (await api.get<PlantillaCorreo>("/configuracion/plantilla-correo")).data;

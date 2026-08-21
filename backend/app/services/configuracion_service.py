@@ -7,8 +7,11 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.repositories.configuracion_repository import ConfiguracionRepository
-from app.schemas.configuracion import ConfiguracionGeneralOut, SemanaActivaSet
+from app.schemas.configuracion import ConfiguracionGeneralOut, PlantillaCorreoOut, SemanaActivaSet
 from app.services import auditoria_service
+from app.services.email_service import (
+    ASUNTO_CONFIRMACION_DEFAULT, CUERPO_CONFIRMACION_DEFAULT, PLACEHOLDERS_CONFIRMACION,
+)
 from app.services.errors import DomainError
 from app.utils.uploads import PUBLIC_PREFIX, UPLOAD_DIR
 
@@ -17,7 +20,9 @@ CLAVES_PUBLICAS = [
     "mensaje_bienvenida", "imagen_bienvenida_url", "color_boton_disponibilidad", "color_fondo_bienvenida",
     "evento_unico_por_semana",
 ]
-CLAVES_ADMIN = CLAVES_PUBLICAS + ["cancelacion_horas_minimas"]
+CLAVES_ADMIN = CLAVES_PUBLICAS + [
+    "cancelacion_horas_minimas", "email_confirmacion_asunto", "email_confirmacion_cuerpo",
+]
 
 # Extensión y tamaño máximo (bytes) por tipo MIME aceptado para el banner de bienvenida:
 # imagen estática, GIF animado o un video corto.
@@ -91,6 +96,13 @@ class ConfiguracionService:
             (UPLOAD_DIR / Path(anterior).name).unlink(missing_ok=True)
 
         return url
+
+    def obtener_plantilla_correo(self) -> PlantillaCorreoOut:
+        return PlantillaCorreoOut(
+            asunto=self.repo.get("email_confirmacion_asunto") or ASUNTO_CONFIRMACION_DEFAULT,
+            cuerpo=self.repo.get("email_confirmacion_cuerpo") or CUERPO_CONFIRMACION_DEFAULT,
+            placeholders=PLACEHOLDERS_CONFIRMACION,
+        )
 
     def semana_activa(self) -> tuple[date | None, date | None]:
         inicio = self.repo.get("semana_activa_inicio")

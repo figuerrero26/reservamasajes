@@ -4,6 +4,7 @@ Se invoca desde una BackgroundTask de FastAPI (después de que la reserva ya se 
 committeó), con su propia sesión de BD. Si el envío falla, se registra en `notificaciones`
 con el error — la reserva ya existe y no se revierte por esto.
 """
+import html
 import smtplib
 import ssl
 from dataclasses import dataclass
@@ -14,8 +15,23 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database.session import SessionLocal
 from app.models import Agenda, ConfiguracionSmtp, EstadoNotificacion, Notificacion, Reserva, Usuario
+from app.repositories.configuracion_repository import ConfiguracionRepository
 from app.utils.crypto import descifrar
 from app.utils.time import now
+
+# Plantilla editable desde el admin (configuracion_general, claves "email_confirmacion_*"):
+# solo el asunto y el mensaje de introducción son personalizables por placeholders — el
+# bloque de detalle de la reserva (evento, fecha, hora, código) se genera aparte, siempre con
+# el mismo formato, para que un texto mal editado nunca rompa esa información crítica.
+ASUNTO_CONFIRMACION_DEFAULT = "Confirmación de tu reserva - {evento}"
+CUERPO_CONFIRMACION_DEFAULT = (
+    "¡Hola {nombre}!\n\n"
+    "Tu espacio de bienestar quedó confirmado. Este es el detalle de tu reserva:"
+)
+PLACEHOLDERS_CONFIRMACION = [
+    "nombre", "apellido", "evento", "area", "fecha", "hora_inicio", "hora_fin",
+    "duracion", "codigo", "empresa", "sistema",
+]
 
 
 @dataclass
@@ -50,12 +66,15 @@ def resolver_config_smtp(db: Session) -> SmtpConfig | None:
     return None
 
 
-def enviar_correo(config: SmtpConfig, destinatario: str, asunto: str, cuerpo_texto: str) -> tuple[bool, str | None]:
+def enviar_correo(config: SmtpConfig, destinatario: str, asunto: str, cuerpo_texto: str,
+                   cuerpo_html: str | None = None) -> tuple[bool, str | None]:
     mensaje = EmailMessage()
     mensaje["Subject"] = asunto
     mensaje["From"] = f"{config.from_nombre} <{config.from_email}>"
     mensaje["To"] = destinatario
     mensaje.set_content(cuerpo_texto)
+    if cuerpo_html:
+        mensaje.add_alternative(cuerpo_html, subtype="html")
 
     try:
         if config.tls:
@@ -75,11 +94,34 @@ def enviar_correo(config: SmtpConfig, destinatario: str, asunto: str, cuerpo_tex
         return False, str(exc)
 
 
-def _cuerpo_confirmacion(reserva: Reserva, agenda: Agenda) -> str:
+def _placeholders_confirmacion(reserva: Reserva, agenda: Agenda, config: dict[str, str | None]) -> dict[str, str]:
+    return {
+        "nombre": reserva.usuario_nombre,
+        "apellido": reserva.usuario_apellido or "",
+        "evento": agenda.servicio.nombre,
+        "area": agenda.area.nombre,
+        "fecha": reserva.fecha.isoformat(),
+        "hora_inicio": reserva.hora_inicio.strftime("%H:%M"),
+        "hora_fin": reserva.hora_fin.strftime("%H:%M"),
+        "duracion": str(agenda.duracion_minutos),
+        "codigo": str(reserva.id),
+        "empresa": config.get("empresa_nombre") or "",
+        "sistema": config.get("sistema_nombre") or "Reservas de Bienestar",
+    }
+
+
+def _aplicar_plantilla(texto: str, valores: dict[str, str]) -> str:
+    """Sustitución de placeholders {clave} tolerante a texto libre: no usa str.format porque
+    un admin podría escribir llaves sueltas en la plantilla y eso no debe romper el envío."""
+    resultado = texto
+    for clave, valor in valores.items():
+        resultado = resultado.replace(f"{{{clave}}}", valor)
+    return resultado
+
+
+def _cuerpo_confirmacion_texto(intro: str, agenda: Agenda, reserva: Reserva) -> str:
     lineas = [
-        f"Hola {reserva.usuario_nombre},",
-        "",
-        f"Tu reserva fue confirmada. Aquí el detalle:",
+        intro, "",
         f"- Evento: {agenda.servicio.nombre}",
         f"- Área: {agenda.area.nombre}",
         f"- Fecha: {reserva.fecha.isoformat()}",
@@ -90,6 +132,73 @@ def _cuerpo_confirmacion(reserva: Reserva, agenda: Agenda) -> str:
     if agenda.servicio.informacion_adicional:
         lineas += ["", agenda.servicio.informacion_adicional]
     return "\n".join(lineas)
+
+
+def _cuerpo_confirmacion_html(intro: str, agenda: Agenda, reserva: Reserva, config: dict[str, str | None]) -> str:
+    """HTML con la temática del sistema (color y logo configurados en el panel admin), para
+    que el correo se vea como parte de la misma aplicación en vez de un texto plano genérico."""
+    color = config.get("color_primario") or "#1F3A5F"
+    logo_url = config.get("logo_url")
+    sistema_nombre = config.get("sistema_nombre") or "Reservas de Bienestar"
+    empresa_nombre = config.get("empresa_nombre") or ""
+
+    intro_html = html.escape(intro).replace("\n", "<br>")
+    filas = [
+        ("Evento", agenda.servicio.nombre),
+        ("Área", agenda.area.nombre),
+        ("Fecha", reserva.fecha.isoformat()),
+        ("Hora", f"{reserva.hora_inicio.strftime('%H:%M')} - {reserva.hora_fin.strftime('%H:%M')}"),
+        ("Duración", f"{agenda.duracion_minutos} minutos"),
+        ("Código de reserva", f"#{reserva.id}"),
+    ]
+    filas_html = "".join(
+        f'<tr><td style="padding:8px 0;color:#5b6b7a;font-size:14px;">{html.escape(k)}</td>'
+        f'<td style="padding:8px 0;color:#1a2733;font-size:14px;font-weight:600;text-align:right;">'
+        f'{html.escape(v)}</td></tr>'
+        for k, v in filas
+    )
+    logo_html = (
+        f'<img src="{html.escape(logo_url)}" alt="" height="36" style="display:block;">'
+        if logo_url else f'<span style="color:#ffffff;font-size:18px;font-weight:600;">{html.escape(sistema_nombre)}</span>'
+    )
+    info_adicional_html = ""
+    if agenda.servicio.informacion_adicional:
+        texto = html.escape(agenda.servicio.informacion_adicional).replace("\n", "<br>")
+        info_adicional_html = f'<p style="margin:20px 0 0;color:#5b6b7a;font-size:13px;">{texto}</p>'
+
+    return f"""\
+<!doctype html>
+<html>
+  <body style="margin:0;padding:24px;background:#F4F7FB;font-family:'Segoe UI',Roboto,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="480" cellpadding="0" cellspacing="0"
+                 style="max-width:480px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="background:{color};padding:20px 24px;">{logo_html}</td>
+            </tr>
+            <tr>
+              <td style="padding:28px 24px;">
+                <p style="margin:0 0 20px;color:#1a2733;font-size:15px;line-height:1.6;">{intro_html}</p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                       style="border-top:1px solid #edf0f3;">
+                  {filas_html}
+                </table>
+                {info_adicional_html}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 24px;background:#F4F7FB;color:#8a97a3;font-size:12px;">
+                {html.escape(empresa_nombre)} · Este es un mensaje automático, no respondas a este correo.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"""
 
 
 def enviar_confirmacion_reserva(reserva_id: int) -> None:
@@ -111,17 +220,27 @@ def enviar_confirmacion_reserva(reserva_id: int) -> None:
         db.add(notificacion)
         db.flush()
 
-        config = resolver_config_smtp(db)
+        config_smtp = resolver_config_smtp(db)
         notificacion.intentos = 1
-        if config is None:
+        if config_smtp is None:
             notificacion.estado = EstadoNotificacion.FALLIDO.value
             notificacion.error_mensaje = "SMTP no configurado"
             db.commit()
             return
 
-        asunto = f"Confirmación de reserva - {agenda.servicio.nombre}"
-        cuerpo = _cuerpo_confirmacion(reserva, agenda)
-        exito, error = enviar_correo(config, reserva.usuario_correo, asunto, cuerpo)
+        config_general = ConfiguracionRepository(db).get_all()
+        valores = _placeholders_confirmacion(reserva, agenda, config_general)
+        asunto = _aplicar_plantilla(
+            config_general.get("email_confirmacion_asunto") or ASUNTO_CONFIRMACION_DEFAULT, valores,
+        )
+        intro = _aplicar_plantilla(
+            config_general.get("email_confirmacion_cuerpo") or CUERPO_CONFIRMACION_DEFAULT, valores,
+        )
+        cuerpo_texto = _cuerpo_confirmacion_texto(intro, agenda, reserva)
+        cuerpo_html = _cuerpo_confirmacion_html(intro, agenda, reserva, config_general)
+        exito, error = enviar_correo(
+            config_smtp, reserva.usuario_correo, asunto, cuerpo_texto, cuerpo_html,
+        )
 
         notificacion.estado = EstadoNotificacion.ENVIADO.value if exito else EstadoNotificacion.FALLIDO.value
         notificacion.error_mensaje = error

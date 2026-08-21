@@ -28,3 +28,11 @@ class ConfiguracionGeneralOut(BaseModel):
 class SemanaActivaSet(BaseModel):
     inicio: date
     fin: date
+
+
+class PlantillaCorreoOut(BaseModel):
+    """Plantilla efectiva del correo de confirmación de reserva: si el admin no la ha
+    personalizado, trae los valores por defecto (nunca vacía)."""
+    asunto: str
+    cuerpo: str
+    placeholders: list[str]
