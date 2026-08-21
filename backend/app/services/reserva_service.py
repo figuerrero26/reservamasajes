@@ -199,17 +199,34 @@ class ReservaService:
         importar área ni evento (salvo que se filtre por `servicio_id`) — disponibles,
         ocupados, bloqueados o pasados. A diferencia de `buscar()`, que solo lista reservas
         que existen, esto usa la misma generación dinámica del portal público (HorarioService)
-        para que también se vean los espacios libres."""
+        para que también se vean los espacios libres.
+
+        Incluye reservas `completada`/`no_asistio` (no solo `activa`): un turno ya cerrado
+        sigue mostrando quién lo ocupó y con qué resultado, para que el admin pueda revisar
+        el historial del día sin perder esa información."""
+        ahora = now()
         resultado = []
         for agenda in self.agendas.list_activas(servicio_id=servicio_id):
-            slots = self.horarios.generar(agenda.id, fecha)
-            reservas_por_hora = {r.hora_inicio: r for r in self.reservas.activas_por_agenda_fecha(agenda.id, fecha)}
+            slots = self.horarios.generar(agenda.id, fecha, incluir_pasado=True)
+            reservas_por_hora = {
+                r.hora_inicio: r for r in self.reservas.no_canceladas_por_agenda_fecha(agenda.id, fecha)
+            }
             slots_dia = []
             for s in slots:
                 r = reservas_por_hora.get(s.hora_inicio)
+                # HorarioService solo conoce reservas `activa` al calcular disponibilidad; si
+                # esta ya se marcó completada/no_asistio, forzamos el turno a "ocupado" para
+                # que el panel nunca lo muestre como libre (el detalle real va en reserva_estado).
+                estado_slot = EstadoSlot.OCUPADO if r else s.estado
+                puede_marcar_asistencia = bool(
+                    r and r.estado == EstadoReserva.ACTIVA.value
+                    and datetime.combine(fecha, s.hora_inicio, tzinfo=TZ) <= ahora
+                )
                 slots_dia.append(SlotDia(
-                    hora_inicio=s.hora_inicio, hora_fin=s.hora_fin, estado=s.estado,
+                    hora_inicio=s.hora_inicio, hora_fin=s.hora_fin, estado=estado_slot,
                     reserva_id=r.id if r else None,
+                    reserva_estado=r.estado if r else None,
+                    puede_marcar_asistencia=puede_marcar_asistencia,
                     usuario_nombre=r.usuario_nombre if r else None,
                     usuario_apellido=r.usuario_apellido if r else None,
                     usuario_correo=r.usuario_correo if r else None,
@@ -221,6 +238,27 @@ class ReservaService:
                 slots=slots_dia,
             ))
         return resultado
+
+    def marcar_asistencia(self, reserva_id: int, asistio: bool, admin_id: int) -> Reserva:
+        """Cierra el ciclo de una reserva cuyo horario ya pasó: registra si el colaborador
+        asistió o no. A diferencia de `cancelar()`, el turno NO vuelve a quedar disponible —
+        queda con un resultado permanente para el historial."""
+        reserva = self.reservas.get(reserva_id)
+        if not reserva:
+            raise NotFound("Reserva no encontrada")
+        if reserva.estado != EstadoReserva.ACTIVA.value:
+            raise DomainError("La reserva no está activa")
+        inicio_cita = datetime.combine(reserva.fecha, reserva.hora_inicio, tzinfo=TZ)
+        if inicio_cita > now():
+            raise DomainError("No se puede marcar asistencia de una reserva que aún no ha ocurrido")
+
+        reserva.estado = EstadoReserva.COMPLETADA.value if asistio else EstadoReserva.NO_ASISTIO.value
+        auditoria_service.registrar(
+            self.db, admin_id, "marcar_asistencia", "reserva", reserva.id,
+            datos_nuevos={"estado": reserva.estado},
+        )
+        self.db.commit()
+        return reserva
 
     def reiniciar_semana(self, fecha_lunes: date, admin_id: int) -> int:
         """Reinicio semanal por cambio de estado: conserva la trazabilidad, nunca borra filas."""

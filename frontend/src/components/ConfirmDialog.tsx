@@ -14,7 +14,7 @@ interface ConfirmDialogProps {
   titulo: string;
   contenido?: ReactNode;
   textoConfirmar?: string;
-  colorConfirmar?: "primary" | "error" | "warning";
+  colorConfirmar?: "primary" | "error" | "warning" | "success";
   cargando?: boolean;
   error?: string | null;
   onConfirmar: () => void;

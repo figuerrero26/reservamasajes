@@ -62,6 +62,21 @@ class ReservaRepository(BaseRepository[Reserva]):
             ).scalars().all()
         )
 
+    def no_canceladas_por_agenda_fecha(self, agenda_id: int, fecha: date) -> list[Reserva]:
+        """Como `activas_por_agenda_fecha`, pero incluye también `completada`/`no_asistio`:
+        para la vista "por día" del panel (ver ReservaService.dia), donde una reserva ya
+        pasada debe seguir mostrando quién ocupó el turno y con qué resultado, aunque ya no
+        esté "activa". Las canceladas sí se excluyen: su turno vuelve a quedar libre."""
+        return list(
+            self.db.execute(
+                select(Reserva).where(
+                    Reserva.agenda_id == agenda_id,
+                    Reserva.fecha == fecha,
+                    Reserva.estado != EstadoReserva.CANCELADA.value,
+                )
+            ).scalars().all()
+        )
+
     def buscar(self, nombre: str | None = None, correo: str | None = None,
                fecha: date | None = None, agenda_id: int | None = None,
                servicio_id: int | None = None, estado: str | None = None) -> list[Reserva]:

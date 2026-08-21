@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Alert, Box, Button, Grid, Typography } from "@mui/material";
+import {
+  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
+  Grid, Typography,
+} from "@mui/material";
 import Loader from "../components/Loader";
 import AgendaCard from "../components/AgendaCard";
 import WeekCalendar from "../components/WeekCalendar";
@@ -34,6 +37,7 @@ export default function DisponibilidadPage() {
   const [dias, setDias] = useState<string[]>([]);
   const [seleccion, setSeleccion] = useState<{ fecha: string; slot: Slot } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [loginRequerido, setLoginRequerido] = useState<{ fecha: string; slot: Slot } | null>(null);
 
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +98,14 @@ export default function DisponibilidadPage() {
       setSeleccion({ fecha, slot });
       return;
     }
-    const pendiente: ReservaPendiente = { eventoId, agendaId: agendaSeleccionada.id, fecha, slot };
+    setLoginRequerido({ fecha, slot });
+  }
+
+  function irAIniciarSesion() {
+    if (!agendaSeleccionada || !loginRequerido) return;
+    const pendiente: ReservaPendiente = {
+      eventoId, agendaId: agendaSeleccionada.id, fecha: loginRequerido.fecha, slot: loginRequerido.slot,
+    };
     sessionStorage.setItem(CLAVE_RESERVA_PENDIENTE, JSON.stringify(pendiente));
     navigate(`/login?next=/eventos/${eventoId}`);
   }
@@ -169,6 +180,23 @@ export default function DisponibilidadPage() {
           onReservada={() => setRefreshKey((k) => k + 1)}
         />
       )}
+
+      <Dialog open={!!loginRequerido} onClose={() => setLoginRequerido(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Inicia sesión para agendar</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Para apartar el horario de las {loginRequerido?.slot.hora_inicio.slice(0, 5)} necesitas
+            iniciar sesión primero (o registrarte si aún no tienes cuenta). No te preocupes, guardamos
+            tu selección y podrás continuar apenas ingreses.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLoginRequerido(null)}>Cancelar</Button>
+          <Button variant="contained" onClick={irAIniciarSesion}>
+            Iniciar sesión
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

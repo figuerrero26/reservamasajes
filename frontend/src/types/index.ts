@@ -81,12 +81,16 @@ export interface HorariosResponse {
 }
 
 /** Un turno del día para una agenda, vista administrativa: si está ocupado, trae quién lo
- * reservó (ver GET /reservas/dia). */
+ * reservó (ver GET /reservas/dia). `reserva_estado` distingue si la reserva sigue activa o
+ * ya se cerró (completada/no_asistio); `puede_marcar_asistencia` indica si el panel debe
+ * ofrecer esa acción (solo reservas activas cuyo horario ya pasó). */
 export interface SlotDia {
   hora_inicio: string;
   hora_fin: string;
   estado: EstadoSlot;
   reserva_id: number | null;
+  reserva_estado?: "activa" | "completada" | "no_asistio" | null;
+  puede_marcar_asistencia?: boolean;
   usuario_nombre?: string | null;
   usuario_apellido?: string | null;
   usuario_correo?: string | null;

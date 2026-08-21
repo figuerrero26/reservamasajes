@@ -56,3 +56,8 @@ export async function cancelarReserva(id: number): Promise<Reserva> {
   const { data } = await api.delete<Reserva>(`/reservas/${id}`);
   return data;
 }
+
+export async function marcarAsistencia(id: number, asistio: boolean): Promise<Reserva> {
+  const { data } = await api.post<Reserva>(`/reservas/${id}/asistencia`, { asistio });
+  return data;
+}

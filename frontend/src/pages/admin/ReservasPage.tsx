@@ -28,7 +28,7 @@ import AddIcon from "@mui/icons-material/Add";
 import type { Agenda, AgendaDia, EstadoSlot, Servicio, SlotDia } from "../../types";
 import { listarAgendas } from "../../services/agendas";
 import { listarServicios } from "../../services/servicios";
-import { cancelarReserva, crearReservaManual, obtenerDia } from "../../services/reservas";
+import { cancelarReserva, crearReservaManual, marcarAsistencia, obtenerDia } from "../../services/reservas";
 import { mensajeError } from "../../utils/errors";
 import Loader from "../../components/Loader";
 import ConfirmDialog from "../../components/ConfirmDialog";
@@ -42,12 +42,24 @@ const ETIQUETA_ESTADO_SLOT: Record<EstadoSlot, string> = {
   pasado: "Pasado",
 };
 
-const COLOR_ESTADO_SLOT: Record<EstadoSlot, "success" | "primary" | "warning" | "default"> = {
+const COLOR_ESTADO_SLOT: Record<EstadoSlot, "success" | "primary" | "warning" | "default" | "error"> = {
   disponible: "success",
   ocupado: "primary",
   bloqueado: "warning",
   pasado: "default",
 };
+
+function etiquetaSlot(slot: SlotDia): string {
+  if (slot.reserva_estado === "completada") return "Asistió";
+  if (slot.reserva_estado === "no_asistio") return "No asistió";
+  return ETIQUETA_ESTADO_SLOT[slot.estado];
+}
+
+function colorSlot(slot: SlotDia): "success" | "primary" | "warning" | "default" | "error" {
+  if (slot.reserva_estado === "completada") return "success";
+  if (slot.reserva_estado === "no_asistio") return "error";
+  return COLOR_ESTADO_SLOT[slot.estado];
+}
 
 function hoyISO() {
   const hoy = new Date();
@@ -84,6 +96,10 @@ export default function ReservasPage() {
   const [dialogCancelar, setDialogCancelar] = useState<CancelarInfo | null>(null);
   const [cancelando, setCancelando] = useState(false);
   const [errorCancelar, setErrorCancelar] = useState<string | null>(null);
+
+  const [dialogAsistencia, setDialogAsistencia] = useState<(CancelarInfo & { asistio: boolean }) | null>(null);
+  const [marcando, setMarcando] = useState(false);
+  const [errorAsistencia, setErrorAsistencia] = useState<string | null>(null);
 
   const [dialogNueva, setDialogNueva] = useState(false);
   const [nuevaCorreo, setNuevaCorreo] = useState("");
@@ -132,6 +148,21 @@ export default function ReservasPage() {
       setErrorCancelar(mensajeError(e, "No se pudo cancelar la reserva."));
     } finally {
       setCancelando(false);
+    }
+  }
+
+  async function confirmarAsistencia() {
+    if (!dialogAsistencia?.slot.reserva_id) return;
+    setMarcando(true);
+    setErrorAsistencia(null);
+    try {
+      await marcarAsistencia(dialogAsistencia.slot.reserva_id, dialogAsistencia.asistio);
+      setDialogAsistencia(null);
+      await cargar();
+    } catch (e) {
+      setErrorAsistencia(mensajeError(e, "No se pudo registrar la asistencia."));
+    } finally {
+      setMarcando(false);
     }
   }
 
@@ -262,8 +293,8 @@ export default function ReservasPage() {
                             <TableCell>
                               <Chip
                                 size="small"
-                                label={ETIQUETA_ESTADO_SLOT[slot.estado]}
-                                color={COLOR_ESTADO_SLOT[slot.estado]}
+                                label={etiquetaSlot(slot)}
+                                color={colorSlot(slot)}
                                 variant={slot.estado === "disponible" ? "outlined" : "filled"}
                               />
                             </TableCell>
@@ -274,14 +305,40 @@ export default function ReservasPage() {
                             <TableCell>{slot.notes || "—"}</TableCell>
                             {puedeGestionar && (
                               <TableCell align="right">
-                                {slot.estado === "ocupado" && slot.reserva_id && (
-                                  <Button
-                                    size="small"
-                                    color="error"
-                                    onClick={() => { setDialogCancelar({ agenda, slot }); setErrorCancelar(null); }}
-                                  >
-                                    Cancelar
-                                  </Button>
+                                {slot.estado === "ocupado" && slot.reserva_id && slot.reserva_estado === "activa" && (
+                                  <Stack direction="row" spacing={1} justifyContent="flex-end" flexWrap="wrap">
+                                    {slot.puede_marcar_asistencia && (
+                                      <>
+                                        <Button
+                                          size="small"
+                                          color="success"
+                                          onClick={() => {
+                                            setDialogAsistencia({ agenda, slot, asistio: true });
+                                            setErrorAsistencia(null);
+                                          }}
+                                        >
+                                          Asistió
+                                        </Button>
+                                        <Button
+                                          size="small"
+                                          color="warning"
+                                          onClick={() => {
+                                            setDialogAsistencia({ agenda, slot, asistio: false });
+                                            setErrorAsistencia(null);
+                                          }}
+                                        >
+                                          No asistió
+                                        </Button>
+                                      </>
+                                    )}
+                                    <Button
+                                      size="small"
+                                      color="error"
+                                      onClick={() => { setDialogCancelar({ agenda, slot }); setErrorCancelar(null); }}
+                                    >
+                                      Cancelar
+                                    </Button>
+                                  </Stack>
                                 )}
                               </TableCell>
                             )}
@@ -315,6 +372,27 @@ export default function ReservasPage() {
         error={errorCancelar}
         onConfirmar={confirmarCancelar}
         onCancelar={() => setDialogCancelar(null)}
+      />
+
+      <ConfirmDialog
+        abierto={!!dialogAsistencia}
+        titulo={dialogAsistencia?.asistio ? "Marcar asistencia" : "Marcar inasistencia"}
+        contenido={
+          dialogAsistencia && (
+            <span>
+              ¿Confirmas que {dialogAsistencia.slot.usuario_nombre} {dialogAsistencia.slot.usuario_apellido}{" "}
+              {dialogAsistencia.asistio ? "sí asistió" : "no asistió"} el {fecha} a las{" "}
+              {dialogAsistencia.slot.hora_inicio.slice(0, 5)} en {dialogAsistencia.agenda.evento_nombre}?
+              Esta acción no se puede deshacer.
+            </span>
+          )
+        }
+        textoConfirmar={dialogAsistencia?.asistio ? "Sí asistió" : "No asistió"}
+        colorConfirmar={dialogAsistencia?.asistio ? "success" : "warning"}
+        cargando={marcando}
+        error={errorAsistencia}
+        onConfirmar={confirmarAsistencia}
+        onCancelar={() => setDialogAsistencia(null)}
       />
 
       <Dialog open={dialogNueva} onClose={() => setDialogNueva(false)} maxWidth="xs" fullWidth>

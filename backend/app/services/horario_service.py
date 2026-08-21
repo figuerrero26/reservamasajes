@@ -25,13 +25,19 @@ class HorarioService:
         self.reservas = ReservaRepository(db)
         self.configuracion = ConfiguracionRepository(db)
 
-    def generar(self, agenda_id: int, fecha: date) -> list[Slot]:
+    def generar(self, agenda_id: int, fecha: date, incluir_pasado: bool = False) -> list[Slot]:
+        """`incluir_pasado=True` reconstruye los turnos de un día ya pasado (todos marcados
+        como PASADO salvo que estén ocupados/bloqueados) en vez de devolver una lista vacía.
+        Solo lo usa la vista administrativa "por día" (ver ReservaService.dia) para revisar
+        el historial; el flujo público de reserva nunca debe ver ni ofrecer días pasados."""
         agenda = self.agendas.get(agenda_id)
         if not agenda or not agenda.activo:
             raise NotFound("Agenda no encontrada o inactiva")
 
-        # Fecha completamente pasada: nunca hay slots (no solo los del propio día en curso).
-        if fecha < today():
+        es_pasado = fecha < today()
+        # Fecha completamente pasada: nunca hay slots reservables (no solo los del propio
+        # día en curso), salvo que se pida explícitamente el histórico.
+        if es_pasado and not incluir_pasado:
             return []
 
         # Fuera de la semana activa configurada por el admin (si hay una definida): sin slots.
@@ -61,10 +67,11 @@ class HorarioService:
         ahora = now()
         es_hoy = fecha == today()
 
-        return self._construir_slots(agenda, fecha, ocupados, rangos_bloqueados, es_hoy, ahora.time())
+        return self._construir_slots(agenda, fecha, ocupados, rangos_bloqueados, es_hoy, ahora.time(), es_pasado)
 
     def _construir_slots(self, agenda: Agenda, fecha: date, ocupados: set,
-                         rangos_bloqueados: list, es_hoy: bool, hora_actual: time) -> list[Slot]:
+                         rangos_bloqueados: list, es_hoy: bool, hora_actual: time,
+                         es_pasado: bool = False) -> list[Slot]:
         slots: list[Slot] = []
         cursor = agenda.hora_inicio
         dur = agenda.duracion_minutos
@@ -84,7 +91,7 @@ class HorarioService:
                 bloqueado = any(
                     overlaps(cursor, fin, b_ini, b_fin) for b_ini, b_fin in rangos_bloqueados
                 )
-                pasado = es_hoy and cursor <= hora_actual
+                pasado = es_pasado or (es_hoy and cursor <= hora_actual)
                 ocupado = cursor in ocupados
 
                 if bloqueado:

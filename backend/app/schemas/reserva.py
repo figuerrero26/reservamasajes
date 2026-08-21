@@ -75,11 +75,16 @@ class ReservaCreadaOut(ReservaOut):
 
 
 class SlotDia(BaseModel):
-    """Un turno del día para una agenda: si está ocupado, trae quién lo reservó."""
+    """Un turno del día para una agenda: si está ocupado, trae quién lo reservó.
+    `reserva_estado` distingue si la reserva sigue activa o ya se cerró (completada/
+    no_asistio); `puede_marcar_asistencia` indica si el panel debe ofrecer esa acción
+    (solo reservas activas cuyo horario ya pasó)."""
     hora_inicio: time
     hora_fin: time
     estado: EstadoSlot
     reserva_id: int | None = None
+    reserva_estado: str | None = None
+    puede_marcar_asistencia: bool = False
     usuario_nombre: str | None = None
     usuario_apellido: str | None = None
     usuario_correo: str | None = None
@@ -95,6 +100,12 @@ class AgendaDia(BaseModel):
     area_nombre: str
     evento_nombre: str
     slots: list[SlotDia]
+
+
+class MarcarAsistenciaIn(BaseModel):
+    """Cierra el ciclo de una reserva ya pasada: True = asistió (completada), False = no
+    asistió."""
+    asistio: bool
 
 
 class ReservaConfirmacion(BaseModel):
