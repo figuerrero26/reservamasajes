@@ -32,6 +32,9 @@ export default function PublicLayout() {
           </Box>
 
           <Stack direction="row" spacing={1} alignItems="center">
+            <Button color="inherit" component={RouterLink} to="/">
+              Inicio
+            </Button>
             {token ? (
               <>
                 <Typography variant="body2" sx={{ display: { xs: "none", sm: "block" }, opacity: 0.9 }}>
