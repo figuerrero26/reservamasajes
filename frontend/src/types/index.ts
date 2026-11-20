@@ -293,3 +293,86 @@ export interface Auditoria {
 export interface ApiErrorBody {
   detail?: string;
 }
+
+// ---- Módulo de actividades genéricas (inscripciones con cupo configurable) ----
+
+export type TipoCampoFormulario = "texto" | "numero" | "si_no" | "seleccion";
+
+export interface CampoFormulario {
+  clave: string;
+  etiqueta: string;
+  tipo: TipoCampoFormulario;
+  requerido: boolean;
+  opciones?: string[] | null;
+}
+
+export interface Actividad {
+  id: number;
+  nombre: string;
+  descripcion_corta?: string | null;
+  descripcion_larga?: string | null;
+  imagen_url?: string | null;
+  informacion_adicional?: string | null;
+  campos_formulario: CampoFormulario[];
+  inscripcion_abierta: boolean;
+  fecha_apertura_inscripciones?: string | null;
+  fecha_cierre_inscripciones?: string | null;
+  activo: boolean;
+}
+
+/** Catálogo público: igual que Actividad pero con el estado de inscripción ya evaluado. */
+export interface ActividadPublica {
+  id: number;
+  nombre: string;
+  descripcion_corta?: string | null;
+  descripcion_larga?: string | null;
+  imagen_url?: string | null;
+  informacion_adicional?: string | null;
+  campos_formulario: CampoFormulario[];
+  inscripcion_disponible: boolean;
+}
+
+export interface Sesion {
+  id: number;
+  actividad_id: number;
+  fecha: string;
+  hora_inicio: string;
+  hora_fin: string;
+  cupo_maximo?: number | null;
+  activa: boolean;
+  inscritos: number;
+  cupos_disponibles?: number | null; // null = sin límite
+}
+
+export type EstadoInscripcion = "activa" | "cancelada" | "completada" | "no_asistio";
+
+export interface Inscripcion {
+  id: number;
+  sesion_id: number;
+  usuario_id?: number | null;
+  respuestas_formulario?: Record<string, string | number | boolean | null> | null;
+  estado: EstadoInscripcion;
+  notes?: string | null;
+  created_at: string;
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
+}
+
+/** Vista propia del colaborador (GET /inscripciones/mias): agrega nombres legibles. */
+export interface MiInscripcion extends Inscripcion {
+  actividad_nombre: string;
+  sesion_fecha: string;
+  sesion_hora_inicio: string;
+  sesion_hora_fin: string;
+}
+
+/** Vista administrativa (GET /inscripciones): agrega identidad del colaborador. */
+export interface InscripcionAdmin extends Inscripcion {
+  usuario_nombre: string;
+  usuario_apellido: string;
+  usuario_correo?: string | null;
+  actividad_nombre: string;
+  sesion_fecha: string;
+  sesion_hora_inicio: string;
+  puede_marcar_asistencia: boolean;
+}

@@ -13,9 +13,13 @@ from app.models.auditoria import Auditoria
 from app.models.configuracion import ConfiguracionGeneral
 from app.models.notificacion import Notificacion, EstadoNotificacion
 from app.models.configuracion_smtp import ConfiguracionSmtp
+from app.models.actividad import Actividad
+from app.models.sesion import Sesion
+from app.models.inscripcion import Inscripcion, EstadoInscripcion
 
 __all__ = [
     "Base", "Rol", "Administrador", "Usuario", "Area", "Servicio", "Agenda",
     "Reserva", "EstadoReserva", "Bloqueo", "Festivo", "Auditoria",
     "ConfiguracionGeneral", "Notificacion", "EstadoNotificacion", "ConfiguracionSmtp",
+    "Actividad", "Sesion", "Inscripcion", "EstadoInscripcion",
 ]

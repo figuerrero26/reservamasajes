@@ -25,6 +25,7 @@ import CategoryIcon from "@mui/icons-material/Category";
 import SpaIcon from "@mui/icons-material/Spa";
 import EventNoteIcon from "@mui/icons-material/EventNote";
 import EventAvailableIcon from "@mui/icons-material/EventAvailable";
+import GroupsIcon from "@mui/icons-material/Groups";
 import PeopleIcon from "@mui/icons-material/People";
 import BlockIcon from "@mui/icons-material/Block";
 import CelebrationIcon from "@mui/icons-material/Celebration";
@@ -52,6 +53,7 @@ const SECCIONES: Seccion[] = [
   { texto: "Servicios", ruta: "/admin/servicios", icono: <SpaIcon /> },
   { texto: "Agendas", ruta: "/admin/agendas", icono: <EventNoteIcon /> },
   { texto: "Reservas", ruta: "/admin/reservas", icono: <EventAvailableIcon /> },
+  { texto: "Actividades", ruta: "/admin/actividades", icono: <GroupsIcon /> },
   { texto: "Usuarios", ruta: "/admin/usuarios", icono: <PeopleIcon /> },
   { texto: "Bloqueos", ruta: "/admin/bloqueos", icono: <BlockIcon /> },
   { texto: "Festivos", ruta: "/admin/festivos", icono: <CelebrationIcon /> },

@@ -8,12 +8,16 @@ import RegistroPage from "../pages/RegistroPage";
 import OlvidePasswordPage from "../pages/OlvidePasswordPage";
 import RestablecerPasswordPage from "../pages/RestablecerPasswordPage";
 import MisReservasPage from "../pages/MisReservasPage";
+import ActividadesPublicasPage from "../pages/ActividadesPublicasPage";
+import ActividadDetallePage from "../pages/ActividadDetallePage";
+import MisInscripcionesPage from "../pages/MisInscripcionesPage";
 import LoginPage from "../pages/LoginPage";
 import DashboardPage from "../pages/admin/DashboardPage";
 import AreasPage from "../pages/admin/AreasPage";
 import ServiciosPage from "../pages/admin/ServiciosPage";
 import AgendasPage from "../pages/admin/AgendasPage";
 import ReservasPage from "../pages/admin/ReservasPage";
+import ActividadesPage from "../pages/admin/ActividadesPage";
 import UsuariosPage from "../pages/admin/UsuariosPage";
 import AdministradoresPage from "../pages/admin/AdministradoresPage";
 import BloqueosPage from "../pages/admin/BloqueosPage";
@@ -33,6 +37,9 @@ export default function AppRoutes() {
         <Route path="/olvide-password" element={<OlvidePasswordPage />} />
         <Route path="/restablecer-password" element={<RestablecerPasswordPage />} />
         <Route path="/mis-reservas" element={<MisReservasPage />} />
+        <Route path="/actividades" element={<ActividadesPublicasPage />} />
+        <Route path="/actividades/:id" element={<ActividadDetallePage />} />
+        <Route path="/mis-inscripciones" element={<MisInscripcionesPage />} />
       </Route>
 
       {/* Administración */}
@@ -43,6 +50,7 @@ export default function AppRoutes() {
         <Route path="/admin/servicios" element={<ServiciosPage />} />
         <Route path="/admin/agendas" element={<AgendasPage />} />
         <Route path="/admin/reservas" element={<ReservasPage />} />
+        <Route path="/admin/actividades" element={<ActividadesPage />} />
         <Route path="/admin/usuarios" element={<UsuariosPage />} />
         <Route path="/admin/bloqueos" element={<BloqueosPage />} />
         <Route path="/admin/festivos" element={<FestivosPage />} />
