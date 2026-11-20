@@ -8,7 +8,6 @@ import RegistroPage from "../pages/RegistroPage";
 import OlvidePasswordPage from "../pages/OlvidePasswordPage";
 import RestablecerPasswordPage from "../pages/RestablecerPasswordPage";
 import MisReservasPage from "../pages/MisReservasPage";
-import ActividadesPublicasPage from "../pages/ActividadesPublicasPage";
 import ActividadDetallePage from "../pages/ActividadDetallePage";
 import MisInscripcionesPage from "../pages/MisInscripcionesPage";
 import LoginPage from "../pages/LoginPage";
@@ -37,7 +36,6 @@ export default function AppRoutes() {
         <Route path="/olvide-password" element={<OlvidePasswordPage />} />
         <Route path="/restablecer-password" element={<RestablecerPasswordPage />} />
         <Route path="/mis-reservas" element={<MisReservasPage />} />
-        <Route path="/actividades" element={<ActividadesPublicasPage />} />
         <Route path="/actividades/:id" element={<ActividadDetallePage />} />
         <Route path="/mis-inscripciones" element={<MisInscripcionesPage />} />
       </Route>

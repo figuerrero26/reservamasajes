@@ -35,9 +35,6 @@ export default function PublicLayout() {
             <Button color="inherit" component={RouterLink} to="/">
               Inicio
             </Button>
-            <Button color="inherit" component={RouterLink} to="/actividades">
-              Actividades
-            </Button>
             {token ? (
               <>
                 <Typography variant="body2" sx={{ display: { xs: "none", sm: "block" }, opacity: 0.9 }}>

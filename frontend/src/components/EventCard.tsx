@@ -1,16 +1,27 @@
+import type { ReactElement } from "react";
 import { Box, Button, Card, CardActionArea, CardContent, CardMedia, Chip, Stack, Typography, useTheme } from "@mui/material";
 import SpaIcon from "@mui/icons-material/Spa";
-import PlaceIcon from "@mui/icons-material/Place";
-import ScheduleIcon from "@mui/icons-material/Schedule";
 import { useNavigate } from "react-router-dom";
-import type { EventoPublico } from "../types";
 import { useConfig } from "../hooks/useConfig";
 
-interface Props {
-  evento: EventoPublico;
+export interface ChipTarjeta {
+  icon?: ReactElement;
+  label: string;
+  color?: "default" | "success" | "warning";
 }
 
-export default function EventCard({ evento }: Props) {
+interface Props {
+  titulo: string;
+  descripcionCorta?: string | null;
+  imagenUrl?: string | null;
+  chips?: ChipTarjeta[];
+  ruta: string;
+  textoBoton?: string;
+}
+
+/** Tarjeta de catálogo del portal público — compartida por eventos reservables (masajes) y
+ * actividades con inscripción, para que ambos se vean igual en la pantalla de inicio. */
+export default function EventCard({ titulo, descripcionCorta, imagenUrl, chips = [], ruta, textoBoton = "Ver disponibilidad" }: Props) {
   const navigate = useNavigate();
   const config = useConfig();
   const theme = useTheme();
@@ -19,11 +30,11 @@ export default function EventCard({ evento }: Props) {
   return (
     <Card variant="outlined" sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <CardActionArea
-        onClick={() => navigate(`/eventos/${evento.id}`)}
+        onClick={() => navigate(ruta)}
         sx={{ flexGrow: 1, display: "flex", flexDirection: "column", alignItems: "stretch" }}
       >
-        {evento.imagen_url ? (
-          <CardMedia component="img" image={evento.imagen_url} alt={evento.nombre} sx={{ height: 160, objectFit: "cover" }} />
+        {imagenUrl ? (
+          <CardMedia component="img" image={imagenUrl} alt={titulo} sx={{ height: 160, objectFit: "cover" }} />
         ) : (
           <Box
             sx={{
@@ -40,33 +51,41 @@ export default function EventCard({ evento }: Props) {
         )}
         <CardContent sx={{ flexGrow: 1, width: "100%" }}>
           <Typography variant="h6" gutterBottom>
-            {evento.nombre}
+            {titulo}
           </Typography>
-          {evento.descripcion_corta && (
+          {descripcionCorta && (
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-              {evento.descripcion_corta}
+              {descripcionCorta}
             </Typography>
           )}
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
-            <Chip size="small" icon={<ScheduleIcon />} label={`${evento.duracion_minutos} min`} variant="outlined" />
-            {evento.areas.length > 0 && (
-              <Chip size="small" icon={<PlaceIcon />} label={evento.areas.join(", ")} variant="outlined" />
-            )}
-          </Stack>
+          {chips.length > 0 && (
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
+              {chips.map((c, i) => (
+                <Chip
+                  key={i}
+                  size="small"
+                  icon={c.icon}
+                  label={c.label}
+                  color={c.color}
+                  variant={c.color ? "filled" : "outlined"}
+                />
+              ))}
+            </Stack>
+          )}
         </CardContent>
       </CardActionArea>
       <Box sx={{ p: 2, pt: 0 }}>
         <Button
           fullWidth
           variant="contained"
-          onClick={() => navigate(`/eventos/${evento.id}`)}
+          onClick={() => navigate(ruta)}
           sx={{
             bgcolor: colorBoton,
             color: theme.palette.getContrastText(colorBoton),
             "&:hover": { bgcolor: colorBoton, opacity: 0.9 },
           }}
         >
-          Ver disponibilidad
+          {textoBoton}
         </Button>
       </Box>
     </Card>

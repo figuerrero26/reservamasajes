@@ -1,28 +1,75 @@
 import { useEffect, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import { Alert, Box, Button, Grid, Paper, Typography, useTheme } from "@mui/material";
-import EventCard from "../components/EventCard";
+import PlaceIcon from "@mui/icons-material/Place";
+import ScheduleIcon from "@mui/icons-material/Schedule";
+import EventCard, { type ChipTarjeta } from "../components/EventCard";
 import Loader from "../components/Loader";
 import MutedVideo from "../components/MutedVideo";
-import type { EventoPublico } from "../types";
+import type { ActividadPublica, EventoPublico } from "../types";
 import { listarEventos } from "../services/eventos";
+import { listarActividadesPublicas } from "../services/actividades";
 import { mensajeError } from "../utils/errors";
 import { esVideo } from "../utils/media";
 import { useConfig } from "../hooks/useConfig";
 import { useUsuarioAuth } from "../hooks/useUsuarioAuth";
+
+interface TarjetaCatalogo {
+  key: string;
+  titulo: string;
+  descripcionCorta?: string | null;
+  imagenUrl?: string | null;
+  chips: ChipTarjeta[];
+  ruta: string;
+  textoBoton: string;
+}
+
+function tarjetaDeEvento(e: EventoPublico): TarjetaCatalogo {
+  return {
+    key: `evento-${e.id}`,
+    titulo: e.nombre,
+    descripcionCorta: e.descripcion_corta,
+    imagenUrl: e.imagen_url,
+    chips: [
+      { icon: <ScheduleIcon />, label: `${e.duracion_minutos} min` },
+      ...(e.areas.length > 0 ? [{ icon: <PlaceIcon />, label: e.areas.join(", ") }] : []),
+    ],
+    ruta: `/eventos/${e.id}`,
+    textoBoton: "Ver disponibilidad",
+  };
+}
+
+function tarjetaDeActividad(a: ActividadPublica): TarjetaCatalogo {
+  return {
+    key: `actividad-${a.id}`,
+    titulo: a.nombre,
+    descripcionCorta: a.descripcion_corta,
+    imagenUrl: a.imagen_url,
+    chips: [
+      {
+        label: a.inscripcion_disponible ? "Inscripciones abiertas" : "Inscripciones cerradas",
+        color: a.inscripcion_disponible ? "success" : "default",
+      },
+    ],
+    ruta: `/actividades/${a.id}`,
+    textoBoton: "Ver detalle",
+  };
+}
 
 export default function EventosPage() {
   const config = useConfig();
   const { token } = useUsuarioAuth();
   const theme = useTheme();
   const colorFondoBienvenida = config.color_fondo_bienvenida || theme.palette.primary.main;
-  const [eventos, setEventos] = useState<EventoPublico[]>([]);
+  const [tarjetas, setTarjetas] = useState<TarjetaCatalogo[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    listarEventos()
-      .then(setEventos)
+    Promise.all([listarEventos(), listarActividadesPublicas()])
+      .then(([eventos, actividades]) => {
+        setTarjetas([...eventos.map(tarjetaDeEvento), ...actividades.map(tarjetaDeActividad)]);
+      })
       .catch((e) => setError(mensajeError(e, "No se pudieron cargar los eventos disponibles.")))
       .finally(() => setCargando(false));
   }, []);
@@ -90,15 +137,22 @@ export default function EventosPage() {
 
       {cargando ? (
         <Loader />
-      ) : eventos.length === 0 ? (
+      ) : tarjetas.length === 0 ? (
         <Typography variant="body2" color="text.secondary">
           No hay eventos disponibles por ahora.
         </Typography>
       ) : (
         <Grid container spacing={2.5}>
-          {eventos.map((evento) => (
-            <Grid item xs={12} sm={6} md={4} key={evento.id}>
-              <EventCard evento={evento} />
+          {tarjetas.map((t) => (
+            <Grid item xs={12} sm={6} md={4} key={t.key}>
+              <EventCard
+                titulo={t.titulo}
+                descripcionCorta={t.descripcionCorta}
+                imagenUrl={t.imagenUrl}
+                chips={t.chips}
+                ruta={t.ruta}
+                textoBoton={t.textoBoton}
+              />
             </Grid>
           ))}
         </Grid>
