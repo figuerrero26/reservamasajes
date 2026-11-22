@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   AppBar,
@@ -15,52 +15,23 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  ListSubheader,
   TextField,
   Toolbar,
   Typography,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
-import DashboardIcon from "@mui/icons-material/Dashboard";
-import CategoryIcon from "@mui/icons-material/Category";
-import SpaIcon from "@mui/icons-material/Spa";
-import EventNoteIcon from "@mui/icons-material/EventNote";
-import EventAvailableIcon from "@mui/icons-material/EventAvailable";
-import GroupsIcon from "@mui/icons-material/Groups";
-import PeopleIcon from "@mui/icons-material/People";
-import BlockIcon from "@mui/icons-material/Block";
-import CelebrationIcon from "@mui/icons-material/Celebration";
-import SettingsIcon from "@mui/icons-material/Settings";
-import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
-import HistoryIcon from "@mui/icons-material/History";
 import LockResetIcon from "@mui/icons-material/LockReset";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { Link, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { useConfig } from "../hooks/useConfig";
 import { cambiarPassword } from "../services/auth";
 import { mensajeError } from "../utils/errors";
-import { ROL_VISOR_RESERVAS } from "../constants/roles";
+import { ETIQUETA_ROL, ROL_VISOR_RESERVAS } from "../constants/roles";
+import { ETIQUETA_GRUPO, SECCIONES_ADMIN } from "../constants/secciones";
 
-const DRAWER_WIDTH = 240;
-
-interface Seccion {
-  texto: string;
-  ruta: string;
-  icono: ReactNode;
-}
-
-const SECCIONES: Seccion[] = [
-  { texto: "Dashboard", ruta: "/admin", icono: <DashboardIcon /> },
-  { texto: "Áreas", ruta: "/admin/areas", icono: <CategoryIcon /> },
-  { texto: "Servicios", ruta: "/admin/servicios", icono: <SpaIcon /> },
-  { texto: "Agendas", ruta: "/admin/agendas", icono: <EventNoteIcon /> },
-  { texto: "Reservas", ruta: "/admin/reservas", icono: <EventAvailableIcon /> },
-  { texto: "Actividades", ruta: "/admin/actividades", icono: <GroupsIcon /> },
-  { texto: "Usuarios", ruta: "/admin/usuarios", icono: <PeopleIcon /> },
-  { texto: "Bloqueos", ruta: "/admin/bloqueos", icono: <BlockIcon /> },
-  { texto: "Festivos", ruta: "/admin/festivos", icono: <CelebrationIcon /> },
-  { texto: "Configuración", ruta: "/admin/configuracion", icono: <SettingsIcon /> },
-  { texto: "Administradores", ruta: "/admin/administradores", icono: <AdminPanelSettingsIcon /> },
-  { texto: "Auditoría", ruta: "/admin/auditoria", icono: <HistoryIcon /> },
-];
+const DRAWER_WIDTH = 256;
 
 function CambiarPasswordDialog({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
   const [actual, setActual] = useState("");
@@ -144,6 +115,7 @@ function CambiarPasswordDialog({ abierto, onCerrar }: { abierto: boolean; onCerr
 
 export default function AdminLayout() {
   const { token, nombre, rol, cerrarSesion } = useAuth();
+  const config = useConfig();
   const navigate = useNavigate();
   const location = useLocation();
   const [drawerAbierto, setDrawerAbierto] = useState(false);
@@ -151,8 +123,11 @@ export default function AdminLayout() {
 
   const esVisorReservas = rol === ROL_VISOR_RESERVAS;
   const secciones = esVisorReservas
-    ? SECCIONES.filter((s) => s.ruta === "/admin/reservas")
-    : SECCIONES;
+    ? SECCIONES_ADMIN.filter((s) => s.ruta === "/admin/reservas")
+    : SECCIONES_ADMIN;
+  const grupos = (["operacion", "catalogo", "sistema"] as const)
+    .map((g) => ({ grupo: g, items: secciones.filter((s) => s.grupo === g) }))
+    .filter((g) => g.items.length > 0);
 
   useEffect(() => {
     if (esVisorReservas && location.pathname !== "/admin/reservas") {
@@ -165,36 +140,58 @@ export default function AdminLayout() {
   function esRutaActiva(ruta: string) {
     return ruta === "/admin" ? location.pathname === "/admin" : location.pathname.startsWith(ruta);
   }
+  const seccionActual = SECCIONES_ADMIN.find((s) => esRutaActiva(s.ruta));
 
   const contenidoDrawer = (
-    <Box sx={{ width: DRAWER_WIDTH }} role="presentation">
-      <Toolbar>
-        <Typography variant="h6" noWrap>
-          Menú
-        </Typography>
+    <Box sx={{ width: DRAWER_WIDTH, display: "flex", flexDirection: "column", height: "100%" }} role="presentation">
+      <Toolbar sx={{ px: 2.5 }}>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700 }} noWrap>
+            {config.sistema_nombre || "Administración"}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" noWrap display="block">
+            {rol ? ETIQUETA_ROL[rol] ?? rol : ""}
+          </Typography>
+        </Box>
       </Toolbar>
       <Divider />
-      <List>
-        {secciones.map((s) => (
-          <ListItemButton
-            key={s.ruta}
-            component={Link}
-            to={s.ruta}
-            selected={esRutaActiva(s.ruta)}
-            onClick={() => setDrawerAbierto(false)}
+      <Box sx={{ flexGrow: 1, overflowY: "auto", py: 1 }}>
+        {grupos.map(({ grupo, items }) => (
+          <List
+            key={grupo}
+            dense
+            subheader={
+              grupos.length > 1 ? (
+                <ListSubheader sx={{ bgcolor: "transparent", lineHeight: "32px", fontSize: "0.7rem", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                  {ETIQUETA_GRUPO[grupo]}
+                </ListSubheader>
+              ) : undefined
+            }
           >
-            <ListItemIcon>{s.icono}</ListItemIcon>
-            <ListItemText primary={s.texto} />
-          </ListItemButton>
+            {items.map((s) => (
+              <ListItemButton
+                key={s.ruta}
+                component={Link}
+                to={s.ruta}
+                selected={esRutaActiva(s.ruta)}
+                onClick={() => setDrawerAbierto(false)}
+              >
+                <ListItemIcon>{s.icono}</ListItemIcon>
+                <ListItemText primary={s.texto} primaryTypographyProps={{ fontSize: "0.9rem" }} />
+              </ListItemButton>
+            ))}
+          </List>
         ))}
-      </List>
+      </Box>
       <Divider />
-      <List>
+      <List dense>
+        <ListItemButton component="a" href="/" target="_blank" rel="noopener">
+          <ListItemIcon><OpenInNewIcon fontSize="small" /></ListItemIcon>
+          <ListItemText primary="Ver portal" primaryTypographyProps={{ fontSize: "0.9rem" }} />
+        </ListItemButton>
         <ListItemButton onClick={() => setDialogPasswordAbierto(true)}>
-          <ListItemIcon>
-            <LockResetIcon />
-          </ListItemIcon>
-          <ListItemText primary="Cambiar contraseña" />
+          <ListItemIcon><LockResetIcon fontSize="small" /></ListItemIcon>
+          <ListItemText primary="Cambiar contraseña" primaryTypographyProps={{ fontSize: "0.9rem" }} />
         </ListItemButton>
       </List>
     </Box>
@@ -202,24 +199,28 @@ export default function AdminLayout() {
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "background.default" }}>
-      <AppBar position="fixed" elevation={0} sx={{ zIndex: (t) => t.zIndex.drawer + 1 }}>
-        <Toolbar>
+      {/* La barra superior ocupa solo el área de contenido: el menú lateral va de arriba a abajo. */}
+      <AppBar position="fixed" sx={{ width: { md: `calc(100% - ${DRAWER_WIDTH}px)` }, ml: { md: `${DRAWER_WIDTH}px` } }}>
+        <Toolbar sx={{ gap: 1 }}>
           <IconButton
             color="inherit"
             edge="start"
+            aria-label="Abrir menú"
             onClick={() => setDrawerAbierto(true)}
-            sx={{ mr: 2, display: { md: "none" } }}
+            sx={{ display: { md: "none" } }}
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" sx={{ flexGrow: 1 }} noWrap>
-            Panel de administración
+          <Typography variant="subtitle1" sx={{ flexGrow: 1, fontWeight: 600 }} noWrap>
+            {seccionActual?.texto ?? "Panel de administración"}
           </Typography>
-          <Typography variant="body2" sx={{ mr: 2, display: { xs: "none", sm: "block" } }}>
+          <Typography variant="body2" color="text.secondary" sx={{ display: { xs: "none", sm: "block" } }} noWrap>
             {nombre}
           </Typography>
           <Button
+            variant="outlined"
             color="inherit"
+            size="small"
             onClick={() => {
               cerrarSesion();
               navigate("/admin/login");
@@ -254,7 +255,7 @@ export default function AdminLayout() {
 
       <Box component="main" sx={{ flexGrow: 1, width: { md: `calc(100% - ${DRAWER_WIDTH}px)` }, minWidth: 0 }}>
         <Toolbar />
-        <Box sx={{ p: { xs: 2, sm: 3 } }}>
+        <Box sx={{ p: { xs: 2, sm: 3, lg: 5 }, maxWidth: 1400, mx: "auto" }}>
           <Outlet />
         </Box>
       </Box>

@@ -1,10 +1,10 @@
 import api from "./api";
 import apiUsuario from "./apiUsuario";
-import type { Agenda, AgendaPublica } from "../types";
+import type { Agenda, AgendaPublica, ConReservasAfectadas } from "../types";
 
 export const listarAgendas = async () => (await api.get<Agenda[]>("/agendas")).data;
 
-/** Público: agendas activas de un evento, para el sub-selector de área cuando hay más de una. */
+/** Público: agendas reservables de un evento (agenda, evento y área activos). */
 export const listarAgendasPublicas = async (servicioId: number) =>
   (await apiUsuario.get<AgendaPublica[]>("/agendas/publicas", { params: { servicio_id: servicioId } })).data;
 
@@ -24,8 +24,9 @@ export type AgendaPayload = {
 export const crearAgenda = async (payload: AgendaPayload) =>
   (await api.post<Agenda>("/agendas", payload)).data;
 
+/** Responde 409 con `reservas_afectadas` si el cambio dejaría reservas futuras inconsistentes. */
 export const actualizarAgenda = async (id: number, payload: Partial<AgendaPayload>) =>
   (await api.put<Agenda>(`/agendas/${id}`, payload)).data;
 
 export const cambiarEstadoAgenda = async (id: number, activa: boolean) =>
-  (await api.patch<Agenda>(`/agendas/${id}/estado`, null, { params: { activa } })).data;
+  (await api.patch<Agenda & ConReservasAfectadas>(`/agendas/${id}/estado`, null, { params: { activa } })).data;

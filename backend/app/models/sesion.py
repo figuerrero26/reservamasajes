@@ -1,6 +1,6 @@
 from datetime import date, datetime, time
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Time, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Time, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -22,6 +22,9 @@ class Sesion(Base):
     hora_inicio: Mapped[time] = mapped_column(Time)
     hora_fin: Mapped[time] = mapped_column(Time)
     cupo_maximo: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Lugar o punto de encuentro de esta sesión (opcional; se muestra en el portal y en el
+    # correo de confirmación de la inscripción).
+    lugar: Mapped[str | None] = mapped_column(String(200), nullable=True)
     activa: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

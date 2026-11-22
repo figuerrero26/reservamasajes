@@ -3,6 +3,7 @@ import {
   Alert,
   Box,
   Button,
+  Divider,
   FormControlLabel,
   Grid,
   Paper,
@@ -31,6 +32,7 @@ import { esVideo } from "../../utils/media";
 import Loader from "../../components/Loader";
 import MutedVideo from "../../components/MutedVideo";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import PageHeader from "../../components/PageHeader";
 
 interface FormularioSmtp {
   host: string;
@@ -54,10 +56,6 @@ function aFormularioSmtp(c: SmtpConfig): FormularioSmtp {
   };
 }
 
-type ClaveConfiguracion =
-  | "empresa_nombre" | "sistema_nombre" | "logo_url" | "color_primario" | "color_secundario"
-  | "mensaje_bienvenida" | "color_boton_disponibilidad" | "color_fondo_bienvenida";
-
 interface FormularioGeneral {
   empresa_nombre: string;
   sistema_nombre: string;
@@ -67,7 +65,14 @@ interface FormularioGeneral {
   mensaje_bienvenida: string;
   color_boton_disponibilidad: string;
   color_fondo_bienvenida: string;
+  contacto_correo: string;
+  contacto_telefono: string;
+  contacto_direccion: string;
+  politica_privacidad: string;
+  terminos_condiciones: string;
 }
+
+type ClaveConfiguracion = keyof FormularioGeneral;
 
 function aFormulario(c: ConfiguracionGeneral): FormularioGeneral {
   return {
@@ -79,6 +84,11 @@ function aFormulario(c: ConfiguracionGeneral): FormularioGeneral {
     mensaje_bienvenida: c.mensaje_bienvenida ?? "",
     color_boton_disponibilidad: c.color_boton_disponibilidad || c.color_primario || "#1F3A5F",
     color_fondo_bienvenida: c.color_fondo_bienvenida || c.color_primario || "#1F3A5F",
+    contacto_correo: c.contacto_correo ?? "",
+    contacto_telefono: c.contacto_telefono ?? "",
+    contacto_direccion: c.contacto_direccion ?? "",
+    politica_privacidad: c.politica_privacidad ?? "",
+    terminos_condiciones: c.terminos_condiciones ?? "",
   };
 }
 
@@ -403,9 +413,10 @@ export default function ConfiguracionPage() {
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ mb: 2 }}>
-        Configuración
-      </Typography>
+      <PageHeader
+        titulo="Configuración"
+        descripcion="Identidad del portal, contacto, periodo de reservas, reglas y correo."
+      />
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
@@ -540,6 +551,62 @@ export default function ConfiguracionPage() {
                 </Stack>
               </Stack>
             </Grid>
+
+            <Grid item xs={12}>
+              <Divider sx={{ my: 1 }} />
+              <Typography variant="subtitle1" sx={{ mt: 1 }}>Contacto y pie de página</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Se muestran en el pie de página del portal y en los correos. Lo que dejes vacío no se muestra.
+              </Typography>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                label="Correo de contacto"
+                type="email"
+                value={form.contacto_correo}
+                onChange={(e) => setForm({ ...form, contacto_correo: e.target.value })}
+                fullWidth
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                label="Teléfono de contacto"
+                value={form.contacto_telefono}
+                onChange={(e) => setForm({ ...form, contacto_telefono: e.target.value })}
+                fullWidth
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                label="Dirección o ubicación"
+                value={form.contacto_direccion}
+                onChange={(e) => setForm({ ...form, contacto_direccion: e.target.value })}
+                inputProps={{ maxLength: 300 }}
+                fullWidth
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                label="Política de privacidad"
+                helperText="Página /privacidad del portal. Si la dejas vacía se muestra un texto base."
+                value={form.politica_privacidad}
+                onChange={(e) => setForm({ ...form, politica_privacidad: e.target.value })}
+                multiline
+                minRows={4}
+                fullWidth
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                label="Términos y condiciones"
+                helperText="Página /terminos del portal. Si la dejas vacía se muestra un texto base."
+                value={form.terminos_condiciones}
+                onChange={(e) => setForm({ ...form, terminos_condiciones: e.target.value })}
+                multiline
+                minRows={4}
+                fullWidth
+              />
+            </Grid>
           </Grid>
           <Box sx={{ mt: 2 }}>
             <Button variant="contained" onClick={guardarGeneral} disabled={guardando}>
@@ -601,13 +668,13 @@ export default function ConfiguracionPage() {
         />
       </Paper>
 
-      <Paper variant="outlined" sx={{ p: 3 }}>
+      <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" sx={{ mb: 2 }}>
           Reiniciar semana
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Cancela todas las reservas activas de la semana indicada. Las reservas no se eliminan, quedan marcadas
-          como canceladas.
+          Cancela las reservas activas de la semana indicada que todavía no han ocurrido y avisa a cada colaborador
+          por correo. Las que ya pasaron se conservan para registrar la asistencia. Ninguna reserva se elimina.
         </Typography>
         {resultadoReinicio !== null && (
           <Alert severity="success" sx={{ mb: 2 }}>
@@ -833,6 +900,7 @@ export default function ConfiguracionPage() {
                 <Box
                   component="iframe"
                   title="Vista previa del correo de confirmación"
+                  sandbox=""
                   srcDoc={previewHtml}
                   sx={{ width: "100%", height: 520, border: 0, display: "block" }}
                 />

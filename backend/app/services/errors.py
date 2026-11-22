@@ -1,11 +1,18 @@
-"""Errores de dominio, traducidos a respuestas HTTP en la capa API."""
+"""Errores de dominio, traducidos a respuestas HTTP en la capa API (ver app/main.py).
+
+`datos` es opcional y viaja junto a `detail` en la respuesta JSON: permite que el frontend
+muestre información estructurada además del mensaje (p. ej. la lista de reservas que
+impiden modificar una agenda).
+"""
+from typing import Any
 
 
 class DomainError(Exception):
-    def __init__(self, message: str, status_code: int = 400):
+    def __init__(self, message: str, status_code: int = 400, datos: dict[str, Any] | None = None):
         super().__init__(message)
         self.message = message
         self.status_code = status_code
+        self.datos = datos
 
 
 class NotFound(DomainError):
@@ -14,8 +21,8 @@ class NotFound(DomainError):
 
 
 class Conflict(DomainError):
-    def __init__(self, message: str = "Conflicto de datos"):
-        super().__init__(message, status_code=409)
+    def __init__(self, message: str = "Conflicto de datos", datos: dict[str, Any] | None = None):
+        super().__init__(message, status_code=409, datos=datos)
 
 
 class Forbidden(DomainError):

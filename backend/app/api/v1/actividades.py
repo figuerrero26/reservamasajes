@@ -1,30 +1,17 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_admin, get_current_admin_full
+from app.api.deps import get_current_admin, get_current_admin_full, get_usuario_opcional
 from app.database.session import get_db
 from app.schemas.actividad import ActividadCreate, ActividadOut, ActividadPublicaOut, ActividadUpdate
 from app.schemas.sesion import GenerarSesionesIn, SesionCreate, SesionOut, SesionUpdate
-from app.services.actividad_service import ActividadService, campos_formulario_de
+from app.services.actividad_service import ActividadService
 from app.services.sesion_service import SesionService
 
 router = APIRouter(prefix="/actividades", tags=["actividades"])
 
 
-def _a_out(actividad) -> ActividadOut:
-    return ActividadOut(
-        id=actividad.id, nombre=actividad.nombre, descripcion_corta=actividad.descripcion_corta,
-        descripcion_larga=actividad.descripcion_larga, imagen_url=actividad.imagen_url,
-        informacion_adicional=actividad.informacion_adicional,
-        campos_formulario=campos_formulario_de(actividad),
-        inscripcion_abierta=actividad.inscripcion_abierta,
-        fecha_apertura_inscripciones=actividad.fecha_apertura_inscripciones,
-        fecha_cierre_inscripciones=actividad.fecha_cierre_inscripciones,
-        activo=actividad.activo,
-    )
-
-
-# ---- Flujo público (sin autenticación) ----
+# ---- Flujo público (sin autenticación; con sesión muestra si ya está inscrito) ----
 @router.get("/publicas", response_model=list[ActividadPublicaOut])
 def listar_publicas(db: Session = Depends(get_db)):
     return ActividadService(db).listar_publicas()
@@ -36,37 +23,49 @@ def obtener_publica(actividad_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/publicas/{actividad_id}/sesiones", response_model=list[SesionOut])
-def listar_sesiones_publicas(actividad_id: int, db: Session = Depends(get_db)):
-    return SesionService(db).listar(actividad_id, solo_activas=True, solo_futuras=True)
+def listar_sesiones_publicas(actividad_id: int, db: Session = Depends(get_db),
+                             usuario: dict | None = Depends(get_usuario_opcional)):
+    return SesionService(db).listar_publicas(actividad_id, usuario_id=usuario["id"] if usuario else None)
 
 
 # ---- Administración ----
 @router.get("", response_model=list[ActividadOut])
 def listar(db: Session = Depends(get_db), _: dict = Depends(get_current_admin)):
-    return [_a_out(a) for a in ActividadService(db).listar_admin()]
+    return ActividadService(db).listar_admin()
 
 
 @router.get("/{actividad_id}", response_model=ActividadOut)
 def obtener(actividad_id: int, db: Session = Depends(get_db), _: dict = Depends(get_current_admin)):
-    return _a_out(ActividadService(db).obtener(actividad_id))
+    servicio = ActividadService(db)
+    return servicio.a_out(servicio.obtener(actividad_id))
 
 
 @router.post("", response_model=ActividadOut, status_code=status.HTTP_201_CREATED)
 def crear(data: ActividadCreate, db: Session = Depends(get_db),
           admin: dict = Depends(get_current_admin_full)):
-    return _a_out(ActividadService(db).crear(data, admin["id"]))
+    servicio = ActividadService(db)
+    return servicio.a_out(servicio.crear(data, admin["id"]))
 
 
 @router.put("/{actividad_id}", response_model=ActividadOut)
 def actualizar(actividad_id: int, data: ActividadUpdate, db: Session = Depends(get_db),
                admin: dict = Depends(get_current_admin_full)):
-    return _a_out(ActividadService(db).actualizar(actividad_id, data, admin["id"]))
+    servicio = ActividadService(db)
+    return servicio.a_out(servicio.actualizar(actividad_id, data, admin["id"]))
 
 
 @router.post("/{actividad_id}/desactivar", response_model=ActividadOut)
 def desactivar(actividad_id: int, db: Session = Depends(get_db),
                 admin: dict = Depends(get_current_admin_full)):
-    return _a_out(ActividadService(db).desactivar(actividad_id, admin["id"]))
+    servicio = ActividadService(db)
+    return servicio.a_out(servicio.cambiar_estado(actividad_id, False, admin["id"]))
+
+
+@router.post("/{actividad_id}/activar", response_model=ActividadOut)
+def activar(actividad_id: int, db: Session = Depends(get_db),
+            admin: dict = Depends(get_current_admin_full)):
+    servicio = ActividadService(db)
+    return servicio.a_out(servicio.cambiar_estado(actividad_id, True, admin["id"]))
 
 
 @router.get("/{actividad_id}/sesiones", response_model=list[SesionOut])

@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import date
 from pathlib import Path
@@ -19,12 +20,51 @@ from app.utils.uploads import PUBLIC_PREFIX, UPLOAD_DIR
 CLAVES_PUBLICAS = [
     "empresa_nombre", "sistema_nombre", "logo_url", "color_primario", "color_secundario",
     "mensaje_bienvenida", "imagen_bienvenida_url", "color_boton_disponibilidad", "color_fondo_bienvenida",
-    "evento_unico_por_semana",
+    "evento_unico_por_semana", "contacto_correo", "contacto_telefono", "contacto_direccion",
+    "politica_privacidad", "terminos_condiciones",
 ]
 CLAVES_ADMIN = CLAVES_PUBLICAS + [
     "cancelacion_horas_minimas", "email_confirmacion_asunto", "email_confirmacion_cuerpo",
     "email_confirmacion_imagen_url",
 ]
+
+_PATRON_COLOR = re.compile(r"^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$")
+_PATRON_CORREO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_CLAVES_COLOR = {"color_primario", "color_secundario", "color_boton_disponibilidad", "color_fondo_bienvenida"}
+_CLAVES_URL = {"logo_url", "imagen_bienvenida_url", "email_confirmacion_imagen_url"}
+# Límite de longitud por clave (los textos legales pueden ser largos; el resto, cortos).
+_LONGITUD_MAXIMA = {
+    "politica_privacidad": 20000, "terminos_condiciones": 20000, "mensaje_bienvenida": 2000,
+    "email_confirmacion_cuerpo": 5000, "contacto_direccion": 300,
+}
+_LONGITUD_POR_DEFECTO = 255
+
+
+def validar_valor_configuracion(clave: str, valor: str | None) -> str | None:
+    """Normaliza y valida un valor antes de guardarlo. Un valor inválido guardado aquí
+    afectaría a todo el portal (colores en estilos, horas mínimas en cada cancelación…),
+    por eso se rechaza en vez de guardarse tal cual. Cadena vacía = sin valor (None)."""
+    if valor is None:
+        return None
+    valor = valor.strip()
+    if valor == "":
+        return None
+    if len(valor) > _LONGITUD_MAXIMA.get(clave, _LONGITUD_POR_DEFECTO):
+        raise DomainError("El valor es demasiado largo para este campo.")
+    if clave in _CLAVES_COLOR and not _PATRON_COLOR.fullmatch(valor):
+        raise DomainError("El color debe tener formato hexadecimal, por ejemplo #1F3A5F.")
+    if clave in _CLAVES_URL and not (valor.startswith(("http://", "https://")) or valor.startswith(f"{PUBLIC_PREFIX}/")):
+        raise DomainError("La URL debe empezar por http:// o https://.")
+    if clave == "evento_unico_por_semana":
+        if valor not in ("true", "false"):
+            raise DomainError("El valor debe ser 'true' o 'false'.")
+    if clave == "cancelacion_horas_minimas":
+        if not valor.isdigit() or int(valor) > 720:
+            raise DomainError("Las horas mínimas de cancelación deben ser un número entero entre 0 y 720.")
+        valor = str(int(valor))
+    if clave == "contacto_correo" and not _PATRON_CORREO.fullmatch(valor):
+        raise DomainError("El correo de contacto no es válido.")
+    return valor
 
 # Extensión y tamaño máximo (bytes) por tipo MIME aceptado para el banner de bienvenida:
 # imagen estática, GIF animado o un video corto.
@@ -69,6 +109,11 @@ class ConfiguracionService:
             color_boton_disponibilidad=valores.get("color_boton_disponibilidad"),
             color_fondo_bienvenida=valores.get("color_fondo_bienvenida"),
             evento_unico_por_semana=valores.get("evento_unico_por_semana") == "true",
+            contacto_correo=valores.get("contacto_correo"),
+            contacto_telefono=valores.get("contacto_telefono"),
+            contacto_direccion=valores.get("contacto_direccion"),
+            politica_privacidad=valores.get("politica_privacidad"),
+            terminos_condiciones=valores.get("terminos_condiciones"),
             zona_horaria=settings.APP_TIMEZONE,
             semana_activa_inicio=date.fromisoformat(inicio) if inicio else None,
             semana_activa_fin=date.fromisoformat(fin) if fin else None,
@@ -77,6 +122,7 @@ class ConfiguracionService:
     def actualizar(self, clave: str, valor: str | None, admin_id: int) -> None:
         if clave not in CLAVES_ADMIN:
             raise DomainError(f"Clave de configuración no reconocida: {clave}")
+        valor = validar_valor_configuracion(clave, valor)
         anterior = self.repo.get(clave)
         self.repo.set(clave, valor)
         auditoria_service.registrar(

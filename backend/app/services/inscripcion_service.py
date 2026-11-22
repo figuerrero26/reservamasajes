@@ -1,15 +1,14 @@
-"""Inscripciones: equivalente a ReservaService para el módulo de actividades genéricas.
+"""Inscripciones: equivalente a ReservaService para el módulo de actividades.
 
-Control de cupo: a diferencia de Reserva (donde un índice único en BD basta porque el cupo
-siempre es 1), aquí el cupo es un número configurable por sesión. MariaDB no tiene una forma
-nativa de expresar "máximo N filas que cumplan X" como restricción, así que se resuelve a
-nivel de aplicación bloqueando la fila de la sesión (`SELECT ... FOR UPDATE`) antes de contar
-las inscripciones activas — el mismo patrón de bloqueo que ya usa ReservaService con el
-usuario, aplicado aquí a la sesión porque es la sesión (no el usuario) la que tiene el
-recurso limitado.
+Conserva su propia lógica de negocio (no se mezcla con reservas): aquí no hay turnos, hay
+sesiones con CUPO. Control de cupo: el cupo es un número configurable por sesión y MariaDB
+no tiene una forma nativa de expresar "máximo N filas que cumplan X" como restricción, así
+que se resuelve bloqueando la fila de la sesión (`SELECT ... FOR UPDATE`) antes de contar
+las inscripciones activas. Cuando se alcanza el cupo, la sesión queda en estado
+`cupo_lleno` y cualquier intento adicional recibe 409 (las inscripciones se cierran solas).
+Cancelar una inscripción libera el cupo de inmediato.
 """
 import json
-from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -23,27 +22,35 @@ from app.schemas.inscripcion import (
     InscripcionAdminOut, InscripcionCreateManual, InscripcionOut, MiInscripcionOut,
 )
 from app.services import auditoria_service
-from app.services.actividad_service import campos_formulario_de, inscripcion_disponible
+from app.services.actividad_service import campos_formulario_de, inscripcion_disponible, sesion_llena
 from app.services.errors import Conflict, DomainError, Forbidden, NotFound
-from app.utils.time import TZ, now
+from app.utils.time import now, ya_empezo
+
+MAX_LONGITUD_RESPUESTA = 1000
 
 
-def _validar_respuestas(campos: list[CampoFormulario], respuestas: dict) -> dict:
+def _validar_respuestas(campos: list[CampoFormulario], respuestas: dict, estricto: bool = True) -> dict:
     """Valida las respuestas contra la definición de campos de la actividad y descarta
-    cualquier clave que no esté definida ahí (nunca se guarda texto libre sin control)."""
+    cualquier clave que no esté definida ahí (nunca se guarda texto libre sin control).
+    `estricto=False` (inscripción manual del admin) no exige los campos obligatorios, pero
+    sí valida el tipo de lo que se envíe."""
     limpio: dict = {}
     for campo in campos:
         valor = respuestas.get(campo.clave)
-        if campo.requerido and (valor is None or valor == ""):
-            raise DomainError(f"El campo «{campo.etiqueta}» es obligatorio.")
-        if valor is None:
+        if isinstance(valor, str):
+            valor = valor.strip()
+        if valor is None or valor == "":
+            if campo.requerido and estricto:
+                raise DomainError(f"El campo «{campo.etiqueta}» es obligatorio.")
             continue
-        if campo.tipo == "numero" and not isinstance(valor, (int, float)):
+        if campo.tipo == "numero" and (isinstance(valor, bool) or not isinstance(valor, (int, float))):
             raise DomainError(f"El campo «{campo.etiqueta}» debe ser un número.")
         if campo.tipo == "si_no" and not isinstance(valor, bool):
             raise DomainError(f"El campo «{campo.etiqueta}» debe ser sí/no.")
         if campo.tipo == "seleccion" and campo.opciones and valor not in campo.opciones:
             raise DomainError(f"Valor inválido para «{campo.etiqueta}».")
+        if campo.tipo == "texto" and len(str(valor)) > MAX_LONGITUD_RESPUESTA:
+            raise DomainError(f"La respuesta a «{campo.etiqueta}» es demasiado larga.")
         limpio[campo.clave] = valor
     return limpio
 
@@ -66,23 +73,24 @@ class InscripcionService:
         sesion = self.sesiones.get_for_update(sesion_id)
         if not sesion or not sesion.activa:
             raise DomainError("La sesión no está disponible")
-        if datetime.combine(sesion.fecha, sesion.hora_inicio, tzinfo=TZ) <= now():
-            raise DomainError("Esta sesión ya no está disponible para inscribirse.")
-
         actividad = sesion.actividad
+        if not actividad.activo:
+            raise DomainError("La actividad no está disponible")
+        if ya_empezo(sesion.fecha, sesion.hora_inicio):
+            raise DomainError("Esta sesión ya no está disponible para inscribirse.")
         if not admin_id and not inscripcion_disponible(actividad):
             raise Conflict("Las inscripciones para esta actividad no están abiertas en este momento.")
 
         if self.inscripciones.activa_por_usuario_sesion(usuario.id, sesion_id):
-            raise Conflict("Ya tienes una inscripción activa para esta sesión.")
+            raise Conflict(
+                "Ya tienes una inscripción activa para esta sesión." if not admin_id
+                else "Este colaborador ya tiene una inscripción activa en esta sesión."
+            )
 
-        if sesion.cupo_maximo is not None:
-            ocupados = self.inscripciones.contar_activas_por_sesion(sesion_id)
-            if ocupados >= sesion.cupo_maximo:
-                raise Conflict("Esta sesión ya no tiene cupos disponibles.")
+        if sesion_llena(sesion, self.inscripciones.contar_activas_por_sesion(sesion_id)):
+            raise Conflict("Esta sesión ya no tiene cupos disponibles.")
 
-        campos = campos_formulario_de(actividad)
-        respuestas_validas = _validar_respuestas(campos, respuestas)
+        respuestas_validas = _validar_respuestas(campos_formulario_de(actividad), respuestas, estricto=not admin_id)
 
         inscripcion = Inscripcion(
             sesion_id=sesion_id,
@@ -90,7 +98,7 @@ class InscripcionService:
             usuario_nombre=usuario.nombre,
             usuario_apellido=usuario.apellido,
             usuario_correo=usuario.correo,
-            respuestas_formulario=json.dumps(respuestas_validas) if respuestas_validas else None,
+            respuestas_formulario=json.dumps(respuestas_validas, ensure_ascii=False) if respuestas_validas else None,
             estado=EstadoInscripcion.ACTIVA.value,
             notes=notes,
         )
@@ -115,14 +123,15 @@ class InscripcionService:
         return self._crear(usuario_id, sesion_id, respuestas, None, None)
 
     def crear_manual(self, data: InscripcionCreateManual, admin_id: int) -> Inscripcion:
-        """Inscripción creada directamente por el administrador en nombre de un colaborador
-        — igual que ReservaService.crear_manual, no exenta del cupo."""
+        """Inscripción creada por el administrador en nombre de un colaborador: ignora la
+        ventana de inscripción, pero NO el cupo ni la duplicidad."""
         usuario = self.usuarios.by_correo(data.correo)
         if not usuario:
             raise NotFound("No existe ningún colaborador con ese correo")
         return self._crear(usuario.id, data.sesion_id, data.respuestas, data.notes, admin_id)
 
-    def cancelar(self, inscripcion_id: int, admin_id: int, actor_nombre: str) -> Inscripcion:
+    def cancelar(self, inscripcion_id: int, admin_id: int, actor_nombre: str,
+                 motivo: str | None = None) -> Inscripcion:
         inscripcion = self.inscripciones.get(inscripcion_id)
         if not inscripcion:
             raise NotFound("Inscripción no encontrada")
@@ -130,12 +139,17 @@ class InscripcionService:
             raise DomainError("La inscripción no está activa")
         inscripcion.estado = EstadoInscripcion.CANCELADA.value
         inscripcion.cancelled_at = now()
-        inscripcion.cancelled_by = actor_nombre
-        auditoria_service.registrar(self.db, admin_id, "cancelar", "inscripcion", inscripcion.id)
+        inscripcion.cancelled_by = actor_nombre[:80]
+        auditoria_service.registrar(
+            self.db, admin_id, "cancelar", "inscripcion", inscripcion.id,
+            datos_nuevos={"motivo": motivo} if motivo else None,
+        )
         self.db.commit()  # el cupo queda libre automáticamente (slot_lock vuelve a NULL)
         return inscripcion
 
     def cancelar_propia(self, inscripcion_id: int, usuario_id: int) -> Inscripcion:
+        """El colaborador puede cancelar su inscripción hasta que la sesión empiece; después
+        eso es asistencia/inasistencia y la registra el administrador."""
         inscripcion = self.inscripciones.get(inscripcion_id)
         if not inscripcion:
             raise NotFound("Inscripción no encontrada")
@@ -143,10 +157,15 @@ class InscripcionService:
             raise Forbidden("No puedes cancelar una inscripción que no es tuya")
         if inscripcion.estado != EstadoInscripcion.ACTIVA.value:
             raise DomainError("La inscripción no está activa")
+        if ya_empezo(inscripcion.sesion.fecha, inscripcion.sesion.hora_inicio):
+            raise DomainError("La sesión ya empezó o terminó; no se puede cancelar la inscripción.")
         inscripcion.estado = EstadoInscripcion.CANCELADA.value
         inscripcion.cancelled_at = now()
         inscripcion.cancelled_by = "usuario"
-        auditoria_service.registrar(self.db, None, "cancelar_propia", "inscripcion", inscripcion.id)
+        auditoria_service.registrar(
+            self.db, None, "cancelar_propia", "inscripcion", inscripcion.id,
+            datos_nuevos={"usuario_id": usuario_id},
+        )
         self.db.commit()
         return inscripcion
 
@@ -157,7 +176,7 @@ class InscripcionService:
         if inscripcion.estado != EstadoInscripcion.ACTIVA.value:
             raise DomainError("La inscripción no está activa")
         sesion = inscripcion.sesion
-        if datetime.combine(sesion.fecha, sesion.hora_inicio, tzinfo=TZ) > now():
+        if not ya_empezo(sesion.fecha, sesion.hora_inicio):
             raise DomainError("No se puede marcar asistencia de una sesión que aún no ha ocurrido")
         inscripcion.estado = EstadoInscripcion.COMPLETADA.value if asistio else EstadoInscripcion.NO_ASISTIO.value
         auditoria_service.registrar(
@@ -171,18 +190,29 @@ class InscripcionService:
         return [
             MiInscripcionOut(
                 **self.a_out(i).model_dump(),
+                actividad_id=i.sesion.actividad_id,
                 actividad_nombre=i.sesion.actividad.nombre,
                 sesion_fecha=i.sesion.fecha.isoformat(),
                 sesion_hora_inicio=i.sesion.hora_inicio.strftime("%H:%M"),
                 sesion_hora_fin=i.sesion.hora_fin.strftime("%H:%M"),
+                sesion_lugar=i.sesion.lugar,
+                puede_cancelar=(
+                    i.estado == EstadoInscripcion.ACTIVA.value
+                    and not ya_empezo(i.sesion.fecha, i.sesion.hora_inicio)
+                ),
             )
             for i in self.inscripciones.mias(usuario_id)
         ]
 
-    def a_out(self, i: Inscripcion) -> InscripcionOut:
+    @staticmethod
+    def a_out(i: Inscripcion) -> InscripcionOut:
+        try:
+            respuestas = json.loads(i.respuestas_formulario) if i.respuestas_formulario else None
+        except ValueError:
+            respuestas = None
         return InscripcionOut(
             id=i.id, sesion_id=i.sesion_id, usuario_id=i.usuario_id,
-            respuestas_formulario=json.loads(i.respuestas_formulario) if i.respuestas_formulario else None,
+            respuestas_formulario=respuestas,
             estado=i.estado, notes=i.notes, created_at=i.created_at,
             cancelled_at=i.cancelled_at, cancelled_by=i.cancelled_by,
         )
@@ -194,19 +224,19 @@ class InscripcionService:
         inscripciones = self.inscripciones.buscar(
             nombre=nombre, correo=correo, actividad_id=actividad_id, sesion_id=sesion_id, estado=estado,
         )
-        ahora = now()
         return [
             InscripcionAdminOut(
                 **self.a_out(i).model_dump(),
                 usuario_nombre=i.usuario_nombre,
                 usuario_apellido=i.usuario_apellido,
                 usuario_correo=i.usuario_correo,
+                actividad_id=i.sesion.actividad_id,
                 actividad_nombre=i.sesion.actividad.nombre,
                 sesion_fecha=i.sesion.fecha.isoformat(),
                 sesion_hora_inicio=i.sesion.hora_inicio.strftime("%H:%M"),
                 puede_marcar_asistencia=(
                     i.estado == EstadoInscripcion.ACTIVA.value
-                    and datetime.combine(i.sesion.fecha, i.sesion.hora_inicio, tzinfo=TZ) <= ahora
+                    and ya_empezo(i.sesion.fecha, i.sesion.hora_inicio)
                 ),
             )
             for i in inscripciones

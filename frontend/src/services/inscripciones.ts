@@ -2,7 +2,7 @@ import api from "./api";
 import apiUsuario from "./apiUsuario";
 import type { Inscripcion, InscripcionAdmin, MiInscripcion } from "../types";
 
-type Respuestas = Record<string, string | number | boolean | null>;
+export type Respuestas = Record<string, string | number | boolean | null>;
 
 // ---- Portal público (requiere sesión de usuario) ----
 export async function crearInscripcion(sesionId: number, respuestas: Respuestas): Promise<Inscripcion> {
@@ -29,14 +29,19 @@ export async function buscarInscripciones(params: {
 }
 
 export async function crearInscripcionManual(payload: {
-  correo: string; sesion_id: number; respuestas: Respuestas; notes?: string;
+  correo: string; sesion_id: number; respuestas?: Respuestas; notes?: string;
 }): Promise<Inscripcion> {
-  const { data } = await api.post<Inscripcion>("/inscripciones/manual", payload);
+  const { data } = await api.post<Inscripcion>("/inscripciones/manual", { respuestas: {}, ...payload });
   return data;
 }
 
-export async function cancelarInscripcion(id: number): Promise<Inscripcion> {
-  const { data } = await api.delete<Inscripcion>(`/inscripciones/${id}`);
+/** Cancelación administrativa. Por defecto avisa al participante por correo. */
+export async function cancelarInscripcion(
+  id: number, opciones: { motivo?: string | null; notificar?: boolean } = {},
+): Promise<Inscripcion> {
+  const { data } = await api.post<Inscripcion>(`/inscripciones/${id}/cancelar-admin`, {
+    motivo: opciones.motivo || null, notificar: opciones.notificar ?? true,
+  });
   return data;
 }
 

@@ -1,5 +1,5 @@
 import api from "./api";
-import type { Servicio } from "../types";
+import type { ConReservasAfectadas, Servicio } from "../types";
 
 export const listarServicios = async () => (await api.get<Servicio[]>("/servicios")).data;
 
@@ -19,5 +19,9 @@ export const crearServicio = async (payload: ServicioPayload) =>
 export const actualizarServicio = async (id: number, payload: Partial<ServicioPayload>) =>
   (await api.put<Servicio>(`/servicios/${id}`, payload)).data;
 
+/** Corta nuevas reservas del evento; devuelve las reservas futuras que se conservan. */
 export const desactivarServicio = async (id: number) =>
-  (await api.post<Servicio>(`/servicios/${id}/desactivar`)).data;
+  (await api.post<Servicio & ConReservasAfectadas>(`/servicios/${id}/desactivar`)).data;
+
+export const activarServicio = async (id: number) =>
+  (await api.post<Servicio & ConReservasAfectadas>(`/servicios/${id}/activar`)).data;

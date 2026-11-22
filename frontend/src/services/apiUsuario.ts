@@ -7,6 +7,10 @@ const apiUsuario = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "/api/v1",
 });
 
+/** Evento que escucha UsuarioAuthContext para cerrar la sesión en la interfaz (no solo en
+ * localStorage) cuando el backend rechaza el token: expirado o cuenta bloqueada. */
+export const EVENTO_SESION_USUARIO_EXPIRADA = "sesion-usuario-expirada";
+
 apiUsuario.interceptors.request.use((config) => {
   const token = localStorage.getItem("usuario_token");
   if (token) {
@@ -18,10 +22,9 @@ apiUsuario.interceptors.request.use((config) => {
 apiUsuario.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error?.response?.status === 401 && !window.location.pathname.startsWith("/admin")) {
-      localStorage.removeItem("usuario_token");
-      localStorage.removeItem("usuario_nombre");
-      localStorage.removeItem("usuario_correo");
+    const conToken = Boolean(error?.config?.headers?.Authorization);
+    if (error?.response?.status === 401 && conToken && !window.location.pathname.startsWith("/admin")) {
+      window.dispatchEvent(new Event(EVENTO_SESION_USUARIO_EXPIRADA));
     }
     return Promise.reject(error);
   }

@@ -14,13 +14,17 @@ class EstadoNotificacion(str, enum.Enum):
 
 
 class Notificacion(Base):
-    """Registro de correos enviados (o intentados). Preparado para agregar más tipos
-    (cancelación, modificación, recordatorio) sin cambiar el esquema.
+    """Registro de correos enviados (o intentados): confirmaciones y cancelaciones de
+    reservas e inscripciones, y restablecimiento de contraseña (ver email_service).
     """
     __tablename__ = "notificaciones"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     reserva_id: Mapped[int | None] = mapped_column(ForeignKey("reservas.id"), nullable=True, index=True)
+    # Correos del módulo de actividades (confirmación/cancelación de inscripción).
+    inscripcion_id: Mapped[int | None] = mapped_column(
+        ForeignKey("inscripciones.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     # ON DELETE SET NULL: una notificación ya enviada sobrevive a que se elimine la cuenta
     # del colaborador (ver Reserva.usuario_id); `destinatario` ya guarda el correo aparte.
     usuario_id: Mapped[int | None] = mapped_column(

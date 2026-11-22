@@ -1,5 +1,5 @@
 import api from "./api";
-import type { Area } from "../types";
+import type { Area, ConReservasAfectadas } from "../types";
 
 export const listarAreas = async () => (await api.get<Area[]>("/areas")).data;
 
@@ -10,4 +10,7 @@ export const actualizarArea = async (id: number, payload: Partial<Area>) =>
   (await api.put<Area>(`/areas/${id}`, payload)).data;
 
 export const desactivarArea = async (id: number) =>
-  (await api.post<Area>(`/areas/${id}/desactivar`)).data;
+  (await api.post<Area & ConReservasAfectadas>(`/areas/${id}/desactivar`)).data;
+
+export const activarArea = async (id: number) =>
+  (await api.post<Area & ConReservasAfectadas>(`/areas/${id}/activar`)).data;

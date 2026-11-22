@@ -1,10 +1,31 @@
-from datetime import date
+from datetime import date, time
 
-from sqlalchemy import select, or_
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Agenda, Reserva, EstadoReserva
 from app.repositories.base import BaseRepository
+from app.utils.time import now
+
+
+def _con_detalle(stmt):
+    """Carga adelantada de evento y agenda+área: los listados administrativos muestran
+    nombres legibles sin disparar una consulta por fila."""
+    return stmt.options(
+        joinedload(Reserva.servicio),
+        joinedload(Reserva.agenda).joinedload(Agenda.area),
+    )
+
+
+def _solo_futuras(stmt):
+    """Reservas cuyo horario todavía no ha empezado (en la zona horaria de la aplicación)."""
+    ahora = now()
+    return stmt.where(
+        or_(
+            Reserva.fecha > ahora.date(),
+            and_(Reserva.fecha == ahora.date(), Reserva.hora_inicio > ahora.time()),
+        )
+    )
 
 
 class ReservaRepository(BaseRepository[Reserva]):
@@ -23,9 +44,8 @@ class ReservaRepository(BaseRepository[Reserva]):
 
     def activa_por_usuario_evento_fecha(self, usuario_id: int, servicio_id: int, fecha: date) -> Reserva | None:
         """Solo para el mensaje de error amigable antes de tocar la BD (ver ReservaService).
-        Usa `.first()` y no `.scalar_one_or_none()` a propósito: con la excepción
-        `permite_reservas_multiples` puede haber más de una fila activa para la misma
-        combinación usuario+evento+día, y aquí solo interesa saber si existe al menos una."""
+        Usa `.first()` a propósito: con la excepción `permite_reservas_multiples` puede haber
+        más de una fila activa para la misma combinación usuario+evento+día."""
         return self.db.execute(
             select(Reserva).where(
                 Reserva.usuario_id == usuario_id,
@@ -39,8 +59,7 @@ class ReservaRepository(BaseRepository[Reserva]):
         self, usuario_id: int, servicio_id: int, fecha_inicio: date, fecha_fin: date,
     ) -> Reserva | None:
         """Como `activa_por_usuario_evento_fecha`, pero para la regla opcional
-        `evento_unico_por_semana`: busca en todo el rango [fecha_inicio, fecha_fin], no solo
-        un día exacto (ver ReservaService)."""
+        `evento_unico_por_semana`: busca en todo el rango [fecha_inicio, fecha_fin]."""
         return self.db.execute(
             select(Reserva).where(
                 Reserva.usuario_id == usuario_id,
@@ -62,34 +81,56 @@ class ReservaRepository(BaseRepository[Reserva]):
             ).scalars().all()
         )
 
-    def no_canceladas_por_agenda_fecha(self, agenda_id: int, fecha: date) -> list[Reserva]:
-        """Como `activas_por_agenda_fecha`, pero incluye también `completada`/`no_asistio`:
-        para la vista "por día" del panel (ver ReservaService.dia), donde una reserva ya
-        pasada debe seguir mostrando quién ocupó el turno y con qué resultado, aunque ya no
-        esté "activa". Las canceladas sí se excluyen: su turno vuelve a quedar libre."""
+    def no_canceladas_por_fecha(self, fecha: date) -> list[Reserva]:
+        """Reservas activas o ya cerradas (completada/no_asistio) de un día, de TODAS las
+        agendas en una sola consulta — para la vista "por día" del panel. Las canceladas se
+        excluyen: su turno vuelve a quedar libre."""
         return list(
             self.db.execute(
                 select(Reserva).where(
-                    Reserva.agenda_id == agenda_id,
                     Reserva.fecha == fecha,
                     Reserva.estado != EstadoReserva.CANCELADA.value,
-                )
+                ).order_by(Reserva.hora_inicio)
             ).scalars().all()
         )
 
+    def activas_futuras(
+        self, *, agenda_id: int | None = None, servicio_id: int | None = None,
+        area_id: int | None = None, fecha: date | None = None,
+        hora_inicio: time | None = None, hora_fin: time | None = None,
+    ) -> list[Reserva]:
+        """Reservas activas que todavía no han ocurrido, filtradas por el alcance de un
+        cambio administrativo: agenda/evento/área que se modifica o desactiva, o la fecha (y
+        rango horario opcional) de un bloqueo o festivo. Se usa para avisar al administrador
+        qué reservas quedan afectadas — nunca para cancelarlas automáticamente."""
+        stmt = _con_detalle(select(Reserva)).where(Reserva.estado == EstadoReserva.ACTIVA.value)
+        stmt = _solo_futuras(stmt)
+        if agenda_id is not None:
+            stmt = stmt.where(Reserva.agenda_id == agenda_id)
+        if servicio_id is not None:
+            stmt = stmt.where(Reserva.servicio_id == servicio_id)
+        if area_id is not None:
+            stmt = stmt.join(Agenda, Reserva.agenda_id == Agenda.id).where(Agenda.area_id == area_id)
+        if fecha is not None:
+            stmt = stmt.where(Reserva.fecha == fecha)
+        if hora_inicio is not None and hora_fin is not None:
+            # Solapamiento [hora_inicio, hora_fin) con la reserva.
+            stmt = stmt.where(Reserva.hora_inicio < hora_fin, Reserva.hora_fin > hora_inicio)
+        return list(self.db.execute(stmt.order_by(Reserva.fecha, Reserva.hora_inicio)).unique().scalars().all())
+
+    def por_ids(self, ids: list[int]) -> list[Reserva]:
+        if not ids:
+            return []
+        return list(self.db.execute(select(Reserva).where(Reserva.id.in_(ids))).scalars().all())
+
     def buscar(self, nombre: str | None = None, correo: str | None = None,
                fecha: date | None = None, agenda_id: int | None = None,
-               servicio_id: int | None = None, estado: str | None = None) -> list[Reserva]:
-        """Búsqueda administrativa por nombre/correo/fecha/agenda/evento (uso interno, no
-        público). Filtra nombre/correo contra la foto tomada en la propia reserva
-        (`Reserva.usuario_nombre`/`usuario_correo`, no un join a `usuarios`) para que las
-        reservas de una cuenta ya eliminada sigan apareciendo y siendo buscables. Carga
-        adelantada de servicio/agenda+área: el panel muestra quién reservó qué sin disparar
-        una consulta por fila."""
-        stmt = select(Reserva).options(
-            joinedload(Reserva.servicio),
-            joinedload(Reserva.agenda).joinedload(Agenda.area),
-        )
+               servicio_id: int | None = None, estado: str | None = None,
+               limite: int = 2000) -> list[Reserva]:
+        """Búsqueda administrativa por nombre/correo/fecha/agenda/evento. Filtra
+        nombre/correo contra la foto tomada en la propia reserva (no un join a `usuarios`)
+        para que las reservas de una cuenta ya eliminada sigan siendo buscables."""
+        stmt = _con_detalle(select(Reserva))
         if servicio_id:
             stmt = stmt.where(Reserva.servicio_id == servicio_id)
         if estado:
@@ -104,15 +145,25 @@ class ReservaRepository(BaseRepository[Reserva]):
             stmt = stmt.where(Reserva.fecha == fecha)
         if agenda_id:
             stmt = stmt.where(Reserva.agenda_id == agenda_id)
-        stmt = stmt.order_by(Reserva.fecha.desc(), Reserva.hora_inicio.desc())
+        stmt = stmt.order_by(Reserva.fecha.desc(), Reserva.hora_inicio.desc()).limit(limite)
         return list(self.db.execute(stmt).scalars().all())
 
     def mias(self, usuario_id: int) -> list[Reserva]:
         """Reservas propias de un usuario autenticado (histórico completo, todos los estados)."""
         return list(
             self.db.execute(
-                select(Reserva)
+                _con_detalle(select(Reserva))
                 .where(Reserva.usuario_id == usuario_id)
                 .order_by(Reserva.fecha.desc(), Reserva.hora_inicio.desc())
             ).scalars().all()
         )
+
+    def activas_desde(self, fecha_inicio: date, fecha_fin: date) -> list[Reserva]:
+        """Reservas activas de un rango de fechas que todavía no han ocurrido (para el
+        reinicio semanal: lo ya ocurrido queda pendiente de marcar asistencia)."""
+        stmt = select(Reserva).where(
+            Reserva.fecha >= fecha_inicio,
+            Reserva.fecha <= fecha_fin,
+            Reserva.estado == EstadoReserva.ACTIVA.value,
+        )
+        return list(self.db.execute(_solo_futuras(stmt)).scalars().all())

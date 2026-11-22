@@ -23,7 +23,9 @@ import {
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import type { Agenda, Area, Servicio } from "../../types";
+import type { Agenda, Area, ReservaAdmin, Servicio } from "../../types";
+import PageHeader from "../../components/PageHeader";
+import ReservasAfectadasDialog from "../../components/ReservasAfectadasDialog";
 import { listarAreas } from "../../services/areas";
 import { listarServicios } from "../../services/servicios";
 import {
@@ -33,7 +35,7 @@ import {
   listarAgendas,
   type AgendaPayload,
 } from "../../services/agendas";
-import { mensajeError } from "../../utils/errors";
+import { mensajeError, reservasAfectadasDe } from "../../utils/errors";
 import Loader from "../../components/Loader";
 import DataTable, { type ColumnaDataTable } from "../../components/DataTable";
 
@@ -94,6 +96,7 @@ export default function AgendasPage() {
   const [form, setForm] = useState<FormularioAgenda>(FORM_VACIO);
   const [guardando, setGuardando] = useState(false);
   const [errorDialog, setErrorDialog] = useState<string | null>(null);
+  const [afectadas, setAfectadas] = useState<{ titulo: string; descripcion: string; reservas: ReservaAdmin[] } | null>(null);
 
   async function cargar() {
     setCargando(true);
@@ -178,7 +181,9 @@ export default function AgendasPage() {
     form.hora_inicio !== "" &&
     form.hora_fin !== "" &&
     form.duracion_minutos !== "" &&
-    Number(form.duracion_minutos) > 0 &&
+    Number(form.duracion_minutos) >= 5 &&
+    Number(form.duracion_minutos) <= 480 &&
+    form.hora_fin > form.hora_inicio &&
     form.dias.size > 0;
 
   async function guardar() {
@@ -206,6 +211,15 @@ export default function AgendasPage() {
       setDialogAbierto(false);
       await cargar();
     } catch (e) {
+      const reservas = reservasAfectadasDe(e);
+      if (reservas.length > 0) {
+        // El cambio dejaría reservas futuras fuera de los nuevos turnos: no se aplicó nada.
+        setAfectadas({
+          titulo: "No se puede aplicar el cambio todavía",
+          descripcion: `${mensajeError(e)} Puedes cancelar estas reservas (avisando a cada colaborador) y luego volver a guardar, o mantener la configuración actual.`,
+          reservas,
+        });
+      }
       setErrorDialog(mensajeError(e, "No se pudo guardar la agenda."));
     } finally {
       setGuardando(false);
@@ -214,7 +228,14 @@ export default function AgendasPage() {
 
   async function alternarEstadoAgenda(agenda: Agenda) {
     try {
-      await cambiarEstadoAgenda(agenda.id, !agenda.activo);
+      const r = await cambiarEstadoAgenda(agenda.id, !agenda.activo);
+      if (r.reservas_afectadas.length > 0) {
+        setAfectadas({
+          titulo: `«${agenda.nombre}» desactivada`,
+          descripcion: "La agenda ya no acepta reservas nuevas. Estas reservas futuras siguen vigentes: puedes mantenerlas o cancelarlas y avisar a cada colaborador.",
+          reservas: r.reservas_afectadas,
+        });
+      }
       await cargar();
     } catch (e) {
       setError(mensajeError(e, "No se pudo cambiar el estado de la agenda."));
@@ -257,14 +278,22 @@ export default function AgendasPage() {
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }} flexWrap="wrap" gap={1}>
-        <Typography variant="h4">Agendas</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={abrirCrear}>
-          Nueva agenda
-        </Button>
-      </Stack>
+      <PageHeader
+        titulo="Agendas"
+        descripcion="Cada agenda une un evento con un área y define su horario. Los cambios que dejarían reservas futuras fuera de los nuevos turnos se bloquean hasta resolverlas."
+        acciones={<Button variant="contained" startIcon={<AddIcon />} onClick={abrirCrear}>Nueva agenda</Button>}
+      />
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+      <ReservasAfectadasDialog
+        abierto={!!afectadas}
+        titulo={afectadas?.titulo ?? ""}
+        descripcion={afectadas?.descripcion ?? ""}
+        reservas={afectadas?.reservas ?? []}
+        motivoSugerido="Cambio en el horario de atención."
+        onCerrar={() => setAfectadas(null)}
+      />
 
       {cargando ? (
         <Loader />
@@ -381,7 +410,9 @@ export default function AgendasPage() {
                   value={form.duracion_minutos}
                   onChange={(e) => setForm((f) => ({ ...f, duracion_minutos: e.target.value }))}
                   fullWidth
-                  inputProps={{ min: 1 }}
+                  inputProps={{ min: 5, max: 480, step: 5 }}
+                  error={form.duracion_minutos !== "" && (Number(form.duracion_minutos) < 5 || Number(form.duracion_minutos) > 480)}
+                  helperText="Entre 5 y 480 minutos"
                 />
               </Grid>
               <Grid item xs={12} sm={6}>

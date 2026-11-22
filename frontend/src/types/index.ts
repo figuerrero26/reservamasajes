@@ -95,6 +95,8 @@ export interface SlotDia {
   usuario_apellido?: string | null;
   usuario_correo?: string | null;
   notes?: string | null;
+  /** La reserva no coincide con ningún turno de la configuración actual (dato histórico). */
+  fuera_de_grilla?: boolean;
 }
 
 /** Agenda completa (todos sus turnos) de un día — vista "por día" del panel admin. */
@@ -103,6 +105,8 @@ export interface AgendaDia {
   agenda_nombre: string;
   area_nombre: string;
   evento_nombre: string;
+  /** false si la agenda, su evento o su área están desactivados (se muestra por sus reservas). */
+  agenda_activa?: boolean;
   slots: SlotDia[];
 }
 
@@ -135,11 +139,27 @@ export interface ReservaAdmin extends Reserva {
   agenda_nombre: string;
 }
 
-export type EstadoCorreoConfirmacion = "pendiente" | "enviado" | "fallido";
+/** Vista propia del colaborador (GET /reservas/mias). */
+export interface MiReserva extends Reserva {
+  evento_nombre: string;
+  area_nombre: string;
+  puede_cancelar: boolean;
+}
 
-/** Respuesta de los endpoints de creación de reserva: incluye el estado del correo. */
+/** Respuesta de creación de reserva. El correo se envía en segundo plano: siempre "pendiente". */
 export interface ReservaCreada extends Reserva {
-  correo_confirmacion: EstadoCorreoConfirmacion;
+  correo_confirmacion: "pendiente";
+}
+
+/** Respuesta de acciones administrativas que no cancelan reservas pero las afectan
+ * (desactivar evento/área/agenda, crear bloqueo o festivo). */
+export interface ConReservasAfectadas {
+  reservas_afectadas: ReservaAdmin[];
+}
+
+export interface CancelarLoteResultado {
+  canceladas: number[];
+  omitidas: number[];
 }
 
 export interface TokenResponse {
@@ -235,6 +255,11 @@ export interface ConfiguracionGeneral {
   color_boton_disponibilidad?: string | null;
   color_fondo_bienvenida?: string | null;
   evento_unico_por_semana?: boolean;
+  contacto_correo?: string | null;
+  contacto_telefono?: string | null;
+  contacto_direccion?: string | null;
+  politica_privacidad?: string | null;
+  terminos_condiciones?: string | null;
   zona_horaria: string;
   semana_activa_inicio?: string | null;
   semana_activa_fin?: string | null;
@@ -291,7 +316,9 @@ export interface Auditoria {
 }
 
 export interface ApiErrorBody {
-  detail?: string;
+  detail?: string | { msg?: string }[];
+  /** Presente en los 409 de edición de agendas: reservas que impiden el cambio. */
+  reservas_afectadas?: ReservaAdmin[];
 }
 
 // ---- Módulo de actividades genéricas (inscripciones con cupo configurable) ----
@@ -306,6 +333,22 @@ export interface CampoFormulario {
   opciones?: string[] | null;
 }
 
+/** Estado de inscripción evaluado por el backend (ver app/schemas/actividad.py). */
+export type EstadoActividad = "abierta" | "agotada" | "proximamente" | "cerrada" | "finalizada";
+
+/** Estado de una sesión tal como lo ve el portal (ver app/schemas/sesion.py). */
+export type EstadoSesion = "disponible" | "cupo_lleno" | "cerrada" | "finalizada" | "inactiva";
+
+export interface ResumenSesiones {
+  sesiones_futuras: number;
+  proxima_fecha?: string | null;
+  proxima_hora_inicio?: string | null;
+  proxima_hora_fin?: string | null;
+  proximo_lugar?: string | null;
+  inscritos_futuros: number;
+  cupos_disponibles?: number | null; // null = alguna sesión sin límite
+}
+
 export interface Actividad {
   id: number;
   nombre: string;
@@ -318,9 +361,11 @@ export interface Actividad {
   fecha_apertura_inscripciones?: string | null;
   fecha_cierre_inscripciones?: string | null;
   activo: boolean;
+  estado_inscripcion: EstadoActividad;
+  resumen: ResumenSesiones;
 }
 
-/** Catálogo público: igual que Actividad pero con el estado de inscripción ya evaluado. */
+/** Catálogo público: con el estado de inscripción y la próxima sesión ya evaluados. */
 export interface ActividadPublica {
   id: number;
   nombre: string;
@@ -330,6 +375,10 @@ export interface ActividadPublica {
   informacion_adicional?: string | null;
   campos_formulario: CampoFormulario[];
   inscripcion_disponible: boolean;
+  estado_inscripcion: EstadoActividad;
+  fecha_apertura_inscripciones?: string | null;
+  fecha_cierre_inscripciones?: string | null;
+  resumen: ResumenSesiones;
 }
 
 export interface Sesion {
@@ -339,9 +388,13 @@ export interface Sesion {
   hora_inicio: string;
   hora_fin: string;
   cupo_maximo?: number | null;
+  lugar?: string | null;
   activa: boolean;
   inscritos: number;
   cupos_disponibles?: number | null; // null = sin límite
+  estado: EstadoSesion;
+  /** Solo en el portal con sesión iniciada: si el colaborador ya está inscrito. */
+  inscrito?: boolean | null;
 }
 
 export type EstadoInscripcion = "activa" | "cancelada" | "completada" | "no_asistio";
@@ -360,10 +413,13 @@ export interface Inscripcion {
 
 /** Vista propia del colaborador (GET /inscripciones/mias): agrega nombres legibles. */
 export interface MiInscripcion extends Inscripcion {
+  actividad_id: number;
   actividad_nombre: string;
   sesion_fecha: string;
   sesion_hora_inicio: string;
   sesion_hora_fin: string;
+  sesion_lugar?: string | null;
+  puede_cancelar: boolean;
 }
 
 /** Vista administrativa (GET /inscripciones): agrega identidad del colaborador. */
@@ -371,6 +427,7 @@ export interface InscripcionAdmin extends Inscripcion {
   usuario_nombre: string;
   usuario_apellido: string;
   usuario_correo?: string | null;
+  actividad_id: number;
   actividad_nombre: string;
   sesion_fecha: string;
   sesion_hora_inicio: string;

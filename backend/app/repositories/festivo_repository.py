@@ -11,6 +11,9 @@ class FestivoRepository(BaseRepository[Festivo]):
     def __init__(self, db: Session):
         super().__init__(Festivo, db)
 
+    def listar(self) -> list[Festivo]:
+        return list(self.db.execute(select(Festivo).order_by(Festivo.fecha.desc())).scalars().all())
+
     def by_fecha(self, fecha: date) -> Festivo | None:
         return self.db.execute(
             select(Festivo).where(Festivo.fecha == fecha)
