@@ -27,6 +27,8 @@ Toda la operación usa la zona horaria única **America/Bogota**.
 - [Variables de entorno](#variables-de-entorno)
 - [Migraciones (Alembic)](#migraciones-alembic)
 - [Administrador inicial](#administrador-inicial)
+- [Reglas de coherencia del catálogo](#reglas-de-coherencia-del-catálogo)
+- [Actividades con inscripción](#actividades-con-inscripción)
 - [Configuración SMTP y notificaciones](#configuración-smtp-y-notificaciones)
 - [Backup y restauración de MariaDB](#backup-y-restauración-de-mariadb)
 - [Pruebas automatizadas](#pruebas-automatizadas)
@@ -464,10 +466,62 @@ pasa por una migración de Alembic versionada en `backend/alembic/versions/`:
 ## Administrador inicial
 
 Se crea automáticamente al levantar el backend, a partir de `ADMIN_USER` /
-`ADMIN_INITIAL_PASSWORD`. Cambie la contraseña desde el panel (`/admin`, menú de usuario →
-Cambiar contraseña) o por API (`POST /api/v1/auth/cambiar-password`) apenas despliegue. El
-modelo de datos ya soporta múltiples administradores y roles (tabla `roles`) para cuando se
-necesite, aunque hoy solo se usa el rol `administrador`.
+`ADMIN_INITIAL_PASSWORD`, **solo si todavía no existe** (cambiar esas variables después no
+modifica una cuenta ya creada). Cambie la contraseña desde el panel (`/admin`, menú lateral →
+Cambiar contraseña) o por API (`POST /api/v1/auth/cambiar-password`) apenas despliegue.
+
+Roles del panel:
+
+| Rol | Acceso |
+|---|---|
+| `administrador` | Todo el panel. |
+| `visor_reservas` | Solo lectura: vista de reservas por día, listado de reservas e inscripciones. |
+
+En cada petición el backend verifica en la base de datos que la cuenta siga activa y usa el
+rol **vigente**: bloquear o eliminar una cuenta, o cambiarle el rol, tiene efecto inmediato
+sobre las sesiones abiertas (no hay que esperar a que expire el token). Lo mismo aplica a las
+cuentas de colaboradores.
+
+## Reglas de coherencia del catálogo
+
+Ningún cambio administrativo cancela reservas por su cuenta; todos informan qué reservas
+quedan afectadas y el administrador decide (con confirmación) si las cancela y notifica
+(`POST /api/v1/reservas/cancelar-lote`):
+
+- **Desactivar un evento (servicio) o un área**: deja de mostrarse y sus agendas dejan de
+  ofrecer turnos; el backend rechaza nuevas reservas (también manuales y por API directa).
+  Las reservas futuras existentes se conservan y se devuelven en `reservas_afectadas`. Al
+  reactivarlo (`/servicios/{id}/activar`, `/areas/{id}/activar`) vuelven las agendas que
+  estaban activas.
+- **Modificar una agenda** (horario, duración, almuerzo, días, evento o área): si alguna
+  reserva futura dejaría de ser un turno exacto de la nueva configuración, la API responde
+  `409` con `reservas_afectadas` y no aplica nada. Los cambios compatibles (p. ej. extender el
+  horario) se aplican normalmente. La ocupación de turnos se calcula por solapamiento, de modo
+  que ni siquiera datos históricos fuera de la grilla permiten turnos solapados.
+- **Bloqueos y festivos**: impiden nuevas reservas en el periodo y responden las reservas
+  futuras que ya existían dentro de él. La vista "por día" del panel sigue mostrándolas.
+- **Agendas cerca de la medianoche**: la grilla se calcula en minutos enteros y nunca supera
+  `hora_fin` (antes una agenda 20:00–23:45 con turnos de 30 min dejaba el backend colgado).
+  La duración se valida entre 5 y 480 minutos también al editar.
+
+## Actividades con inscripción
+
+Módulo independiente de las reservas por turnos (no comparten reglas de negocio):
+
+- Cada actividad tiene una o varias **sesiones** con fecha, hora, lugar opcional y **cupo**
+  (vacío = sin límite). El cupo se controla bloqueando la fila de la sesión durante la
+  inscripción: dos personas nunca pueden ocupar el último cupo a la vez.
+- **Estados de la actividad** (calculados en el backend): `abierta`, `agotada` (todas las
+  sesiones futuras llenas), `proximamente` (antes de la fecha de apertura), `cerrada` (switch
+  manual o pasó el cierre) y `finalizada` (sin sesiones futuras; no se anuncia en el portal).
+- **Estados de la sesión**: `disponible`, `cupo_lleno`, `cerrada`, `finalizada`, `inactiva`.
+- **Estados de la inscripción**: `activa`, `cancelada`, `completada` (asistió), `no_asistio`.
+- El colaborador puede cancelar su inscripción hasta que la sesión empiece; el cupo se libera
+  de inmediato. El administrador puede inscribir manualmente (ignora la ventana de
+  inscripción, nunca el cupo), cancelar con aviso por correo, marcar asistencia y exportar
+  los inscritos a CSV.
+- Cada inscripción envía un **correo de confirmación** (actividad, fecha, hora, lugar, estado
+  e información adicional). Un fallo del correo nunca duplica ni revierte la inscripción.
 
 ## Configuración SMTP y notificaciones
 
@@ -487,12 +541,25 @@ Dos formas de configurar SMTP (la de base de datos tiene prioridad si existe):
    **nunca se vuelve a mostrar** en la respuesta de la API — solo se indica si hay una
    guardada. Un botón "Enviar correo de prueba" confirma que la configuración funciona.
 
-La tabla `notificaciones` deja preparada la arquitectura para agregar más adelante correos de
-cancelación, modificación o recordatorio sin cambiar el esquema (columna `tipo`).
+Correos que envía el sistema (columna `notificaciones.tipo`): `confirmacion` (reserva),
+`cancelacion` (reserva cancelada por el administrador, con motivo), `confirmacion_inscripcion`,
+`cancelacion_inscripcion` y `restablecer_password`. Cada envío se reintenta una vez ante un
+fallo transitorio y deja registro de los intentos. El puerto 465 usa SSL implícito; los
+demás, STARTTLS si `tls` está activo.
+
+Si se cambia `JWT_SECRET`, la contraseña SMTP guardada desde el panel deja de poder
+descifrarse (la clave de cifrado se deriva de él): hay que volver a guardarla.
 
 ## Backup y restauración de MariaDB
 
-**Backup** (dump lógico completo, incluye estructura y datos — reservas históricas,
+**Respaldo automático antes de migrar.** Al arrancar, el backend revisa si hay migraciones de
+Alembic pendientes (`scripts/respaldo_pre_migracion.py`). Si las hay, genera primero un
+volcado SQL completo comprimido en `./data/backups/` (se conservan los últimos `BACKUP_KEEP`,
+10 por defecto) y **solo entonces** migra. Si el respaldo falla, el backend no arranca y no se
+toca la estructura de la base. Si la base ya está al día, no se genera nada. La carpeta
+`data/backups/` está excluida de git porque contiene datos personales.
+
+**Backup manual** (dump lógico completo, incluye estructura y datos — reservas históricas,
 notificaciones, configuración general y SMTP incluidas):
 
 ```bash
@@ -578,10 +645,29 @@ una línea a su `~/.bashrc`/`~/.zshrc`:
 docker compose exec backend pytest
 ```
 
-Las pruebas corren contra una MariaDB real (crean y recrean una base `reservas_test`
-dedicada), porque la regla de concurrencia depende de comportamiento específico de MariaDB
-(columna generada + índice único) que no tendría sentido validar contra un motor distinto.
+Las pruebas de integración corren contra una MariaDB real (crean y recrean una base
+`reservas_test` dedicada; por seguridad se niegan a correr contra cualquier otra base),
+porque la regla de concurrencia depende de comportamiento específico de MariaDB (columna
+generada + índice único) que no tendría sentido validar contra un motor distinto. Las
+pruebas unitarias puras no necesitan base de datos y corren en cualquier equipo:
+
+```bash
+cd backend && pytest tests/test_unitarias_logica.py
+```
+
 Cobertura incluida en `backend/tests/`:
+
+- `test_unitarias_logica.py` (sin BD): grilla de turnos cerca de la medianoche y con
+  duraciones inválidas (con tope de tiempo para detectar bucles), validaciones de agenda,
+  bloqueos, sesiones, lotes, semana activa y configuración, y la evaluación de estados de
+  actividades y sesiones.
+- `test_correcciones_reservas.py`: protección de reservas al editar agendas, bloqueos y
+  festivos con reservas afectadas, cancelación en lote con notificación, desactivación y
+  reactivación de eventos/áreas, revocación inmediata de sesiones, cancelaciones
+  retroactivas y validaciones por API.
+- `test_actividades.py`: flujo completo de inscripción, cierre automático por cupo,
+  concurrencia sobre el último cupo, ventana de inscripción, estados, validaciones de
+  sesiones, generación por lotes y correos de confirmación/cancelación.
 
 - `test_horario_service.py`: generación de slots — horario completo, franja final incompleta,
   almuerzo total/parcial, bloqueos (rango y día completo), festivos, hora pasada, fecha
@@ -669,5 +755,12 @@ Ley 1581 de 2012 (principio de minimización de datos):
   personales formal y sus textos de aviso de privacidad, que este sistema está preparado para
   incorporar (por ejemplo, como texto configurable en `configuracion_general` o en el propio
   frontend) sin requerir cambios estructurales.
-- Protección básica contra abuso: *rate limiting* en `POST /cuenta/registro` y
-  `POST /cuenta/login` (`RATE_LIMIT_AUTH`, por defecto 10 solicitudes/minuto por IP).
+- Protección básica contra abuso: *rate limiting* en `POST /cuenta/registro`,
+  `POST /cuenta/login`, `POST /cuenta/olvide-password`, `POST /cuenta/restablecer-password` y
+  `POST /auth/login` del panel (`RATE_LIMIT_AUTH`, por defecto 10 solicitudes/minuto **por IP
+  real del cliente**: uvicorn corre con `--proxy-headers` para leer `X-Forwarded-For` desde
+  nginx; antes todas las peticiones parecían venir del contenedor de nginx y compartían un
+  único contador).
+- El portal publica una página de **política de privacidad** (`/privacidad`) y de **términos
+  y condiciones** (`/terminos`) cuyo texto se edita en Configuración; si no se define, se
+  muestra un texto base acorde con la Ley 1581 de 2012.
