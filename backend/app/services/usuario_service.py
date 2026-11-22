@@ -1,9 +1,10 @@
 from datetime import datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.security import hash_password
-from app.models import EstadoReserva, Usuario
+from app.models import EstadoInscripcion, EstadoReserva, Inscripcion, Usuario
 from app.repositories.reserva_repository import ReservaRepository
 from app.repositories.usuario_repository import UsuarioRepository
 from app.services import auditoria_service
@@ -68,10 +69,26 @@ class UsuarioService:
             r.cancelled_at = momento
             r.cancelled_by = "usuario_eliminado"
 
+        # Mismo criterio para las inscripciones a actividades: las futuras se cancelan (y
+        # liberan su cupo); las ya ocurridas quedan en el historial con la identidad copiada.
+        inscripciones_futuras = [
+            i for i in self.db.execute(
+                select(Inscripcion).where(
+                    Inscripcion.usuario_id == usuario_id, Inscripcion.estado == EstadoInscripcion.ACTIVA.value,
+                )
+            ).scalars().all()
+            if datetime.combine(i.sesion.fecha, i.sesion.hora_inicio, tzinfo=TZ) > momento
+        ]
+        for i in inscripciones_futuras:
+            i.estado = EstadoInscripcion.CANCELADA.value
+            i.cancelled_at = momento
+            i.cancelled_by = "usuario_eliminado"
+
         auditoria_service.registrar(
             self.db, admin_id, "eliminar_usuario", "usuario", usuario_id,
             datos_anteriores={"nombre": usuario.nombre, "apellido": usuario.apellido, "correo": usuario.correo},
-            datos_nuevos={"reservas_futuras_canceladas": len(futuras)},
+            datos_nuevos={"reservas_futuras_canceladas": len(futuras),
+                         "inscripciones_futuras_canceladas": len(inscripciones_futuras)},
         )
         self.db.delete(usuario)
         self.db.commit()

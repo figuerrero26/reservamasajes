@@ -13,6 +13,9 @@ backend/.pytest_cache/
 backend/htmlcov/
 backend/.coverage
 
+# Respaldos automáticos de la base (contienen datos personales: nunca al repositorio)
+data/backups/
+
 # Frontend (Node)
 frontend/node_modules/
 frontend/dist/

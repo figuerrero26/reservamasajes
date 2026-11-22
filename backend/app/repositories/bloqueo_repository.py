@@ -11,6 +11,12 @@ class BloqueoRepository(BaseRepository[Bloqueo]):
     def __init__(self, db: Session):
         super().__init__(Bloqueo, db)
 
+    def listar(self, fecha: date | None = None) -> list[Bloqueo]:
+        stmt = select(Bloqueo)
+        if fecha:
+            stmt = stmt.where(Bloqueo.fecha == fecha)
+        return list(self.db.execute(stmt.order_by(Bloqueo.fecha.desc(), Bloqueo.hora_inicio)).scalars().all())
+
     def por_agenda_fecha(self, agenda_id: int, fecha: date) -> list[Bloqueo]:
         return list(
             self.db.execute(
@@ -23,5 +29,5 @@ class BloqueoRepository(BaseRepository[Bloqueo]):
 
     def es_festivo(self, fecha: date) -> bool:
         return self.db.execute(
-            select(Festivo).where(Festivo.fecha == fecha, Festivo.estado.is_(True))
-        ).scalar_one_or_none() is not None
+            select(Festivo.id).where(Festivo.fecha == fecha, Festivo.estado.is_(True))
+        ).first() is not None

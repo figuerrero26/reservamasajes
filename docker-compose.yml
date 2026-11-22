@@ -45,10 +45,16 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
       ADMIN_USER: ${ADMIN_USER:-admin_sigra}
-      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-T3cn0z1gr@67!}
+      # Sin valor por defecto real: la contraseña inicial debe venir del .env. (Solo se usa
+      # la primera vez, cuando el administrador todavía no existe en la base.)
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-cambie-esta-clave}
       TZ: ${APP_TIMEZONE:-America/Bogota}
+      # Respaldo automático antes de migrar (ver backend/scripts/respaldo_pre_migracion.py).
+      BACKUP_DIR: /app/backups
+      BACKUP_KEEP: ${BACKUP_KEEP:-10}
     volumes:
       - ./data/uploads:/app/uploads
+      - ./data/backups:/app/backups
     ports:
       - "${BACKEND_PORT:-8001}:8000"
 

@@ -6,19 +6,20 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_admin, get_current_admin_full, get_current_usuario
 from app.database.session import get_db
 from app.schemas.reserva import (
-    AgendaDia, HorariosResponse, MarcarAsistenciaIn, ReservaAdminOut, ReservaCreadaOut, ReservaCreate,
-    ReservaCreateManual, ReservaOut,
+    AgendaDia, CancelacionIn, CancelarLoteIn, CancelarLoteOut, HorariosResponse, MarcarAsistenciaIn,
+    MiReservaOut, ReservaAdminOut, ReservaCreadaOut, ReservaCreate, ReservaCreateManual, ReservaOut,
 )
-from app.services.email_service import enviar_confirmacion_reserva
+from app.services.email_service import enviar_cancelacion_reserva, enviar_confirmacion_reserva
 from app.services.horario_service import HorarioService
 from app.services.reserva_service import ReservaService
 
 router = APIRouter(tags=["reservas"])
 
 
-# ---- Flujo público (requiere sesión de usuario) ----
+# ---- Flujo público ----
 @router.get("/agendas/{agenda_id}/horarios", response_model=HorariosResponse)
 def horarios(agenda_id: int, fecha: date = Query(...), db: Session = Depends(get_db)):
+    """Disponibilidad abierta (sin sesión): no expone datos personales, solo estados."""
     slots = HorarioService(db).generar(agenda_id, fecha)
     return HorariosResponse(fecha=fecha, agenda_id=agenda_id, slots=slots)
 
@@ -31,10 +32,10 @@ def crear_reserva(data: ReservaCreate, background_tasks: BackgroundTasks,
         usuario_id=usuario["id"],
     )
     background_tasks.add_task(enviar_confirmacion_reserva, reserva.id)
-    return ReservaCreadaOut(**ReservaOut.model_validate(reserva).model_dump(), correo_confirmacion="pendiente")
+    return ReservaCreadaOut(**ReservaOut.model_validate(reserva).model_dump())
 
 
-@router.get("/reservas/mias", response_model=list[ReservaOut])
+@router.get("/reservas/mias", response_model=list[MiReservaOut])
 def mis_reservas(db: Session = Depends(get_db), usuario: dict = Depends(get_current_usuario)):
     """Minimización de datos: solo las reservas del usuario autenticado, nunca de otro."""
     return ReservaService(db).mias(usuario["id"])
@@ -64,8 +65,7 @@ def buscar(
 def dia(fecha: date = Query(...), servicio_id: int | None = None,
         db: Session = Depends(get_db), _: dict = Depends(get_current_admin)):
     """Vista "por día": todos los turnos de todas las agendas activas (disponibles y
-    ocupados), sin importar área ni evento salvo que se filtre por evento — ver
-    ReservaService.dia."""
+    ocupados), sin importar área ni evento salvo que se filtre por evento."""
     return ReservaService(db).dia(fecha, servicio_id=servicio_id)
 
 
@@ -74,13 +74,39 @@ def crear_reserva_manual(data: ReservaCreateManual, background_tasks: Background
                           db: Session = Depends(get_db), admin: dict = Depends(get_current_admin_full)):
     reserva = ReservaService(db).crear_manual(data, admin["id"])
     background_tasks.add_task(enviar_confirmacion_reserva, reserva.id)
-    return ReservaCreadaOut(**ReservaOut.model_validate(reserva).model_dump(), correo_confirmacion="pendiente")
+    return ReservaCreadaOut(**ReservaOut.model_validate(reserva).model_dump())
+
+
+@router.post("/reservas/cancelar-lote", response_model=CancelarLoteOut)
+def cancelar_lote(data: CancelarLoteIn, background_tasks: BackgroundTasks,
+                  db: Session = Depends(get_db), admin: dict = Depends(get_current_admin_full)):
+    """Cancela, con confirmación explícita del administrador, un grupo de reservas (p. ej.
+    las afectadas por un bloqueo o festivo) y notifica a cada colaborador si se pide."""
+    canceladas, omitidas = ReservaService(db).cancelar_lote(data.reserva_ids, admin["id"], admin["sub"], data.motivo)
+    if data.notificar:
+        for rid in canceladas:
+            background_tasks.add_task(enviar_cancelacion_reserva, rid, data.motivo)
+    return CancelarLoteOut(canceladas=canceladas, omitidas=omitidas)
 
 
 @router.delete("/reservas/{reserva_id}", response_model=ReservaOut)
-def cancelar(reserva_id: int, db: Session = Depends(get_db),
-             admin: dict = Depends(get_current_admin_full)):
-    return ReservaService(db).cancelar(reserva_id, admin["id"], admin["sub"])
+def cancelar(reserva_id: int, background_tasks: BackgroundTasks,
+             motivo: str | None = Query(default=None, max_length=500), notificar: bool = False,
+             db: Session = Depends(get_db), admin: dict = Depends(get_current_admin_full)):
+    reserva = ReservaService(db).cancelar(reserva_id, admin["id"], admin["sub"], motivo)
+    if notificar:
+        background_tasks.add_task(enviar_cancelacion_reserva, reserva.id, motivo)
+    return reserva
+
+
+@router.post("/reservas/{reserva_id}/cancelar-admin", response_model=ReservaOut)
+def cancelar_admin(reserva_id: int, data: CancelacionIn, background_tasks: BackgroundTasks,
+                   db: Session = Depends(get_db), admin: dict = Depends(get_current_admin_full)):
+    """Igual que DELETE /reservas/{id}, con el motivo y la notificación en el cuerpo."""
+    reserva = ReservaService(db).cancelar(reserva_id, admin["id"], admin["sub"], data.motivo)
+    if data.notificar:
+        background_tasks.add_task(enviar_cancelacion_reserva, reserva.id, data.motivo)
+    return reserva
 
 
 @router.post("/reservas/{reserva_id}/asistencia", response_model=ReservaOut)

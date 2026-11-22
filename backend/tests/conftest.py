@@ -1,18 +1,23 @@
-"""Fixtures compartidos. Las pruebas corren contra una MariaDB real (no SQLite):
+"""Fixtures compartidos.
 
-la regla de concurrencia y la regla "una reserva por usuario+evento+día" dependen de la
-columna generada `slot_lock` y de índices únicos propios de MariaDB, así que solo tienen
-sentido validadas contra el motor real.
+Dos tipos de pruebas conviven aquí:
+- **Unitarias puras** (generación de la grilla de turnos, validaciones de esquemas, reglas de
+  estado): no tocan la base de datos y corren en cualquier equipo con `pytest`.
+- **De integración**: corren contra una MariaDB real (no SQLite), porque la regla de
+  concurrencia y la de "una reserva por usuario+evento+día" dependen de la columna generada
+  `slot_lock` y de índices únicos propios de MariaDB. Se activan solas al pedir los fixtures
+  `db`, `datos_base` o `client`.
+
+La conexión a MariaDB es perezosa: solo se crea la base `reservas_test` la primera vez que
+una prueba de integración la necesita.
 
 Variables de entorno usadas: TEST_DATABASE_URL (opcional, URL completa) o, por defecto, las
-mismas variables sueltas que usa la app (DB_HOST, DB_PORT, MARIADB_USER, MARIADB_PASSWORD)
-con la base de datos "reservas_test" (que se crea si no existe), más MARIADB_ROOT_PASSWORD
-(para crear esa BD y otorgarle permisos al usuario de la app — ya viene configurada en
-docker-compose.yml).
+mismas variables sueltas que usa la app (DB_HOST, DB_PORT, MARIADB_USER, MARIADB_PASSWORD) con
+la base de datos "reservas_test", más MARIADB_ROOT_PASSWORD para crearla. Dentro del
+contenedor (docker compose exec backend pytest) ya vienen configuradas.
 """
 import os
 
-import pymysql
 import pytest
 from sqlalchemy.engine import URL as SqlAlchemyURL, make_url
 
@@ -21,71 +26,80 @@ if os.environ.get("TEST_DATABASE_URL"):
 else:
     _url = SqlAlchemyURL.create(
         "mysql+pymysql",
-        username=os.environ.get("MARIADB_USER", "reservas"),
-        password=os.environ.get("MARIADB_PASSWORD", "reservas"),
+        username=os.environ.get("MARIADB_USER", "root"),
+        password=os.environ.get("MARIADB_PASSWORD", "root"),
         host=os.environ.get("DB_HOST", "db"),
         port=int(os.environ.get("DB_PORT", "3306")),
         database="reservas_test",
     )
-_user, _password, _host, _port, _dbname = (
-    _url.username,
-    _url.password,
-    _url.host,
-    _url.port,
-    _url.database,
-)
+if _url.database != "reservas_test" and not os.environ.get("PERMITIR_BD_PRUEBAS_DISTINTA"):
+    # Las pruebas BORRAN y recrean todas las tablas: nunca deben apuntar a la base real.
+    raise RuntimeError(f"Las pruebas solo pueden usar la base 'reservas_test', no '{_url.database}'")
 
 # Debe fijarse ANTES de importar cualquier módulo de app.* (config usa lru_cache y
-# database/session crea el engine al importarse). Se limpia DATABASE_URL para forzar que
-# Settings arme la URL desde estas mismas variables sueltas (evita divergencia entre lo que
-# usa este script para crear la BD y lo que usa la app para conectarse).
+# database/session crea el engine al importarse).
 os.environ["DATABASE_URL"] = ""
-os.environ["DB_HOST"] = _host
-os.environ["DB_PORT"] = str(_port)
-os.environ["MARIADB_USER"] = _user
-os.environ["MARIADB_PASSWORD"] = _password
-os.environ["MARIADB_DATABASE"] = _dbname
+os.environ["DB_HOST"] = _url.host
+os.environ["DB_PORT"] = str(_url.port or 3306)
+os.environ["MARIADB_USER"] = _url.username
+os.environ["MARIADB_PASSWORD"] = _url.password or ""
+os.environ["MARIADB_DATABASE"] = _url.database
 os.environ.setdefault("JWT_SECRET", "test-secret")
 
-# El usuario de la aplicación (MARIADB_USER) solo tiene privilegios sobre la BD de negocio
-# (MARIADB_DATABASE): el contenedor oficial de MariaDB no le otorga CREATE DATABASE global.
-# Por eso la BD de pruebas se crea y se le otorgan permisos como root; las pruebas en sí
-# siguen corriendo con el usuario normal de la app (misma URL que usa la aplicación).
-_root_password = os.environ.get("MARIADB_ROOT_PASSWORD", "reservas_root")
-_root_conn = pymysql.connect(host=_host, port=int(_port), user="root", password=_root_password)
-try:
-    with _root_conn.cursor() as cur:
-        cur.execute(f"CREATE DATABASE IF NOT EXISTS `{_dbname}`")
-        cur.execute(f"GRANT ALL PRIVILEGES ON `{_dbname}`.* TO %s@'%%'", (_user,))
-        cur.execute("FLUSH PRIVILEGES")
-    _root_conn.commit()
-finally:
-    _root_conn.close()
-
-from app.database.base import Base  # noqa: E402
-from app.database.session import engine, SessionLocal  # noqa: E402
-from app.auth.security import hash_password  # noqa: E402
-from app.models import Administrador, Agenda, Area, Rol, Servicio, Usuario  # noqa: E402
-from app.main import app  # noqa: E402
-from app.database.session import get_db  # noqa: E402
-
 from datetime import time  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
+
+from app.auth.security import hash_password  # noqa: E402
+from app.database.base import Base  # noqa: E402
+from app.database.session import SessionLocal, engine, get_db  # noqa: E402
+from app.models import Administrador, Agenda, Area, Rol, Servicio, Usuario  # noqa: E402
+from app.utils.limiter import limiter  # noqa: E402
 
 CORREO_DEMO = "colaborador.demo@example.com"
 PASSWORD_DEMO = "Colaborador123*"
 
+_bd_creada = False
+
+
+def _asegurar_bd_pruebas() -> None:
+    """Crea `reservas_test` (como root) la primera vez que se necesita."""
+    global _bd_creada
+    if _bd_creada:
+        return
+    import pymysql
+
+    root_password = os.environ.get("MARIADB_ROOT_PASSWORD", _url.password or "root")
+    conn = pymysql.connect(host=_url.host, port=int(_url.port or 3306), user="root", password=root_password)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"CREATE DATABASE IF NOT EXISTS `{_url.database}`")
+            if _url.username != "root":
+                cur.execute(f"GRANT ALL PRIVILEGES ON `{_url.database}`.* TO %s@'%%'", (_url.username,))
+                cur.execute("FLUSH PRIVILEGES")
+        conn.commit()
+    finally:
+        conn.close()
+    _bd_creada = True
+
 
 @pytest.fixture(autouse=True)
-def _esquema_limpio():
-    """Recrea el esquema completo antes de cada prueba: aislamiento total."""
+def _limite_de_intentos_limpio():
+    """El rate limiter guarda contadores en memoria por IP: sin esto, las pruebas que inician
+    sesión muchas veces seguidas recibirían 429 por acumulación entre pruebas."""
+    limiter.reset()
+    yield
+
+
+@pytest.fixture
+def esquema_limpio():
+    """Recrea el esquema completo antes de cada prueba de integración: aislamiento total."""
+    _asegurar_bd_pruebas()
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     yield
 
 
 @pytest.fixture
-def db():
+def db(esquema_limpio):
     session = SessionLocal()
     try:
         yield session
@@ -95,10 +109,11 @@ def db():
 
 @pytest.fixture
 def datos_base(db):
-    """Rol admin + dos eventos con sus agendas (misma área, "Masaje de relajación" y "Silla
-    de masajes", 08:00-17:00, almuerzo 12:00-13:00) + un colaborador CON CUENTA creada."""
+    """Roles + admin + visor, dos eventos con sus agendas (misma área, 08:00-17:00, almuerzo
+    12:00-13:00) + un colaborador CON CUENTA creada."""
     rol = Rol(nombre="administrador", descripcion="Acceso total")
-    db.add(rol)
+    rol_visor = Rol(nombre="visor_reservas", descripcion="Solo lectura")
+    db.add_all([rol, rol_visor])
     db.flush()
 
     admin = Administrador(
@@ -136,7 +151,7 @@ def datos_base(db):
     db.commit()
 
     return {
-        "admin_id": admin.id, "area_id": area.id,
+        "admin_id": admin.id, "area_id": area.id, "rol_visor_id": rol_visor.id,
         "servicio_id": servicio.id, "agenda_id": agenda.id,
         "servicio2_id": servicio2.id, "agenda2_id": agenda2.id,
         "usuario_id": usuario.id,
@@ -146,6 +161,10 @@ def datos_base(db):
 @pytest.fixture
 def client(datos_base):
     """TestClient contra la BD real de pruebas (comparte el mismo engine que la app)."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
     def _get_db_override():
         session = SessionLocal()
         try:

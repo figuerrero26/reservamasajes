@@ -1,5 +1,9 @@
 """Punto de entrada de la API — Sistema de Reservas de Bienestar."""
+import logging
+
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from sqlalchemy.exc import IntegrityError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,6 +15,8 @@ from app.config import settings
 from app.services.errors import DomainError
 from app.utils.limiter import limiter
 from app.utils.uploads import PUBLIC_PREFIX, UPLOAD_DIR
+
+logger = logging.getLogger("reservas")
 
 app = FastAPI(
     title="Reservas de Bienestar",
@@ -32,7 +38,22 @@ app.add_middleware(
 
 @app.exception_handler(DomainError)
 async def domain_error_handler(_: Request, exc: DomainError):
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+    contenido = {"detail": exc.message}
+    if exc.datos:
+        contenido.update(jsonable_encoder(exc.datos))
+    return JSONResponse(status_code=exc.status_code, content=contenido)
+
+
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(_: Request, exc: IntegrityError):
+    """Última barrera: un choque con una restricción única que no se validó antes (p. ej.
+    dos administradores guardando el mismo nombre a la vez) responde 409 legible en vez de
+    un 500 genérico."""
+    logger.warning("IntegrityError no controlado: %s", exc.orig)
+    return JSONResponse(
+        status_code=409,
+        content={"detail": "La operación entra en conflicto con datos existentes (registro duplicado o en uso)."},
+    )
 
 
 @app.get("/health", tags=["infra"])
