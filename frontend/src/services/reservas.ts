@@ -1,6 +1,8 @@
 import api from "./api";
 import apiUsuario from "./apiUsuario";
-import type { AgendaDia, HorariosResponse, Reserva, ReservaAdmin, ReservaCreada } from "../types";
+import type {
+  AgendaDia, CancelarLoteResultado, HorariosResponse, MiReserva, Reserva, ReservaAdmin, ReservaCreada,
+} from "../types";
 
 // ---- Portal público (requiere sesión de usuario, salvo horarios que es abierto) ----
 export async function obtenerHorarios(agendaId: number, fecha: string): Promise<HorariosResponse> {
@@ -19,8 +21,8 @@ export async function crearReserva(payload: {
   return data;
 }
 
-export async function misReservas(): Promise<Reserva[]> {
-  const { data } = await apiUsuario.get<Reserva[]>("/reservas/mias");
+export async function misReservas(): Promise<MiReserva[]> {
+  const { data } = await apiUsuario.get<MiReserva[]>("/reservas/mias");
   return data;
 }
 
@@ -52,8 +54,23 @@ export async function crearReservaManual(payload: {
   return data;
 }
 
-export async function cancelarReserva(id: number): Promise<Reserva> {
-  const { data } = await api.delete<Reserva>(`/reservas/${id}`);
+/** Cancelación administrativa. Por defecto avisa al colaborador por correo. */
+export async function cancelarReserva(
+  id: number, opciones: { motivo?: string | null; notificar?: boolean } = {},
+): Promise<Reserva> {
+  const { data } = await api.post<Reserva>(`/reservas/${id}/cancelar-admin`, {
+    motivo: opciones.motivo || null, notificar: opciones.notificar ?? true,
+  });
+  return data;
+}
+
+/** Cancela varias reservas a la vez (p. ej. las afectadas por un bloqueo o un festivo). */
+export async function cancelarReservasLote(
+  reservaIds: number[], opciones: { motivo?: string | null; notificar?: boolean } = {},
+): Promise<CancelarLoteResultado> {
+  const { data } = await api.post<CancelarLoteResultado>("/reservas/cancelar-lote", {
+    reserva_ids: reservaIds, motivo: opciones.motivo || null, notificar: opciones.notificar ?? true,
+  });
   return data;
 }
 

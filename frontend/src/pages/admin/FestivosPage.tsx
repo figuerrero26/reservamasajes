@@ -10,11 +10,14 @@ import {
   DialogTitle,
   Stack,
   TextField,
-  Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import type { Festivo } from "../../types";
-import { actualizarFestivo, crearFestivo, eliminarFestivo, listarFestivos } from "../../services/festivos";
+import type { Festivo, ReservaAdmin } from "../../types";
+import {
+  actualizarFestivo, crearFestivo, eliminarFestivo, listarFestivos, reservasAfectadasFestivo,
+} from "../../services/festivos";
+import PageHeader from "../../components/PageHeader";
+import ReservasAfectadasDialog from "../../components/ReservasAfectadasDialog";
 import { mensajeError } from "../../utils/errors";
 import Loader from "../../components/Loader";
 import DataTable, { type ColumnaDataTable } from "../../components/DataTable";
@@ -35,6 +38,9 @@ export default function FestivosPage() {
   const [dialogEliminar, setDialogEliminar] = useState<Festivo | null>(null);
   const [eliminando, setEliminando] = useState(false);
   const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
+
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [afectadas, setAfectadas] = useState<{ festivo: Festivo; reservas: ReservaAdmin[] } | null>(null);
 
   async function cargar() {
     setCargando(true);
@@ -65,8 +71,10 @@ export default function FestivosPage() {
     setGuardando(true);
     setErrorDialog(null);
     try {
-      await crearFestivo({ fecha, nombre: nombre.trim(), descripcion: descripcion.trim() || undefined });
+      const creado = await crearFestivo({ fecha, nombre: nombre.trim(), descripcion: descripcion.trim() || undefined });
       setDialogAbierto(false);
+      if (creado.reservas_afectadas.length > 0) setAfectadas({ festivo: creado, reservas: creado.reservas_afectadas });
+      else setAviso("Festivo registrado. No había reservas ese día.");
       await cargar();
     } catch (e) {
       setErrorDialog(mensajeError(e, "No se pudo crear el festivo."));
@@ -75,9 +83,22 @@ export default function FestivosPage() {
     }
   }
 
-  async function alternarEstado(festivo: Festivo) {
+  async function verReservasAfectadas(f: Festivo) {
+    setAviso(null);
     try {
-      await actualizarFestivo(festivo.id, { estado: !festivo.estado });
+      const reservas = await reservasAfectadasFestivo(f.id);
+      if (reservas.length === 0) setAviso(f.estado ? "No hay reservas futuras vigentes ese día." : "El festivo está inactivo: no afecta reservas.");
+      else setAfectadas({ festivo: f, reservas });
+    } catch (e) {
+      setError(mensajeError(e, "No se pudieron consultar las reservas."));
+    }
+  }
+
+  async function alternarEstado(festivo: Festivo) {
+    setAviso(null);
+    try {
+      const r = await actualizarFestivo(festivo.id, { estado: !festivo.estado });
+      if (r.reservas_afectadas.length > 0) setAfectadas({ festivo: r, reservas: r.reservas_afectadas });
       await cargar();
     } catch (e) {
       setError(mensajeError(e, "No se pudo cambiar el estado del festivo."));
@@ -116,6 +137,9 @@ export default function FestivosPage() {
       align: "right",
       render: (f) => (
         <Stack direction="row" spacing={1} justifyContent="flex-end">
+          <Button size="small" onClick={() => verReservasAfectadas(f)}>
+            Reservas
+          </Button>
           <Button size="small" onClick={() => alternarEstado(f)}>
             {f.estado ? "Desactivar" : "Activar"}
           </Button>
@@ -129,12 +153,22 @@ export default function FestivosPage() {
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }} flexWrap="wrap" gap={1}>
-        <Typography variant="h4">Festivos</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={abrirCrear}>
-          Nuevo festivo
-        </Button>
-      </Stack>
+      <PageHeader
+        titulo="Festivos"
+        descripcion="Días no laborables: no se ofrecen turnos en ninguna agenda. Las reservas que ya existían ese día no se cancelan solas."
+        acciones={<Button variant="contained" startIcon={<AddIcon />} onClick={abrirCrear}>Nuevo festivo</Button>}
+      />
+
+      {aviso && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setAviso(null)}>{aviso}</Alert>}
+
+      <ReservasAfectadasDialog
+        abierto={!!afectadas}
+        titulo={`Reservas del ${afectadas?.festivo.fecha ?? ""}`}
+        descripcion={`«${afectadas?.festivo.nombre ?? ""}» impide nuevas reservas ese día. Estas reservas ya existían y siguen vigentes: puedes mantenerlas o cancelarlas y avisar a cada colaborador.`}
+        reservas={afectadas?.reservas ?? []}
+        motivoSugerido={afectadas ? `Día festivo: ${afectadas.festivo.nombre}.` : ""}
+        onCerrar={() => setAfectadas(null)}
+      />
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 

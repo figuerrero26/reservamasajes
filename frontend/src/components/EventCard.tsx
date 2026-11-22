@@ -1,93 +1,95 @@
-import type { ReactElement } from "react";
-import { Box, Button, Card, CardActionArea, CardContent, CardMedia, Chip, Stack, Typography, useTheme } from "@mui/material";
-import SpaIcon from "@mui/icons-material/Spa";
+import type { ReactNode } from "react";
+import { Box, Card, CardActionArea, Stack, Typography, useTheme } from "@mui/material";
+import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import SpaOutlinedIcon from "@mui/icons-material/SpaOutlined";
+import { alpha } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 import { useConfig } from "../hooks/useConfig";
 
-export interface ChipTarjeta {
-  icon?: ReactElement;
-  label: string;
-  color?: "default" | "success" | "warning";
+export interface DatoTarjeta {
+  icono: ReactNode;
+  texto: string;
 }
 
 interface Props {
+  tipo: string;
   titulo: string;
   descripcionCorta?: string | null;
   imagenUrl?: string | null;
-  chips?: ChipTarjeta[];
+  datos?: DatoTarjeta[];
+  estado?: ReactNode;
   ruta: string;
-  textoBoton?: string;
+  textoAccion: string;
 }
 
-/** Tarjeta de catálogo del portal público — compartida por eventos reservables (masajes) y
- * actividades con inscripción, para que ambos se vean igual en la pantalla de inicio. */
-export default function EventCard({ titulo, descripcionCorta, imagenUrl, chips = [], ruta, textoBoton = "Ver disponibilidad" }: Props) {
+/** Tarjeta del catálogo del portal, compartida por los eventos con turnos y las actividades
+ * con inscripción: misma estructura visual, distinto contenido. Toda la tarjeta es clicable. */
+export default function EventCard({
+  tipo, titulo, descripcionCorta, imagenUrl, datos = [], estado, ruta, textoAccion,
+}: Props) {
   const navigate = useNavigate();
   const config = useConfig();
   const theme = useTheme();
-  const colorBoton = config.color_boton_disponibilidad || theme.palette.primary.main;
+  const colorAccion = config.color_boton_disponibilidad || theme.palette.primary.main;
 
   return (
-    <Card variant="outlined" sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+    <Card
+      sx={{
+        height: "100%",
+        "&:hover": { borderColor: "text.primary", boxShadow: "0 12px 32px rgba(17,17,17,.08)", transform: "translateY(-2px)" },
+      }}
+    >
       <CardActionArea
         onClick={() => navigate(ruta)}
-        sx={{ flexGrow: 1, display: "flex", flexDirection: "column", alignItems: "stretch" }}
+        sx={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "stretch", p: 1.25 }}
       >
-        {imagenUrl ? (
-          <CardMedia component="img" image={imagenUrl} alt={titulo} sx={{ height: 160, objectFit: "cover" }} />
-        ) : (
-          <Box
-            sx={{
-              height: 160,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              bgcolor: "primary.main",
-              color: "primary.contrastText",
-            }}
-          >
-            <SpaIcon sx={{ fontSize: 48, opacity: 0.85 }} />
-          </Box>
-        )}
-        <CardContent sx={{ flexGrow: 1, width: "100%" }}>
-          <Typography variant="h6" gutterBottom>
+        <Box
+          sx={{
+            aspectRatio: "16 / 10", borderRadius: 2.5, overflow: "hidden", position: "relative",
+            bgcolor: alpha(theme.palette.primary.main, 0.08),
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          {imagenUrl ? (
+            <Box component="img" src={imagenUrl} alt="" sx={{ width: "100%", height: "100%", objectFit: "cover" }} loading="lazy" />
+          ) : (
+            <SpaOutlinedIcon sx={{ fontSize: 44, color: alpha(theme.palette.primary.main, 0.55) }} />
+          )}
+          {estado && <Box sx={{ position: "absolute", top: 10, left: 10 }}>{estado}</Box>}
+        </Box>
+
+        <Box sx={{ px: 1.25, pt: 2, pb: 1, flexGrow: 1, display: "flex", flexDirection: "column" }}>
+          <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+            {tipo}
+          </Typography>
+          <Typography variant="h6" component="h3" sx={{ mb: 0.75 }}>
             {titulo}
           </Typography>
           {descripcionCorta && (
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", mb: 1.5 }}
+            >
               {descripcionCorta}
             </Typography>
           )}
-          {chips.length > 0 && (
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
-              {chips.map((c, i) => (
-                <Chip
-                  key={i}
-                  size="small"
-                  icon={c.icon}
-                  label={c.label}
-                  color={c.color}
-                  variant={c.color ? "filled" : "outlined"}
-                />
+          {datos.length > 0 && (
+            <Stack spacing={0.5} sx={{ mb: 2 }}>
+              {datos.map((d, i) => (
+                <Stack key={i} direction="row" spacing={1} alignItems="center" sx={{ color: "text.secondary" }}>
+                  <Box sx={{ display: "flex", "& svg": { fontSize: 17 } }}>{d.icono}</Box>
+                  <Typography variant="body2" noWrap>{d.texto}</Typography>
+                </Stack>
               ))}
             </Stack>
           )}
-        </CardContent>
+          <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mt: "auto", color: colorAccion, fontWeight: 600 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, color: "inherit" }}>{textoAccion}</Typography>
+            <ArrowForwardIcon sx={{ fontSize: 18 }} />
+          </Stack>
+        </Box>
       </CardActionArea>
-      <Box sx={{ p: 2, pt: 0 }}>
-        <Button
-          fullWidth
-          variant="contained"
-          onClick={() => navigate(ruta)}
-          sx={{
-            bgcolor: colorBoton,
-            color: theme.palette.getContrastText(colorBoton),
-            "&:hover": { bgcolor: colorBoton, opacity: 0.9 },
-          }}
-        >
-          {textoBoton}
-        </Button>
-      </Box>
     </Card>
   );
 }

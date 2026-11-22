@@ -1,65 +1,95 @@
-import { Box, Card, CardActionArea, CardContent, Grid, Typography } from "@mui/material";
+import { useEffect, useState } from "react";
+import { Box, Card, CardActionArea, CardContent, Grid, Paper, Skeleton, Stack, Typography } from "@mui/material";
 import { useNavigate } from "react-router-dom";
-import CategoryIcon from "@mui/icons-material/Category";
-import SpaIcon from "@mui/icons-material/Spa";
-import EventNoteIcon from "@mui/icons-material/EventNote";
-import EventAvailableIcon from "@mui/icons-material/EventAvailable";
-import PeopleIcon from "@mui/icons-material/People";
-import BlockIcon from "@mui/icons-material/Block";
-import CelebrationIcon from "@mui/icons-material/Celebration";
-import SettingsIcon from "@mui/icons-material/Settings";
-import HistoryIcon from "@mui/icons-material/History";
-import type { ReactNode } from "react";
+import PageHeader from "../../components/PageHeader";
+import { ETIQUETA_GRUPO, SECCIONES_ADMIN } from "../../constants/secciones";
+import { obtenerDia } from "../../services/reservas";
+import { listarActividades } from "../../services/actividades";
+import { formatearFechaLarga, hoyBogota } from "../../utils/fechas";
 
-interface Seccion {
-  titulo: string;
-  descripcion: string;
-  ruta: string;
-  icono: ReactNode;
+interface Resumen {
+  reservasHoy: number;
+  disponiblesHoy: number;
+  actividadesAbiertas: number;
+  inscritosProximos: number;
 }
 
-const SECCIONES: Seccion[] = [
-  { titulo: "Áreas", descripcion: "Administra las áreas del portal de reservas.", ruta: "/admin/areas", icono: <CategoryIcon fontSize="large" /> },
-  { titulo: "Servicios", descripcion: "Administra los servicios de bienestar ofrecidos.", ruta: "/admin/servicios", icono: <SpaIcon fontSize="large" /> },
-  { titulo: "Agendas", descripcion: "Crea y configura las agendas de atención.", ruta: "/admin/agendas", icono: <EventNoteIcon fontSize="large" /> },
-  { titulo: "Reservas", descripcion: "Busca, crea y cancela reservas de colaboradores.", ruta: "/admin/reservas", icono: <EventAvailableIcon fontSize="large" /> },
-  { titulo: "Usuarios", descripcion: "Consulta y gestiona el acceso de los colaboradores.", ruta: "/admin/usuarios", icono: <PeopleIcon fontSize="large" /> },
-  { titulo: "Bloqueos", descripcion: "Bloquea días o rangos de horas en las agendas.", ruta: "/admin/bloqueos", icono: <BlockIcon fontSize="large" /> },
-  { titulo: "Festivos", descripcion: "Administra el calendario de días festivos.", ruta: "/admin/festivos", icono: <CelebrationIcon fontSize="large" /> },
-  { titulo: "Configuración", descripcion: "Ajusta los datos generales y la semana activa.", ruta: "/admin/configuracion", icono: <SettingsIcon fontSize="large" /> },
-  { titulo: "Auditoría", descripcion: "Revisa el historial de acciones administrativas.", ruta: "/admin/auditoria", icono: <HistoryIcon fontSize="large" /> },
-];
+function Indicador({ etiqueta, valor }: { etiqueta: string; valor: number | null }) {
+  return (
+    <Paper variant="outlined" sx={{ p: 2.5, height: "100%" }}>
+      <Typography variant="body2" color="text.secondary">{etiqueta}</Typography>
+      {valor === null ? (
+        <Skeleton width={60} height={44} />
+      ) : (
+        <Typography variant="h4" component="p" sx={{ mt: 0.5 }}>{valor}</Typography>
+      )}
+    </Paper>
+  );
+}
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const hoy = hoyBogota();
+  const [resumen, setResumen] = useState<Resumen | null>(null);
+
+  useEffect(() => {
+    Promise.all([obtenerDia(hoy), listarActividades()])
+      .then(([agendas, actividades]) => {
+        const slots = agendas.flatMap((a) => a.slots);
+        setResumen({
+          reservasHoy: slots.filter((s) => s.reserva_id).length,
+          disponiblesHoy: slots.filter((s) => s.estado === "disponible").length,
+          actividadesAbiertas: actividades.filter((a) => a.estado_inscripcion === "abierta").length,
+          inscritosProximos: actividades.reduce((t, a) => t + a.resumen.inscritos_futuros, 0),
+        });
+      })
+      .catch(() => setResumen({ reservasHoy: 0, disponiblesHoy: 0, actividadesAbiertas: 0, inscritosProximos: 0 }));
+  }, [hoy]);
+
+  const grupos = (["operacion", "catalogo", "sistema"] as const).map((g) => ({
+    grupo: g,
+    secciones: SECCIONES_ADMIN.filter((s) => s.grupo === g && s.ruta !== "/admin"),
+  }));
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        Panel de administración
-      </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        Selecciona una sección para gestionarla.
-      </Typography>
-      <Grid container spacing={2}>
-        {SECCIONES.map((s) => (
-          <Grid item xs={12} sm={6} md={4} key={s.ruta}>
-            <Card variant="outlined" sx={{ height: "100%" }}>
-              <CardActionArea onClick={() => navigate(s.ruta)} sx={{ height: "100%", p: 1 }}>
-                <CardContent>
-                  <Box sx={{ color: "primary.main", mb: 1 }}>{s.icono}</Box>
-                  <Typography variant="h6" gutterBottom>
-                    {s.titulo}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {s.descripcion}
-                  </Typography>
-                </CardContent>
-              </CardActionArea>
-            </Card>
-          </Grid>
-        ))}
+      <PageHeader antetitulo={formatearFechaLarga(hoy)} titulo="Panel de administración" />
+
+      <Grid container spacing={2} sx={{ mb: 5 }}>
+        <Grid item xs={6} md={3}><Indicador etiqueta="Reservas de hoy" valor={resumen?.reservasHoy ?? null} /></Grid>
+        <Grid item xs={6} md={3}><Indicador etiqueta="Turnos libres hoy" valor={resumen?.disponiblesHoy ?? null} /></Grid>
+        <Grid item xs={6} md={3}><Indicador etiqueta="Actividades abiertas" valor={resumen?.actividadesAbiertas ?? null} /></Grid>
+        <Grid item xs={6} md={3}><Indicador etiqueta="Inscritos próximos" valor={resumen?.inscritosProximos ?? null} /></Grid>
       </Grid>
+
+      <Stack spacing={4}>
+        {grupos.map(({ grupo, secciones }) => (
+          <Box key={grupo}>
+            <Typography variant="overline" color="text.secondary" component="h2" sx={{ mb: 1.5, display: "block" }}>
+              {ETIQUETA_GRUPO[grupo]}
+            </Typography>
+            <Grid container spacing={2}>
+              {secciones.map((s) => (
+                <Grid item xs={12} sm={6} md={4} key={s.ruta}>
+                  <Card sx={{ height: "100%", "&:hover": { borderColor: "text.primary" } }}>
+                    <CardActionArea onClick={() => navigate(s.ruta)} sx={{ height: "100%" }}>
+                      <CardContent>
+                        <Stack direction="row" spacing={2} alignItems="flex-start">
+                          <Box sx={{ color: "primary.main", display: "flex" }}>{s.icono}</Box>
+                          <Box>
+                            <Typography variant="subtitle1">{s.texto}</Typography>
+                            <Typography variant="body2" color="text.secondary">{s.descripcion}</Typography>
+                          </Box>
+                        </Stack>
+                      </CardContent>
+                    </CardActionArea>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+        ))}
+      </Stack>
     </Box>
   );
 }

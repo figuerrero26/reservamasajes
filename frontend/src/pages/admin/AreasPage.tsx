@@ -10,19 +10,22 @@ import {
   DialogTitle,
   Stack,
   TextField,
-  Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import type { Area } from "../../types";
-import { actualizarArea, crearArea, desactivarArea, listarAreas } from "../../services/areas";
+import type { Area, ReservaAdmin } from "../../types";
+import { activarArea, actualizarArea, crearArea, desactivarArea, listarAreas } from "../../services/areas";
 import { mensajeError } from "../../utils/errors";
 import Loader from "../../components/Loader";
 import DataTable, { type ColumnaDataTable } from "../../components/DataTable";
+import PageHeader from "../../components/PageHeader";
+import ReservasAfectadasDialog from "../../components/ReservasAfectadasDialog";
 
 export default function AreasPage() {
   const [areas, setAreas] = useState<Area[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [afectadas, setAfectadas] = useState<{ nombre: string; reservas: ReservaAdmin[] } | null>(null);
 
   const [dialogAbierto, setDialogAbierto] = useState(false);
   const [editando, setEditando] = useState<Area | null>(null);
@@ -83,11 +86,15 @@ export default function AreasPage() {
   }
 
   async function alternarEstado(area: Area) {
+    setAviso(null);
     try {
       if (area.activo) {
-        await desactivarArea(area.id);
+        const r = await desactivarArea(area.id);
+        if (r.reservas_afectadas.length > 0) setAfectadas({ nombre: area.nombre, reservas: r.reservas_afectadas });
+        else setAviso(`«${area.nombre}» quedó desactivada: sus agendas dejan de ofrecer turnos.`);
       } else {
-        await actualizarArea(area.id, { activo: true });
+        await activarArea(area.id);
+        setAviso(`«${area.nombre}» está activa de nuevo.`);
       }
       await cargar();
     } catch (e) {
@@ -96,7 +103,7 @@ export default function AreasPage() {
   }
 
   const columnas: ColumnaDataTable<Area>[] = [
-    { key: "nombre", label: "Nombre" },
+    { key: "nombre", label: "Nombre", principal: true },
     { key: "descripcion", label: "Descripción", render: (a) => a.descripcion || "—" },
     {
       key: "activo",
@@ -124,14 +131,23 @@ export default function AreasPage() {
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }} flexWrap="wrap" gap={1}>
-        <Typography variant="h4">Áreas</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={abrirCrear}>
-          Nueva área
-        </Button>
-      </Stack>
+      <PageHeader
+        titulo="Áreas"
+        descripcion="Lugares físicos donde se atiende. Un área inactiva deja de ofrecer turnos en todas sus agendas."
+        acciones={<Button variant="contained" startIcon={<AddIcon />} onClick={abrirCrear}>Nueva área</Button>}
+      />
 
+      {aviso && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setAviso(null)}>{aviso}</Alert>}
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+      <ReservasAfectadasDialog
+        abierto={!!afectadas}
+        titulo={`«${afectadas?.nombre ?? ""}» desactivada`}
+        descripcion="El área ya no acepta reservas nuevas. Estas reservas futuras siguen vigentes: puedes mantenerlas o cancelarlas y avisar a cada colaborador."
+        reservas={afectadas?.reservas ?? []}
+        motivoSugerido="El área no estará disponible en esa fecha."
+        onCerrar={() => setAfectadas(null)}
+      />
 
       {cargando ? (
         <Loader />

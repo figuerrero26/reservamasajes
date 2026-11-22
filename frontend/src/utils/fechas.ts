@@ -63,3 +63,35 @@ export function formatearFecha(fechaISO: string): string {
 export function formatearHora(horaISO: string): string {
   return horaISO.slice(0, 5);
 }
+
+const MESES_LARGOS = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+  "septiembre", "octubre", "noviembre", "diciembre",
+];
+
+/** "Lunes 24 de noviembre" (sin depender del locale del navegador). */
+export function formatearFechaLarga(fechaISO: string): string {
+  const [, m, d] = fechaISO.slice(0, 10).split("-").map(Number);
+  return `${nombreDia(fechaISO.slice(0, 10))} ${d} de ${MESES_LARGOS[m - 1]}`;
+}
+
+/** "24 nov · 10:00" a partir de un datetime ISO local ("2026-11-24T10:00:00"). */
+export function formatearFechaHora(datetimeISO: string): string {
+  return `${formatearFecha(datetimeISO.slice(0, 10))} · ${datetimeISO.slice(11, 16)}`;
+}
+
+/** Descarga un CSV (UTF-8 con BOM, para que Excel respete las tildes). */
+export function descargarCSV(nombreArchivo: string, encabezados: string[], filas: (string | number | null | undefined)[][]) {
+  const escapar = (v: string | number | null | undefined) => {
+    const s = v == null ? "" : String(v);
+    return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const contenido = [encabezados, ...filas].map((f) => f.map(escapar).join(";")).join("\r\n");
+  const blob = new Blob(["﻿" + contenido], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nombreArchivo;
+  a.click();
+  URL.revokeObjectURL(url);
+}

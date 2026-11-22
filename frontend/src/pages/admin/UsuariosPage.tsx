@@ -24,6 +24,7 @@ import { mensajeError } from "../../utils/errors";
 import Loader from "../../components/Loader";
 import DataTable, { type ColumnaDataTable } from "../../components/DataTable";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import PageHeader from "../../components/PageHeader";
 
 export default function UsuariosPage() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -182,9 +183,10 @@ export default function UsuariosPage() {
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ mb: 2 }}>
-        Usuarios
-      </Typography>
+      <PageHeader
+        titulo="Usuarios"
+        descripcion="Cuentas de colaboradores. Bloquear una cuenta corta su acceso de inmediato; eliminarla cancela sus reservas e inscripciones futuras y conserva el historial."
+      />
 
       <Grid container spacing={2} sx={{ mb: 2 }} alignItems="center">
         <Grid item xs={12} sm={4}>

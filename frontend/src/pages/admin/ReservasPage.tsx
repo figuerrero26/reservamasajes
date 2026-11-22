@@ -9,12 +9,14 @@ import {
   DialogContent,
   DialogTitle,
   FormControl,
+  FormControlLabel,
   Grid,
   InputLabel,
   MenuItem,
   Paper,
   Select,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -34,6 +36,8 @@ import Loader from "../../components/Loader";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useAuth } from "../../hooks/useAuth";
 import { ROL_ADMINISTRADOR } from "../../constants/roles";
+import { formatearFechaLarga, hoyBogota } from "../../utils/fechas";
+import PageHeader from "../../components/PageHeader";
 
 const ETIQUETA_ESTADO_SLOT: Record<EstadoSlot, string> = {
   disponible: "Disponible",
@@ -61,19 +65,10 @@ function colorSlot(slot: SlotDia): "success" | "primary" | "warning" | "default"
   return COLOR_ESTADO_SLOT[slot.estado];
 }
 
-function hoyISO() {
-  const hoy = new Date();
-  const mes = String(hoy.getMonth() + 1).padStart(2, "0");
-  const dia = String(hoy.getDate()).padStart(2, "0");
-  return `${hoy.getFullYear()}-${mes}-${dia}`;
-}
-
-function formatearFecha(fecha: string) {
-  const [anio, mes, dia] = fecha.split("-").map(Number);
-  return new Date(anio, mes - 1, dia).toLocaleDateString("es-CO", {
-    weekday: "long", day: "numeric", month: "long", year: "numeric",
-  });
-}
+// "Hoy" siempre en America/Bogota (antes se usaba la zona del navegador: un administrador en
+// otra zona horaria veía por defecto un día distinto al del resto del sistema).
+const hoyISO = hoyBogota;
+const formatearFecha = formatearFechaLarga;
 
 interface CancelarInfo {
   agenda: AgendaDia;
@@ -96,6 +91,8 @@ export default function ReservasPage() {
   const [dialogCancelar, setDialogCancelar] = useState<CancelarInfo | null>(null);
   const [cancelando, setCancelando] = useState(false);
   const [errorCancelar, setErrorCancelar] = useState<string | null>(null);
+  const [motivoCancelar, setMotivoCancelar] = useState("");
+  const [notificarCancelar, setNotificarCancelar] = useState(true);
 
   const [dialogAsistencia, setDialogAsistencia] = useState<(CancelarInfo & { asistio: boolean }) | null>(null);
   const [marcando, setMarcando] = useState(false);
@@ -141,7 +138,7 @@ export default function ReservasPage() {
     setCancelando(true);
     setErrorCancelar(null);
     try {
-      await cancelarReserva(dialogCancelar.slot.reserva_id);
+      await cancelarReserva(dialogCancelar.slot.reserva_id, { motivo: motivoCancelar, notificar: notificarCancelar });
       setDialogCancelar(null);
       await cargar();
     } catch (e) {
@@ -202,14 +199,15 @@ export default function ReservasPage() {
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }} flexWrap="wrap" gap={1}>
-        <Typography variant="h4">Reservas</Typography>
-        {puedeGestionar && (
+      <PageHeader
+        titulo="Reservas"
+        descripcion="Todos los turnos del día por agenda: libres, ocupados y bloqueados. Desde aquí se registran asistencias y cancelaciones."
+        acciones={puedeGestionar && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={abrirNueva}>
             Nueva reserva manual
           </Button>
         )}
-      </Stack>
+      />
 
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={12} sm={3}>
@@ -260,12 +258,17 @@ export default function ReservasPage() {
             {agendasDia.map((agenda) => (
               <Paper key={agenda.agenda_id} variant="outlined">
                 <Box sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: "divider" }}>
-                  <Typography variant="subtitle1">
-                    {agenda.area_nombre} — {agenda.evento_nombre}{" "}
-                    <Typography component="span" variant="body2" color="text.secondary">
-                      ({agenda.agenda_nombre})
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                    <Typography variant="subtitle1">
+                      {agenda.area_nombre} — {agenda.evento_nombre}{" "}
+                      <Typography component="span" variant="body2" color="text.secondary">
+                        ({agenda.agenda_nombre})
+                      </Typography>
                     </Typography>
-                  </Typography>
+                    {agenda.agenda_activa === false && (
+                      <Chip size="small" variant="outlined" label="No acepta reservas nuevas" />
+                    )}
+                  </Stack>
                 </Box>
                 {agenda.slots.length === 0 ? (
                   <Box sx={{ px: 2, py: 2 }}>
@@ -288,15 +291,23 @@ export default function ReservasPage() {
                       </TableHead>
                       <TableBody>
                         {agenda.slots.map((slot) => (
-                          <TableRow key={slot.hora_inicio} hover>
+                          <TableRow key={`${slot.hora_inicio}-${slot.reserva_id ?? "libre"}`} hover>
                             <TableCell>{slot.hora_inicio.slice(0, 5)} – {slot.hora_fin.slice(0, 5)}</TableCell>
                             <TableCell>
-                              <Chip
-                                size="small"
-                                label={etiquetaSlot(slot)}
-                                color={colorSlot(slot)}
-                                variant={slot.estado === "disponible" ? "outlined" : "filled"}
-                              />
+                              <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                                <Chip
+                                  size="small"
+                                  label={etiquetaSlot(slot)}
+                                  color={colorSlot(slot)}
+                                  variant={slot.estado === "disponible" ? "outlined" : "filled"}
+                                />
+                                {slot.estado === "bloqueado" && slot.reserva_id && slot.reserva_estado === "activa" && (
+                                  <Chip size="small" color="warning" variant="outlined" label="Reserva en día bloqueado" />
+                                )}
+                                {slot.fuera_de_grilla && (
+                                  <Chip size="small" variant="outlined" label="Fuera del horario actual" />
+                                )}
+                              </Stack>
                             </TableCell>
                             <TableCell>
                               {slot.usuario_nombre ? `${slot.usuario_nombre} ${slot.usuario_apellido ?? ""}` : "—"}
@@ -305,7 +316,7 @@ export default function ReservasPage() {
                             <TableCell>{slot.notes || "—"}</TableCell>
                             {puedeGestionar && (
                               <TableCell align="right">
-                                {slot.estado === "ocupado" && slot.reserva_id && slot.reserva_estado === "activa" && (
+                                {slot.reserva_id && slot.reserva_estado === "activa" && (
                                   <Stack direction="row" spacing={1} justifyContent="flex-end" flexWrap="wrap">
                                     {slot.puede_marcar_asistencia && (
                                       <>
@@ -334,7 +345,12 @@ export default function ReservasPage() {
                                     <Button
                                       size="small"
                                       color="error"
-                                      onClick={() => { setDialogCancelar({ agenda, slot }); setErrorCancelar(null); }}
+                                      onClick={() => {
+                                        setDialogCancelar({ agenda, slot });
+                                        setErrorCancelar(null);
+                                        setMotivoCancelar("");
+                                        setNotificarCancelar(true);
+                                      }}
                                     >
                                       Cancelar
                                     </Button>
@@ -359,11 +375,25 @@ export default function ReservasPage() {
         titulo="Cancelar reserva"
         contenido={
           dialogCancelar && (
-            <span>
-              ¿Confirmas cancelar la reserva de {dialogCancelar.slot.usuario_nombre} {dialogCancelar.slot.usuario_apellido} el{" "}
-              {fecha} a las {dialogCancelar.slot.hora_inicio.slice(0, 5)} en {dialogCancelar.agenda.evento_nombre}?
-              Esta acción no se puede deshacer.
-            </span>
+            <Stack spacing={2}>
+              <span>
+                ¿Confirmas cancelar la reserva de {dialogCancelar.slot.usuario_nombre} {dialogCancelar.slot.usuario_apellido} el{" "}
+                {formatearFecha(fecha)} a las {dialogCancelar.slot.hora_inicio.slice(0, 5)} en {dialogCancelar.agenda.evento_nombre}?
+                El horario quedará libre. Esta acción no se puede deshacer.
+              </span>
+              <TextField
+                label="Motivo (opcional, se incluye en el correo)"
+                size="small"
+                value={motivoCancelar}
+                onChange={(e) => setMotivoCancelar(e.target.value)}
+                inputProps={{ maxLength: 500 }}
+                fullWidth
+              />
+              <FormControlLabel
+                control={<Switch checked={notificarCancelar} onChange={(e) => setNotificarCancelar(e.target.checked)} />}
+                label="Avisar al colaborador por correo"
+              />
+            </Stack>
           )
         }
         textoConfirmar="Cancelar reserva"

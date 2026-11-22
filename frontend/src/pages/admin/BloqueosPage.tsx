@@ -14,13 +14,16 @@ import {
   Select,
   Stack,
   TextField,
-  Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import SearchIcon from "@mui/icons-material/Search";
-import type { Agenda, Bloqueo, TipoBloqueo } from "../../types";
+import type { Agenda, Bloqueo, ReservaAdmin, TipoBloqueo } from "../../types";
 import { listarAgendas } from "../../services/agendas";
-import { crearBloqueo, eliminarBloqueo, listarBloqueos, type BloqueoPayload } from "../../services/bloqueos";
+import {
+  crearBloqueo, eliminarBloqueo, listarBloqueos, reservasAfectadasBloqueo, type BloqueoPayload,
+} from "../../services/bloqueos";
+import PageHeader from "../../components/PageHeader";
+import ReservasAfectadasDialog from "../../components/ReservasAfectadasDialog";
 import { mensajeError } from "../../utils/errors";
 import Loader from "../../components/Loader";
 import DataTable, { type ColumnaDataTable } from "../../components/DataTable";
@@ -46,6 +49,20 @@ export default function BloqueosPage() {
   const [dialogEliminar, setDialogEliminar] = useState<Bloqueo | null>(null);
   const [eliminando, setEliminando] = useState(false);
   const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
+
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [afectadas, setAfectadas] = useState<{ bloqueo: Bloqueo; reservas: ReservaAdmin[] } | null>(null);
+
+  async function verReservasAfectadas(b: Bloqueo) {
+    setAviso(null);
+    try {
+      const reservas = await reservasAfectadasBloqueo(b.id);
+      if (reservas.length === 0) setAviso("Este bloqueo no tiene reservas futuras vigentes.");
+      else setAfectadas({ bloqueo: b, reservas });
+    } catch (e) {
+      setError(mensajeError(e, "No se pudieron consultar las reservas."));
+    }
+  }
 
   useEffect(() => {
     listarAgendas()
@@ -100,8 +117,13 @@ export default function BloqueosPage() {
       motivo: motivo.trim() || undefined,
     };
     try {
-      await crearBloqueo(payload);
+      const creado = await crearBloqueo(payload);
       setDialogAbierto(false);
+      if (creado.reservas_afectadas.length > 0) {
+        setAfectadas({ bloqueo: creado, reservas: creado.reservas_afectadas });
+      } else {
+        setAviso("Bloqueo creado. No había reservas en ese periodo.");
+      }
       await cargar();
     } catch (e) {
       setErrorDialog(mensajeError(e, "No se pudo crear el bloqueo."));
@@ -140,21 +162,36 @@ export default function BloqueosPage() {
       label: "Acciones",
       align: "right",
       render: (b) => (
-        <Button size="small" color="error" onClick={() => setDialogEliminar(b)}>
-          Eliminar
-        </Button>
+        <Stack direction="row" spacing={1} justifyContent="flex-end">
+          <Button size="small" onClick={() => verReservasAfectadas(b)}>
+            Reservas
+          </Button>
+          <Button size="small" color="error" onClick={() => setDialogEliminar(b)}>
+            Eliminar
+          </Button>
+        </Stack>
       ),
     },
   ];
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }} flexWrap="wrap" gap={1}>
-        <Typography variant="h4">Bloqueos</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={abrirCrear}>
-          Nuevo bloqueo
-        </Button>
-      </Stack>
+      <PageHeader
+        titulo="Bloqueos"
+        descripcion="Días u horas sin atención. Un bloqueo impide nuevas reservas, pero no cancela las existentes: al crearlo verás cuáles quedan dentro para decidir qué hacer."
+        acciones={<Button variant="contained" startIcon={<AddIcon />} onClick={abrirCrear}>Nuevo bloqueo</Button>}
+      />
+
+      {aviso && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setAviso(null)}>{aviso}</Alert>}
+
+      <ReservasAfectadasDialog
+        abierto={!!afectadas}
+        titulo="Reservas dentro del bloqueo"
+        descripcion={`El bloqueo del ${afectadas?.bloqueo.fecha ?? ""} impide nuevas reservas, pero estas ya existían y siguen vigentes. Puedes mantenerlas o cancelarlas y avisar a cada colaborador.`}
+        reservas={afectadas?.reservas ?? []}
+        motivoSugerido={afectadas?.bloqueo.motivo || "El servicio no estará disponible en ese horario."}
+        onCerrar={() => setAfectadas(null)}
+      />
 
       <Grid container spacing={2} sx={{ mb: 2 }} alignItems="center">
         <Grid item xs={12} sm={4}>

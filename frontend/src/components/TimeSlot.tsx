@@ -1,9 +1,4 @@
-import { Button, Stack, Typography } from "@mui/material";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import EventBusyIcon from "@mui/icons-material/EventBusy";
-import LockIcon from "@mui/icons-material/Lock";
-import HistoryToggleOffIcon from "@mui/icons-material/HistoryToggleOff";
-import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
+import { Button, Tooltip } from "@mui/material";
 import type { Slot } from "../types";
 import { formatearHora } from "../utils/fechas";
 
@@ -13,12 +8,13 @@ interface Props {
   onSeleccionar: (slot: Slot) => void;
 }
 
-const ESTILO_POR_ESTADO = {
-  ocupado: { icon: <EventBusyIcon fontSize="small" />, label: "Ocupado", color: "text.disabled" },
-  bloqueado: { icon: <LockIcon fontSize="small" />, label: "Bloqueado", color: "text.disabled" },
-  pasado: { icon: <HistoryToggleOffIcon fontSize="small" />, label: "Ya pasó", color: "text.disabled" },
-} as const;
+const MOTIVO: Record<Exclude<Slot["estado"], "disponible">, string> = {
+  ocupado: "Ocupado",
+  bloqueado: "No disponible",
+  pasado: "Ya pasó",
+};
 
+/** Un horario del calendario: disponible (seleccionable) o atenuado con su motivo. */
 export default function TimeSlot({ slot, seleccionado, onSeleccionar }: Props) {
   const hora = formatearHora(slot.hora_inicio);
 
@@ -26,36 +22,31 @@ export default function TimeSlot({ slot, seleccionado, onSeleccionar }: Props) {
     return (
       <Button
         variant={seleccionado ? "contained" : "outlined"}
-        color="primary"
-        size="small"
-        startIcon={seleccionado ? <CheckCircleIcon /> : <RadioButtonUncheckedIcon />}
+        color={seleccionado ? "primary" : "inherit"}
         onClick={() => onSeleccionar(slot)}
         aria-pressed={seleccionado}
-        sx={{ justifyContent: "flex-start" }}
+        aria-label={`Reservar a las ${hora}`}
+        fullWidth
+        sx={{ borderRadius: 2, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}
       >
-        <Stack alignItems="flex-start">
-          <Typography variant="body2" component="span">{hora}</Typography>
-          {seleccionado && <Typography variant="caption" component="span">Seleccionado</Typography>}
-        </Stack>
+        {hora}
       </Button>
     );
   }
 
-  const estilo = ESTILO_POR_ESTADO[slot.estado];
   return (
-    <Button
-      variant="outlined"
-      size="small"
-      disabled
-      startIcon={estilo.icon}
-      sx={{ justifyContent: "flex-start", color: estilo.color, borderColor: "divider" }}
-    >
-      <Stack alignItems="flex-start">
-        <Typography variant="body2" component="span" sx={{ textDecoration: "line-through" }}>
+    <Tooltip title={MOTIVO[slot.estado]} placement="top">
+      <span>
+        <Button
+          variant="outlined"
+          disabled
+          fullWidth
+          aria-label={`${hora}: ${MOTIVO[slot.estado]}`}
+          sx={{ borderRadius: 2, fontVariantNumeric: "tabular-nums", textDecoration: "line-through", borderStyle: "dashed" }}
+        >
           {hora}
-        </Typography>
-        <Typography variant="caption" component="span">{estilo.label}</Typography>
-      </Stack>
-    </Button>
+        </Button>
+      </span>
+    </Tooltip>
   );
 }

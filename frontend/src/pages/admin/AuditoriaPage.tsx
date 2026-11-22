@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Alert, Box, Button, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, Stack, TextField } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import type { Auditoria } from "../../types";
 import { listarAuditoria } from "../../services/auditoria";
 import { mensajeError } from "../../utils/errors";
 import Loader from "../../components/Loader";
 import DataTable, { type ColumnaDataTable } from "../../components/DataTable";
+import PageHeader from "../../components/PageHeader";
 
 export default function AuditoriaPage() {
   const [registros, setRegistros] = useState<Auditoria[]>([]);
@@ -41,12 +42,10 @@ export default function AuditoriaPage() {
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ mb: 2 }}>
-        Auditoría
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Registro de solo lectura de las acciones administrativas realizadas en el sistema.
-      </Typography>
+      <PageHeader
+        titulo="Auditoría"
+        descripcion="Registro de solo lectura de las acciones realizadas en el sistema."
+      />
 
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
         <TextField

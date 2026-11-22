@@ -26,6 +26,7 @@ import { mensajeError } from "../../utils/errors";
 import Loader from "../../components/Loader";
 import DataTable, { type ColumnaDataTable } from "../../components/DataTable";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import PageHeader from "../../components/PageHeader";
 import { ETIQUETA_ROL, ROL_ADMINISTRADOR, ROL_VISOR_RESERVAS } from "../../constants/roles";
 
 export default function AdministradoresPage() {
@@ -153,12 +154,11 @@ export default function AdministradoresPage() {
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-        <Typography variant="h4">Administradores</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={abrirDialog}>
-          Nuevo administrador
-        </Button>
-      </Stack>
+      <PageHeader
+        titulo="Administradores"
+        descripcion="Cuentas del panel. Bloquear o eliminar una cuenta, o cambiar su rol, tiene efecto inmediato sobre las sesiones abiertas."
+        acciones={<Button variant="contained" startIcon={<AddIcon />} onClick={abrirDialog}>Nuevo administrador</Button>}
+      />
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 

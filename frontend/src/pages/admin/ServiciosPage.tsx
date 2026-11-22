@@ -11,15 +11,18 @@ import {
   DialogTitle,
   Stack,
   TextField,
-  Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import SpaIcon from "@mui/icons-material/Spa";
-import type { Servicio } from "../../types";
-import { actualizarServicio, crearServicio, desactivarServicio, listarServicios } from "../../services/servicios";
+import type { ReservaAdmin, Servicio } from "../../types";
+import {
+  activarServicio, actualizarServicio, crearServicio, desactivarServicio, listarServicios,
+} from "../../services/servicios";
 import { mensajeError } from "../../utils/errors";
 import Loader from "../../components/Loader";
 import DataTable, { type ColumnaDataTable } from "../../components/DataTable";
+import PageHeader from "../../components/PageHeader";
+import ReservasAfectadasDialog from "../../components/ReservasAfectadasDialog";
 
 interface FormularioEvento {
   nombre: string;
@@ -49,6 +52,8 @@ export default function ServiciosPage() {
   const [form, setForm] = useState<FormularioEvento>(FORM_VACIO);
   const [guardando, setGuardando] = useState(false);
   const [errorDialog, setErrorDialog] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [afectadas, setAfectadas] = useState<{ nombre: string; reservas: ReservaAdmin[] } | null>(null);
 
   async function cargar() {
     setCargando(true);
@@ -118,11 +123,15 @@ export default function ServiciosPage() {
   }
 
   async function alternarEstado(servicio: Servicio) {
+    setAviso(null);
     try {
       if (servicio.activo) {
-        await desactivarServicio(servicio.id);
+        const r = await desactivarServicio(servicio.id);
+        if (r.reservas_afectadas.length > 0) setAfectadas({ nombre: servicio.nombre, reservas: r.reservas_afectadas });
+        else setAviso(`«${servicio.nombre}» quedó desactivado: ya no se muestra ni acepta reservas.`);
       } else {
-        await actualizarServicio(servicio.id, { activo: true });
+        await activarServicio(servicio.id);
+        setAviso(`«${servicio.nombre}» está activo de nuevo con las agendas que tenía habilitadas.`);
       }
       await cargar();
     } catch (e) {
@@ -143,7 +152,7 @@ export default function ServiciosPage() {
           </Avatar>
         ),
     },
-    { key: "nombre", label: "Nombre" },
+    { key: "nombre", label: "Nombre", principal: true },
     { key: "descripcion_corta", label: "Descripción corta", render: (s) => s.descripcion_corta || "—" },
     { key: "duracion_minutos", label: "Duración", render: (s) => `${s.duracion_minutos} min` },
     {
@@ -172,14 +181,23 @@ export default function ServiciosPage() {
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }} flexWrap="wrap" gap={1}>
-        <Typography variant="h4">Eventos</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={abrirCrear}>
-          Nuevo evento
-        </Button>
-      </Stack>
+      <PageHeader
+        titulo="Eventos"
+        descripcion="Eventos reservables por turnos. Desactivar uno lo retira del portal y corta nuevas reservas en todas sus agendas; las reservas existentes se conservan."
+        acciones={<Button variant="contained" startIcon={<AddIcon />} onClick={abrirCrear}>Nuevo evento</Button>}
+      />
 
+      {aviso && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setAviso(null)}>{aviso}</Alert>}
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+      <ReservasAfectadasDialog
+        abierto={!!afectadas}
+        titulo={`«${afectadas?.nombre ?? ""}» desactivado`}
+        descripcion="El evento ya no acepta reservas nuevas. Estas reservas futuras siguen vigentes: puedes mantenerlas (se atienden normalmente) o cancelarlas y avisar a cada colaborador."
+        reservas={afectadas?.reservas ?? []}
+        motivoSugerido="El evento fue suspendido temporalmente."
+        onCerrar={() => setAfectadas(null)}
+      />
 
       {cargando ? (
         <Loader />
