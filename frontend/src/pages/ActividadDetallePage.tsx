@@ -183,18 +183,14 @@ export default function ActividadDetallePage() {
               <Typography variant="body1" sx={{ whiteSpace: "pre-line" }}>{actividad.descripcion_larga}</Typography>
             )}
             {/* Solo lo que corresponde a un evento de inscripción: área, cuándo se realiza,
-                hasta cuándo hay inscripciones y qué hace falta para participar. */}
+                hasta cuándo hay inscripciones y qué hace falta para participar — todo en un
+                solo panel, sin separar "Detalles" de "Para participar". */}
             <DetalleEvento
               filas={[
                 { icono: <CategoryOutlinedIcon />, titulo: "Área", contenido: actividad.area_nombre },
                 { icono: <EventOutlinedIcon />, titulo: sesiones.length === 1 ? "Fecha y horario" : "Fechas", contenido: realizacion },
                 { icono: <HowToRegOutlinedIcon />, titulo: "Periodo de inscripción", contenido: periodo },
                 { icono: <GroupsOutlinedIcon />, titulo: "Cupos", contenido: cupos },
-              ]}
-            />
-            <DetalleEvento
-              titulo="Para participar"
-              filas={[
                 { icono: <RuleOutlinedIcon />, titulo: "Regla de participación", contenido: actividad.regla_participacion },
                 {
                   icono: <LoginOutlinedIcon />,
