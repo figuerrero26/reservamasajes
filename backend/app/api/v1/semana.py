@@ -8,6 +8,7 @@ from app.database.session import get_db
 from app.schemas.configuracion import SemanaActivaSet
 from app.services.configuracion_service import ConfiguracionService
 from app.services.email_service import enviar_cancelacion_reserva
+from app.services.horario_service import HorarioService
 from app.services.reserva_service import ReservaService
 
 router = APIRouter(prefix="/semana", tags=["semana"])
@@ -19,6 +20,14 @@ MOTIVO_REINICIO = "Reinicio de la programación semanal"
 def obtener_semana_activa(db: Session = Depends(get_db)):
     inicio, fin = ConfiguracionService(db).semana_activa()
     return {"inicio": inicio, "fin": fin}
+
+
+@router.get("/dias-reservables", response_model=list[date])
+def dias_reservables(db: Session = Depends(get_db)):
+    """Días que el portal ofrece para reservar (semana activa desde hoy, o los días hábiles
+    restantes de la semana). Única fuente de verdad: la usan el calendario del portal y el
+    resumen de disponibilidad del catálogo."""
+    return HorarioService(db).fechas_reservables()
 
 
 @router.put("/activa", status_code=204)

@@ -10,13 +10,15 @@ router = APIRouter(prefix="/servicios", tags=["servicios"])
 
 
 @router.get("", response_model=list[ServicioOut])
-def listar(db: Session = Depends(get_db), _: dict = Depends(get_current_admin)):
-    return ServicioService(db).listar()
+def listar(area_id: int | None = None, db: Session = Depends(get_db), _: dict = Depends(get_current_admin)):
+    """Con `area_id`: solo los eventos que tienen al menos una agenda en esa área."""
+    return ServicioService(db).listar(area_id=area_id)
 
 
 @router.post("", response_model=ServicioOut, status_code=status.HTTP_201_CREATED)
 def crear(data: ServicioCreate, db: Session = Depends(get_db),
           admin: dict = Depends(get_current_admin_full)):
+    """Crea el evento junto con su área y su primera agenda (obligatorias)."""
     return ServicioService(db).crear(data, admin["id"])
 
 

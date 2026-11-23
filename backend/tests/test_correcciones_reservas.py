@@ -102,7 +102,13 @@ def test_cambio_compatible_con_reservas_se_aplica(client, datos_base, headers_ad
 
 def test_cambiar_evento_de_agenda_con_reservas_se_rechaza(client, datos_base, headers_admin):
     _reservar(datos_base)
-    servicio = client.post(f"{API}/servicios", headers=headers_admin, json={"nombre": "Yoga"}).json()
+    # El evento nuevo nace en otra área: así el cambio de evento de la agenda de "Oficinas"
+    # no choca con la unicidad área+evento y llega a la validación de reservas.
+    planta = client.post(f"{API}/areas", headers=headers_admin, json={"nombre": "Planta"}).json()
+    servicio = client.post(f"{API}/servicios", headers=headers_admin, json={
+        "nombre": "Yoga",
+        "agenda": {"area_id": planta["id"], "hora_inicio": "08:00", "hora_fin": "12:00", "duracion_minutos": 60},
+    }).json()
     r = client.put(f"{API}/agendas/{datos_base['agenda_id']}", headers=headers_admin,
                    json={"servicio_id": servicio["id"]})
     assert r.status_code == 409

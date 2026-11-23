@@ -31,3 +31,16 @@ class BloqueoRepository(BaseRepository[Bloqueo]):
         return self.db.execute(
             select(Festivo.id).where(Festivo.fecha == fecha, Festivo.estado.is_(True))
         ).first() is not None
+
+    def por_fechas(self, fechas: list[date]) -> list[Bloqueo]:
+        """Bloqueos (de cualquier agenda o globales) de varias fechas, en una consulta."""
+        if not fechas:
+            return []
+        return list(self.db.execute(select(Bloqueo).where(Bloqueo.fecha.in_(fechas))).scalars().all())
+
+    def festivos_en(self, fechas: list[date]) -> set[date]:
+        if not fechas:
+            return set()
+        return set(self.db.execute(
+            select(Festivo.fecha).where(Festivo.fecha.in_(fechas), Festivo.estado.is_(True))
+        ).scalars().all())

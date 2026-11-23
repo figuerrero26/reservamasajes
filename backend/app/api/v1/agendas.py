@@ -19,8 +19,9 @@ def publicas(servicio_id: int | None = None, db: Session = Depends(get_db)):
 
 # ---- Administración ----
 @router.get("", response_model=list[AgendaOut])
-def listar(db: Session = Depends(get_db), _: dict = Depends(get_current_admin)):
-    return AgendaService(db).listar()
+def listar(area_id: int | None = None, servicio_id: int | None = None,
+           db: Session = Depends(get_db), _: dict = Depends(get_current_admin)):
+    return AgendaService(db).listar(area_id=area_id, servicio_id=servicio_id)
 
 
 @router.post("", response_model=AgendaOut, status_code=status.HTTP_201_CREATED)

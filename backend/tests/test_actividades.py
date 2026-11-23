@@ -25,7 +25,10 @@ def _en(dias: int) -> str:
 
 
 def _crear_actividad(client, headers_admin, **extra) -> dict:
+    # El área es obligatoria: por defecto, la primera área existente ("Oficinas").
+    area_id = extra.pop("area_id", None) or client.get(f"{API}/areas", headers=headers_admin).json()[0]["id"]
     r = client.post(f"{API}/actividades", headers=headers_admin, json={
+        "area_id": area_id,
         "nombre": "Caminata ecológica", "descripcion_corta": "Recorrido de 5 km",
         "campos_formulario": [
             {"clave": "talla", "etiqueta": "Talla de camiseta", "tipo": "seleccion",

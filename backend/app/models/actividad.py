@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import String, Boolean, DateTime, Text, func
+from sqlalchemy import String, Boolean, DateTime, ForeignKey, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -18,6 +18,10 @@ class Actividad(Base):
     __tablename__ = "actividades"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Área a la que pertenece la actividad: obligatoria al crear o editar (validado en la
+    # API). La columna admite NULL solo por las actividades creadas antes de la migración
+    # 0011; el panel las marca como "sin área" para que se les asigne una.
+    area_id: Mapped[int | None] = mapped_column(ForeignKey("areas.id"), nullable=True, index=True)
     nombre: Mapped[str] = mapped_column(String(160))
     descripcion_corta: Mapped[str | None] = mapped_column(String(300), nullable=True)
     descripcion_larga: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -37,3 +41,4 @@ class Actividad(Base):
     )
 
     sesiones = relationship("Sesion", back_populates="actividad", order_by="Sesion.fecha")
+    area = relationship("Area")

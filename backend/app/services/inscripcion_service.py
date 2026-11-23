@@ -22,7 +22,9 @@ from app.schemas.inscripcion import (
     InscripcionAdminOut, InscripcionCreateManual, InscripcionOut, MiInscripcionOut,
 )
 from app.services import auditoria_service
-from app.services.actividad_service import campos_formulario_de, inscripcion_disponible, sesion_llena
+from app.services.actividad_service import (
+    actividad_disponible, campos_formulario_de, inscripcion_disponible, sesion_llena,
+)
 from app.services.errors import Conflict, DomainError, Forbidden, NotFound
 from app.utils.time import now, ya_empezo
 
@@ -74,7 +76,8 @@ class InscripcionService:
         if not sesion or not sesion.activa:
             raise DomainError("La sesión no está disponible")
         actividad = sesion.actividad
-        if not actividad.activo:
+        if not actividad_disponible(actividad):
+            # Actividad oculta o de un área desactivada: tampoco el admin inscribe aquí.
             raise DomainError("La actividad no está disponible")
         if ya_empezo(sesion.fecha, sesion.hora_inicio):
             raise DomainError("Esta sesión ya no está disponible para inscribirse.")

@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.schemas.sesion import SesionCreate
+
 # Estado de inscripción de una actividad, evaluado en el backend (el portal no repite la
 # lógica de fechas):
 # - abierta: hay al menos una sesión futura con cupo y la ventana de inscripción está abierta.
@@ -77,10 +79,14 @@ class ActividadBase(BaseModel):
 
 
 class ActividadCreate(ActividadBase):
-    pass
+    """El área es obligatoria. Las sesiones iniciales son opcionales y se crean en la misma
+    transacción que la actividad (si alguna es inválida, no se crea nada)."""
+    area_id: int
+    sesiones: list[SesionCreate] = Field(default=[], max_length=50)
 
 
 class ActividadUpdate(BaseModel):
+    area_id: int | None = None  # si se envía, no puede ser null
     nombre: str | None = Field(default=None, min_length=1, max_length=160)
     descripcion_corta: str | None = Field(default=None, max_length=300)
     descripcion_larga: str | None = None
@@ -117,6 +123,8 @@ class ResumenSesiones(BaseModel):
 class ActividadOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    area_id: int | None = None  # None solo en actividades anteriores a la migración 0011
+    area_nombre: str | None = None
     nombre: str
     descripcion_corta: str | None = None
     descripcion_larga: str | None = None
@@ -135,6 +143,8 @@ class ActividadPublicaOut(BaseModel):
     """Catálogo público: incluye el estado de inscripción ya evaluado y el resumen de la
     próxima sesión, para que el portal no tenga que repetir esa lógica."""
     id: int
+    area_id: int | None = None
+    area_nombre: str | None = None
     nombre: str
     descripcion_corta: str | None = None
     descripcion_larga: str | None = None

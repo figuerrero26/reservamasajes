@@ -34,8 +34,8 @@ class AgendaService:
         self.servicios = ServicioRepository(db)
         self.reservas = ReservaRepository(db)
 
-    def listar(self) -> list[Agenda]:
-        return self.repo.listar_ordenadas()
+    def listar(self, area_id: int | None = None, servicio_id: int | None = None) -> list[Agenda]:
+        return self.repo.listar_ordenadas(area_id=area_id, servicio_id=servicio_id)
 
     def listar_publicas(self, servicio_id: int | None = None) -> list[Agenda]:
         """Agendas que el portal puede ofrecer: activas, con evento y área activos."""

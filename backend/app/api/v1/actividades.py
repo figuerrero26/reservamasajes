@@ -13,8 +13,8 @@ router = APIRouter(prefix="/actividades", tags=["actividades"])
 
 # ---- Flujo público (sin autenticación; con sesión muestra si ya está inscrito) ----
 @router.get("/publicas", response_model=list[ActividadPublicaOut])
-def listar_publicas(db: Session = Depends(get_db)):
-    return ActividadService(db).listar_publicas()
+def listar_publicas(area_id: int | None = None, db: Session = Depends(get_db)):
+    return ActividadService(db).listar_publicas(area_id=area_id)
 
 
 @router.get("/publicas/{actividad_id}", response_model=ActividadPublicaOut)
@@ -30,8 +30,8 @@ def listar_sesiones_publicas(actividad_id: int, db: Session = Depends(get_db),
 
 # ---- Administración ----
 @router.get("", response_model=list[ActividadOut])
-def listar(db: Session = Depends(get_db), _: dict = Depends(get_current_admin)):
-    return ActividadService(db).listar_admin()
+def listar(area_id: int | None = None, db: Session = Depends(get_db), _: dict = Depends(get_current_admin)):
+    return ActividadService(db).listar_admin(area_id=area_id)
 
 
 @router.get("/{actividad_id}", response_model=ActividadOut)

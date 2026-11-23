@@ -26,3 +26,4 @@ class AreaOut(AreaBase):
 
 class AreaEstadoOut(AreaOut):
     reservas_afectadas: list[ReservaAdminOut] = []
+    actividades_afectadas: int = 0  # actividades activas que quedan ocultas del portal

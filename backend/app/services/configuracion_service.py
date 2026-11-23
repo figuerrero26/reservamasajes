@@ -21,7 +21,7 @@ CLAVES_PUBLICAS = [
     "empresa_nombre", "sistema_nombre", "logo_url", "color_primario", "color_secundario",
     "mensaje_bienvenida", "imagen_bienvenida_url", "color_boton_disponibilidad", "color_fondo_bienvenida",
     "evento_unico_por_semana", "contacto_correo", "contacto_telefono", "contacto_direccion",
-    "politica_privacidad", "terminos_condiciones",
+    "terminos_condiciones",
 ]
 CLAVES_ADMIN = CLAVES_PUBLICAS + [
     "cancelacion_horas_minimas", "email_confirmacion_asunto", "email_confirmacion_cuerpo",
@@ -34,7 +34,7 @@ _CLAVES_COLOR = {"color_primario", "color_secundario", "color_boton_disponibilid
 _CLAVES_URL = {"logo_url", "imagen_bienvenida_url", "email_confirmacion_imagen_url"}
 # Límite de longitud por clave (los textos legales pueden ser largos; el resto, cortos).
 _LONGITUD_MAXIMA = {
-    "politica_privacidad": 20000, "terminos_condiciones": 20000, "mensaje_bienvenida": 2000,
+    "terminos_condiciones": 20000, "mensaje_bienvenida": 2000,
     "email_confirmacion_cuerpo": 5000, "contacto_direccion": 300,
 }
 _LONGITUD_POR_DEFECTO = 255
@@ -112,7 +112,6 @@ class ConfiguracionService:
             contacto_correo=valores.get("contacto_correo"),
             contacto_telefono=valores.get("contacto_telefono"),
             contacto_direccion=valores.get("contacto_direccion"),
-            politica_privacidad=valores.get("politica_privacidad"),
             terminos_condiciones=valores.get("terminos_condiciones"),
             zona_horaria=settings.APP_TIMEZONE,
             semana_activa_inicio=date.fromisoformat(inicio) if inicio else None,

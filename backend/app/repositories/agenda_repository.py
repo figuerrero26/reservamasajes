@@ -9,8 +9,13 @@ class AgendaRepository(BaseRepository[Agenda]):
     def __init__(self, db: Session):
         super().__init__(Agenda, db)
 
-    def listar_ordenadas(self) -> list[Agenda]:
-        return list(self.db.execute(select(Agenda).order_by(Agenda.nombre)).scalars().all())
+    def listar_ordenadas(self, area_id: int | None = None, servicio_id: int | None = None) -> list[Agenda]:
+        stmt = select(Agenda).order_by(Agenda.nombre)
+        if area_id:
+            stmt = stmt.where(Agenda.area_id == area_id)
+        if servicio_id:
+            stmt = stmt.where(Agenda.servicio_id == servicio_id)
+        return list(self.db.execute(stmt).scalars().all())
 
     def list_activas(self, servicio_id: int | None = None) -> list[Agenda]:
         """Agendas con su propio flag activo (sin mirar evento ni área): vista administrativa."""
@@ -38,6 +43,3 @@ class AgendaRepository(BaseRepository[Agenda]):
         return self.db.execute(
             select(Agenda).where(Agenda.area_id == area_id, Agenda.servicio_id == servicio_id)
         ).scalar_one_or_none()
-
-    def ids_por_servicio(self, servicio_id: int) -> list[int]:
-        return list(self.db.execute(select(Agenda.id).where(Agenda.servicio_id == servicio_id)).scalars().all())

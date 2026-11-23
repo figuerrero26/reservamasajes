@@ -9,7 +9,9 @@ from app.repositories.inscripcion_repository import InscripcionRepository
 from app.repositories.sesion_repository import SesionRepository
 from app.schemas.sesion import MAX_SESIONES_LOTE, GenerarSesionesIn, SesionCreate, SesionOut, SesionUpdate
 from app.services import auditoria_service
-from app.services.actividad_service import estado_sesion, ventana_inscripcion
+from app.services.actividad_service import (
+    actividad_disponible, construir_sesion, estado_sesion, ventana_inscripcion,
+)
 from app.services.errors import DomainError, NotFound
 from app.utils.time import ya_empezo
 
@@ -56,7 +58,7 @@ class SesionService:
 
     def listar_publicas(self, actividad_id: int, usuario_id: int | None = None) -> list[SesionOut]:
         actividad = self.actividades.get(actividad_id)
-        if not actividad or not actividad.activo:
+        if not actividad or not actividad_disponible(actividad):
             raise NotFound("Actividad no encontrada")
         return self.listar(actividad_id, solo_activas=True, solo_futuras=True, usuario_id=usuario_id)
 
@@ -72,14 +74,7 @@ class SesionService:
 
     def crear(self, actividad_id: int, data: SesionCreate, admin_id: int) -> SesionOut:
         self._validar_actividad(actividad_id)
-        if ya_empezo(data.fecha, data.hora_inicio):
-            raise DomainError("No se puede crear una sesión en una fecha u hora que ya pasó.")
-        if self.repo.existe(actividad_id, data.fecha, data.hora_inicio):
-            raise DomainError("Ya existe una sesión de esta actividad en esa fecha y hora.")
-        sesion = Sesion(
-            actividad_id=actividad_id, fecha=data.fecha, hora_inicio=data.hora_inicio,
-            hora_fin=data.hora_fin, cupo_maximo=data.cupo_maximo, lugar=data.lugar,
-        )
+        sesion = construir_sesion(self.repo, actividad_id, data)
         self.db.add(sesion)
         self.db.flush()
         auditoria_service.registrar(

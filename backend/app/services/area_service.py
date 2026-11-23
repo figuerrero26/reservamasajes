@@ -1,9 +1,14 @@
-"""Áreas: misma regla de desactivación que los servicios (ver servicio_service): un área
-inactiva deja de ofrecer turnos en todas sus agendas, las reservas futuras se conservan y se
-informan, y al reactivarla vuelven las agendas que estaban activas."""
+"""Áreas: organizan los eventos. Un evento por turnos pertenece a un área a través de sus
+agendas y una actividad, por su columna `area_id` (obligatoria al crear).
+
+Misma regla de desactivación que los servicios (ver servicio_service): un área inactiva deja
+de ofrecer turnos en todas sus agendas y retira sus actividades del portal; las reservas e
+inscripciones existentes se conservan y se informan, y al reactivarla vuelve todo lo que
+estaba activo."""
 from sqlalchemy.orm import Session
 
 from app.models import Area
+from app.repositories.actividad_repository import ActividadRepository
 from app.repositories.area_repository import AreaRepository
 from app.repositories.reserva_repository import ReservaRepository
 from app.schemas.area import AreaCreate, AreaUpdate
@@ -21,6 +26,7 @@ class AreaService:
         self.db = db
         self.repo = AreaRepository(db)
         self.reservas = ReservaRepository(db)
+        self.actividades = ActividadRepository(db)
 
     def listar(self) -> list[Area]:
         return self.repo.list()
@@ -63,8 +69,10 @@ class AreaService:
         self.db.commit()
         return area
 
-    def cambiar_estado(self, area_id: int, activo: bool, admin_id: int) -> tuple[Area, list]:
-        """Baja lógica: un área con agendas asociadas conserva su historial (no se borra)."""
+    def cambiar_estado(self, area_id: int, activo: bool, admin_id: int) -> tuple[Area, list, int]:
+        """Baja lógica: un área con agendas o actividades asociadas conserva su historial (no
+        se borra). Desactivarla retira del portal sus agendas y sus actividades; devuelve las
+        reservas futuras afectadas y cuántas actividades activas quedan ocultas."""
         area = self.obtener(area_id)
         anteriores = snapshot(area, CAMPOS)
         area.activo = activo
@@ -73,5 +81,7 @@ class AreaService:
             datos_anteriores=anteriores, datos_nuevos=snapshot(area, CAMPOS),
         )
         self.db.commit()
-        afectadas = [] if activo else [a_admin_out(r) for r in self.reservas.activas_futuras(area_id=area_id)]
-        return area, afectadas
+        if activo:
+            return area, [], 0
+        afectadas = [a_admin_out(r) for r in self.reservas.activas_futuras(area_id=area_id)]
+        return area, afectadas, self.actividades.contar_activas_por_area(area_id)

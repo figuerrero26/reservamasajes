@@ -210,7 +210,7 @@ def test_formulario_guardado_ilegible_se_omite_pregunta_por_pregunta():
 
 def _actividad(**cambios):
     base = dict(activo=True, inscripcion_abierta=True, fecha_apertura_inscripciones=None,
-                fecha_cierre_inscripciones=None)
+                fecha_cierre_inscripciones=None, area=SimpleNamespace(activo=True))
     return SimpleNamespace(**{**base, **cambios})
 
 
@@ -254,3 +254,78 @@ def test_estado_sesion():
     assert estado(_sesion(1, cupo=2), 1, "cerrada") == "cerrada"
     assert estado(_sesion(1, activa=False), 0, "abierta") == "inactiva"
     assert estado(_sesion(1, dias=-1), 0, "abierta") == "finalizada"
+
+
+def test_area_inactiva_cierra_inscripciones(ahora_fijo):
+    s1 = _sesion(1, cupo=5)
+    inactiva = _actividad(area=SimpleNamespace(activo=False))
+    assert actividad_service.actividad_disponible(inactiva) is False
+    assert actividad_service.evaluar_actividad(inactiva, [s1], {})[0] == "cerrada"
+    # Actividades anteriores a la migración 0011 (sin área) dependen solo de su estado.
+    assert actividad_service.actividad_disponible(_actividad(area=None)) is True
+
+
+# ---------------------------------------------------------------------------------------
+# Días reservables (fuente única del calendario del portal y del resumen del catálogo)
+# ---------------------------------------------------------------------------------------
+
+def test_fechas_reservables_con_semana_activa():
+    from app.services.horario_service import calcular_fechas_reservables
+    lunes = date(2030, 1, 7)
+    viernes = date(2030, 1, 11)
+    # Antes de la semana activa: toda la semana.
+    assert calcular_fechas_reservables(date(2030, 1, 1), lunes, viernes) == [lunes + timedelta(days=i) for i in range(5)]
+    # A mitad de semana: desde hoy.
+    assert calcular_fechas_reservables(date(2030, 1, 9), lunes, viernes) == [date(2030, 1, 9), date(2030, 1, 10), viernes]
+    # Ya terminó: ninguno.
+    assert calcular_fechas_reservables(date(2030, 1, 12), lunes, viernes) == []
+    # Tope de 31 días aunque el periodo sea más largo.
+    assert len(calcular_fechas_reservables(lunes, lunes, lunes + timedelta(days=60))) == 31
+
+
+def test_fechas_reservables_sin_semana_activa():
+    from app.services.horario_service import calcular_fechas_reservables
+    miercoles = date(2030, 1, 9)
+    assert calcular_fechas_reservables(miercoles, None, None) == [miercoles, date(2030, 1, 10), date(2030, 1, 11)]
+    sabado = date(2030, 1, 12)
+    assert calcular_fechas_reservables(sabado, None, None) == [date(2030, 1, 14) + timedelta(days=i) for i in range(5)]
+    # Solo una de las dos fechas configurada: se ignora (igual que antes en el portal).
+    assert calcular_fechas_reservables(miercoles, date(2030, 1, 1), None)[0] == miercoles
+
+
+# ---------------------------------------------------------------------------------------
+# Cálculo puro de turnos (lo usan la disponibilidad de un día y el resumen del catálogo)
+# ---------------------------------------------------------------------------------------
+
+def _agenda_demo(**cambios):
+    base = dict(hora_inicio=time(8), hora_fin=time(10), duracion_minutos=30, almuerzo_inicio=None,
+                almuerzo_fin=None, dias=[0, 1, 2, 3, 4, 5, 6])
+    return SimpleNamespace(**{**base, **cambios})
+
+
+def _estados(slots):
+    return {s.hora_inicio.strftime("%H:%M"): s.estado.value for s in slots}
+
+
+def test_calcular_slots_aplica_bloqueos_ocupacion_y_pasado():
+    from app.services.horario_service import calcular_slots
+    fecha = date(2030, 1, 7)
+    ahora = datetime(2030, 1, 7, 8, 40, tzinfo=TZ)
+    rango = SimpleNamespace(tipo="rango", hora_inicio=time(9, 30), hora_fin=time(10), agenda_id=None)
+    slots = calcular_slots(
+        _agenda_demo(), fecha, bloqueos=[rango], es_festivo=False,
+        ocupados=[(time(9, 10), time(9, 40))],  # reserva fuera de la grilla: se cruza con 09:00 y 09:30
+        ahora=ahora,
+    )
+    assert _estados(slots) == {"08:00": "pasado", "08:30": "pasado", "09:00": "ocupado", "09:30": "bloqueado"}
+
+
+def test_calcular_slots_dia_bloqueado_vacio_en_portal_y_visible_para_admin():
+    from app.services.horario_service import calcular_slots
+    fecha = date(2030, 1, 7)
+    ahora = datetime(2030, 1, 1, 8, 0, tzinfo=TZ)
+    assert calcular_slots(_agenda_demo(), fecha, bloqueos=[], es_festivo=True, ocupados=[], ahora=ahora) == []
+    admin = calcular_slots(_agenda_demo(), fecha, bloqueos=[], es_festivo=True, ocupados=[], ahora=ahora, incluir_pasado=True)
+    assert {s.estado.value for s in admin} == {"bloqueado"}
+    # Día no habilitado en la agenda: sin turnos.
+    assert calcular_slots(_agenda_demo(dias=[1]), fecha, bloqueos=[], es_festivo=False, ocupados=[], ahora=ahora) == []

@@ -26,8 +26,10 @@ def actualizar(area_id: int, data: AreaUpdate, db: Session = Depends(get_db),
 
 
 def _estado(area_id: int, activo: bool, db: Session, admin: dict) -> AreaEstadoOut:
-    area, afectadas = AreaService(db).cambiar_estado(area_id, activo, admin["id"])
-    return AreaEstadoOut(**AreaOut.model_validate(area).model_dump(), reservas_afectadas=afectadas)
+    area, afectadas, actividades = AreaService(db).cambiar_estado(area_id, activo, admin["id"])
+    return AreaEstadoOut(
+        **AreaOut.model_validate(area).model_dump(), reservas_afectadas=afectadas, actividades_afectadas=actividades,
+    )
 
 
 @router.post("/{area_id}/desactivar", response_model=AreaEstadoOut)

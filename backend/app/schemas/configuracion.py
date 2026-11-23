@@ -26,7 +26,6 @@ class ConfiguracionGeneralOut(BaseModel):
     contacto_correo: str | None = None
     contacto_telefono: str | None = None
     contacto_direccion: str | None = None
-    politica_privacidad: str | None = None
     terminos_condiciones: str | None = None
     zona_horaria: str
     semana_activa_inicio: date | None = None

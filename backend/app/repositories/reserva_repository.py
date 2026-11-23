@@ -81,6 +81,19 @@ class ReservaRepository(BaseRepository[Reserva]):
             ).scalars().all()
         )
 
+    def activas_por_agendas_fechas(self, agenda_ids: list[int], fechas: list[date]) -> list[Reserva]:
+        """Reservas activas de varias agendas y días en una sola consulta (resumen del
+        catálogo, ver HorarioService.resumen_disponibilidad)."""
+        if not agenda_ids or not fechas:
+            return []
+        return list(self.db.execute(
+            select(Reserva).where(
+                Reserva.agenda_id.in_(agenda_ids),
+                Reserva.fecha.in_(fechas),
+                Reserva.estado == EstadoReserva.ACTIVA.value,
+            )
+        ).scalars().all())
+
     def no_canceladas_por_fecha(self, fecha: date) -> list[Reserva]:
         """Reservas activas o ya cerradas (completada/no_asistio) de un día, de TODAS las
         agendas en una sola consulta — para la vista "por día" del panel. Las canceladas se
