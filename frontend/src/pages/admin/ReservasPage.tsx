@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert, Box, Button, Card, CardActionArea, CardContent, Chip, Dialog, DialogActions, DialogContent,
-  DialogTitle, FormControl, Grid, InputLabel, ListSubheader, MenuItem, Select, Stack, TextField, Typography,
+  DialogTitle, FormControl, Grid, InputLabel, MenuItem, Paper, Select, Stack, TextField, Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
 import HowToRegOutlinedIcon from "@mui/icons-material/HowToRegOutlined";
-import type { Actividad, Agenda, EstadoVigencia, Servicio, Sesion } from "../../types";
+import type { Actividad, Agenda, Area, EstadoVigencia, Servicio, Sesion } from "../../types";
 import { listarAgendas } from "../../services/agendas";
+import { listarAreas } from "../../services/areas";
 import { listarServicios } from "../../services/servicios";
 import { crearReservaManual } from "../../services/reservas";
 import { listarActividades, listarSesiones } from "../../services/actividades";
@@ -24,10 +25,7 @@ import HistorialReservasPanel from "../../components/admin/HistorialReservasPane
 import HistorialInscripcionesPanel from "../../components/admin/HistorialInscripcionesPanel";
 
 type Seleccion = { tipo: "reserva"; id: number } | { tipo: "inscripcion"; id: number };
-
-function claveDe(s: Seleccion): string {
-  return `${s.tipo}-${s.id}`;
-}
+type Evento = { tipo: "reserva" | "inscripcion"; servicio?: Servicio; actividad?: Actividad; agendas: Agenda[] };
 
 const VIGENCIA: Record<EstadoVigencia, { texto: string; color: "success" | "info" | "default" | "warning" }> = {
   vigente: { texto: "Vigente", color: "success" },
@@ -38,35 +36,47 @@ const VIGENCIA: Record<EstadoVigencia, { texto: string; color: "success" | "info
 
 /** Fecha representativa de un evento, para ordenar el historial cronológicamente: la próxima
  * sesión si la hay (actividades), si no el fin o el inicio de su vigencia. */
-function fechaOrden(ev: { actividad?: Actividad; servicio?: Servicio }): string {
+function fechaOrden(ev: Evento): string {
   return ev.actividad?.resumen.proxima_fecha || ev.servicio?.vigencia_fin || ev.servicio?.vigencia_inicio
     || ev.actividad?.vigencia_fin || ev.actividad?.vigencia_inicio || "0000-01-01";
 }
 
-/** Tarjeta de un evento en la vista de solo consulta (rol Visualización): nombre, tipo, fecha
- * y horario, cupos (si aplica) y estado de vigencia — para elegir cuál consultar. */
-function TarjetaEvento({ ev, onClick }: { ev: { tipo: "reserva" | "inscripcion"; servicio?: Servicio; actividad?: Actividad; agendas: Agenda[] }; onClick: () => void }) {
+/** Áreas de un evento: para una actividad, la suya (única); para un servicio, las de sus
+ * agendas activas (puede tener más de una, p. ej. Oficinas y Planta). */
+function areasDe(ev: Evento, nombreArea: (id: number) => string): string[] {
+  if (ev.actividad) return ev.actividad.area_nombre ? [ev.actividad.area_nombre] : [];
+  return Array.from(new Set(ev.agendas.filter((a) => a.activo).map((a) => nombreArea(a.area_id))));
+}
+
+/** Fecha/horario de un evento en una línea: próxima sesión para actividades, horario de
+ * agenda(s) para servicios. */
+function fechaHoraDe(ev: Evento): string {
+  if (ev.actividad) {
+    const r = ev.actividad.resumen;
+    return r.proxima_fecha
+      ? `${r.proxima_fecha} · ${formatearHora(r.proxima_hora_inicio!)}–${formatearHora(r.proxima_hora_fin!)}`
+      : textoVigencia(ev.actividad.vigencia_inicio, ev.actividad.vigencia_fin) ?? "Sin fechas programadas";
+  }
+  const activas = ev.agendas.filter((a) => a.activo);
+  if (activas.length === 1) return `${resumenDiasSemana(activas[0].dias_habilitados)} · ${formatearHora(activas[0].hora_inicio)}–${formatearHora(activas[0].hora_fin)}`;
+  if (activas.length > 1) return `${activas.length} agendas activas`;
+  return "Sin agendas activas";
+}
+
+function cuposDe(ev: Evento): string | null {
+  if (!ev.actividad) return null;
+  const r = ev.actividad.resumen;
+  return r.cupos_disponibles != null ? `${r.cupos_disponibles} cupo(s) disponible(s)` : "Sin límite de cupo";
+}
+
+/** Tarjeta de un evento en el listado: nombre, tipo, área, fecha/horario, cupos (si aplica)
+ * y estado de vigencia — para elegir cuál consultar. */
+function TarjetaEvento({ ev, nombreArea, onClick }: { ev: Evento; nombreArea: (id: number) => string; onClick: () => void }) {
   const estado = (ev.servicio ?? ev.actividad)!.estado_vigencia;
   const { texto, color } = VIGENCIA[estado];
   const nombre = (ev.servicio ?? ev.actividad)!.nombre;
-
-  let lineaFecha: string;
-  let lineaCupos: string | null = null;
-  if (ev.actividad) {
-    const r = ev.actividad.resumen;
-    lineaFecha = r.proxima_fecha
-      ? `${r.proxima_fecha} · ${formatearHora(r.proxima_hora_inicio!)}–${formatearHora(r.proxima_hora_fin!)}`
-      : textoVigencia(ev.actividad.vigencia_inicio, ev.actividad.vigencia_fin) ?? "Sin fechas programadas";
-    lineaCupos = r.cupos_disponibles != null ? `${r.cupos_disponibles} cupo(s) disponible(s)` : "Sin límite de cupo";
-  } else {
-    const activas = ev.agendas.filter((a) => a.activo);
-    lineaFecha = activas.length === 1
-      ? `${resumenDiasSemana(activas[0].dias_habilitados)} · ${formatearHora(activas[0].hora_inicio)}–${formatearHora(activas[0].hora_fin)}`
-      : activas.length > 1
-        ? `${activas.length} agendas activas`
-        : "Sin agendas activas";
-    lineaCupos = textoVigencia(ev.servicio!.vigencia_inicio, ev.servicio!.vigencia_fin);
-  }
+  const areas = areasDe(ev, nombreArea);
+  const cupos = cuposDe(ev);
 
   return (
     <Grid item xs={12} sm={6} md={4}>
@@ -83,12 +93,47 @@ function TarjetaEvento({ ev, onClick }: { ev: { tipo: "reserva" | "inscripcion";
               <Chip size="small" label={texto} color={color} variant={color === "default" ? "outlined" : "filled"} />
             </Stack>
             <Typography variant="subtitle1" fontWeight={600} sx={{ wordBreak: "break-word" }}>{nombre}</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{lineaFecha}</Typography>
-            {lineaCupos && <Typography variant="body2" color="text.secondary">{lineaCupos}</Typography>}
+            {areas.length > 0 && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{areas.join(" · ")}</Typography>
+            )}
+            <Typography variant="body2" color="text.secondary">{fechaHoraDe(ev)}</Typography>
+            {cupos && <Typography variant="body2" color="text.secondary">{cupos}</Typography>}
           </CardContent>
         </CardActionArea>
       </Card>
     </Grid>
+  );
+}
+
+/** Ficha fija del evento que se está consultando: queda visible mientras se revisan sus
+ * reservas o inscripciones, para no perder de vista cuál es. */
+function FichaEvento({ ev, nombreArea }: { ev: Evento; nombreArea: (id: number) => string }) {
+  const estado = (ev.servicio ?? ev.actividad)!.estado_vigencia;
+  const { texto, color } = VIGENCIA[estado];
+  const nombre = (ev.servicio ?? ev.actividad)!.nombre;
+  const areas = areasDe(ev, nombreArea);
+  const cupos = cuposDe(ev);
+
+  return (
+    <Paper variant="outlined" sx={{ p: 2 }}>
+      <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "center" }} spacing={1}>
+        <Box sx={{ minWidth: 0 }}>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 0.5 }}>
+            <Chip
+              size="small"
+              icon={ev.tipo === "reserva" ? <EventAvailableOutlinedIcon /> : <HowToRegOutlinedIcon />}
+              label={ev.tipo === "reserva" ? "Reserva" : "Inscripción"}
+              variant="outlined"
+            />
+            <Chip size="small" label={texto} color={color} variant={color === "default" ? "outlined" : "filled"} />
+          </Stack>
+          <Typography variant="h6" sx={{ wordBreak: "break-word" }}>{nombre}</Typography>
+          <Typography variant="body2" color="text.secondary">
+            {areas.length > 0 ? areas.join(" · ") + " · " : ""}{fechaHoraDe(ev)}{cupos ? ` · ${cupos}` : ""}
+          </Typography>
+        </Box>
+      </Stack>
+    </Paper>
   );
 }
 
@@ -99,6 +144,7 @@ export default function ReservasPage() {
   const [servicios, setServicios] = useState<Servicio[]>([]);
   const [actividades, setActividades] = useState<Actividad[]>([]);
   const [agendas, setAgendas] = useState<Agenda[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
   const [seleccion, setSeleccion] = useState<Seleccion | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -125,36 +171,39 @@ export default function ReservasPage() {
   const [errorCrearInsc, setErrorCrearInsc] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([listarServicios(), listarActividades(), listarAgendas()])
-      .then(([sv, ac, ag]) => {
+    Promise.all([listarServicios(), listarActividades(), listarAgendas(), listarAreas()])
+      .then(([sv, ac, ag, ar]) => {
         setServicios(sv);
         setActividades(ac);
         setAgendas(ag);
-        setSeleccion((actual) => {
-          if (actual || !puedeGestionar) return actual;
-          if (sv.length > 0) return { tipo: "reserva", id: sv[0].id };
-          if (ac.length > 0) return { tipo: "inscripcion", id: ac[0].id };
-          return null;
-        });
+        setAreas(ar);
       })
       .catch((e) => setError(mensajeError(e, "No se pudieron cargar los eventos.")))
       .finally(() => setCargando(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const nombreArea = (id: number) => areas.find((a) => a.id === id)?.nombre ?? "—";
 
   const servicioSeleccionado = seleccion?.tipo === "reserva" ? servicios.find((s) => s.id === seleccion.id) ?? null : null;
   const actividadSeleccionada = seleccion?.tipo === "inscripcion" ? actividades.find((a) => a.id === seleccion.id) ?? null : null;
   const agendasDelEvento = agendas.filter((a) => a.servicio_id === servicioSeleccionado?.id && a.activo);
 
-  // Lista combinada para la vista de solo consulta (rol Visualización), ordenada
-  // cronológicamente (próxima fecha o fin de vigencia primero), sin excluir finalizados.
-  const eventosOrdenados = useMemo(() => {
-    const todos = [
+  // Listado combinado de eventos, ordenado cronológicamente (próxima fecha o fin de vigencia
+  // primero), sin excluir finalizados: el mismo listado para administrador y para el rol de
+  // solo consulta.
+  const eventosOrdenados = useMemo((): Evento[] => {
+    const todos: Evento[] = [
       ...servicios.map((s) => ({ tipo: "reserva" as const, servicio: s, actividad: undefined, agendas: agendas.filter((a) => a.servicio_id === s.id) })),
       ...actividades.map((a) => ({ tipo: "inscripcion" as const, servicio: undefined, actividad: a, agendas: [] as Agenda[] })),
     ];
     return todos.sort((a, b) => fechaOrden(b).localeCompare(fechaOrden(a)));
   }, [servicios, actividades, agendas]);
+
+  const eventoSeleccionado = useMemo((): Evento | null => {
+    if (servicioSeleccionado) return eventosOrdenados.find((e) => e.servicio?.id === servicioSeleccionado.id) ?? null;
+    if (actividadSeleccionada) return eventosOrdenados.find((e) => e.actividad?.id === actividadSeleccionada.id) ?? null;
+    return null;
+  }, [eventosOrdenados, servicioSeleccionado, actividadSeleccionada]);
 
   function abrirNuevaReserva() {
     if (!servicioSeleccionado) return;
@@ -248,11 +297,7 @@ export default function ReservasPage() {
     <Box>
       <PageHeader
         titulo="Reservas"
-        descripcion={
-          puedeGestionar
-            ? "Elige un evento para ver quién reservó o se inscribió: su historial completo, filtrable por estado y con cancelaciones."
-            : "Consulta el historial de cualquier evento creado, pasado, actual o futuro: quién reservó o se inscribió y su estado."
-        }
+        descripcion="Elige un evento para ver quién reservó o se inscribió: su historial completo, filtrable por estado y con cancelaciones."
         acciones={accionNueva}
       />
 
@@ -262,69 +307,40 @@ export default function ReservasPage() {
         <Loader />
       ) : sinEventos ? (
         <EmptyState titulo="Todavía no hay eventos" descripcion="Crea uno desde la sección Eventos." />
-      ) : !puedeGestionar ? (
-        // --- Vista de solo consulta (rol Visualización): listado de tarjetas → detalle ---
-        !seleccion ? (
-          <Grid container spacing={2}>
-            {eventosOrdenados.map((ev) => (
-              <TarjetaEvento
-                key={`${ev.tipo}-${(ev.servicio ?? ev.actividad)!.id}`}
-                ev={ev}
-                onClick={() => setSeleccion({ tipo: ev.tipo, id: (ev.servicio ?? ev.actividad)!.id })}
-              />
-            ))}
-          </Grid>
-        ) : (
-          <Stack spacing={2}>
-            <Button startIcon={<ArrowBackIcon />} onClick={() => setSeleccion(null)} sx={{ alignSelf: "flex-start" }}>
-              Volver al listado de eventos
-            </Button>
-            {servicioSeleccionado && <HistorialReservasPanel servicio={servicioSeleccionado} soloLectura />}
-            {actividadSeleccionada && <HistorialInscripcionesPanel actividad={actividadSeleccionada} soloLectura />}
-          </Stack>
-        )
+      ) : !seleccion ? (
+        // --- Listado de eventos: mismo listado e información para los dos roles ---
+        <Grid container spacing={2}>
+          {eventosOrdenados.map((ev) => (
+            <TarjetaEvento
+              key={`${ev.tipo}-${(ev.servicio ?? ev.actividad)!.id}`}
+              ev={ev}
+              nombreArea={nombreArea}
+              onClick={() => setSeleccion({ tipo: ev.tipo, id: (ev.servicio ?? ev.actividad)!.id })}
+            />
+          ))}
+        </Grid>
       ) : (
-        // --- Vista de gestión (administrador): selector rápido + historial con acciones ---
-        <>
-          <FormControl size="small" sx={{ mb: 3, minWidth: 280 }}>
-            <InputLabel id="reservas-evento-label">Evento</InputLabel>
-            <Select
-              labelId="reservas-evento-label"
-              label="Evento"
-              value={seleccion ? claveDe(seleccion) : ""}
-              onChange={(e) => {
-                const [tipo, idTexto] = e.target.value.split("-");
-                setSeleccion({ tipo: tipo as "reserva" | "inscripcion", id: Number(idTexto) });
-              }}
-            >
-              {servicios.length > 0 && <ListSubheader>Reservas</ListSubheader>}
-              {servicios.map((s) => (
-                <MenuItem key={`reserva-${s.id}`} value={`reserva-${s.id}`}>
-                  {s.nombre}{s.estado_vigencia === "finalizado" ? " (finalizado)" : ""}
-                </MenuItem>
-              ))}
-              {actividades.length > 0 && <ListSubheader>Inscripciones</ListSubheader>}
-              {actividades.map((a) => (
-                <MenuItem key={`inscripcion-${a.id}`} value={`inscripcion-${a.id}`}>
-                  {a.nombre}{a.estado_vigencia === "finalizado" ? " (finalizado)" : ""}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
+        // --- Detalle del evento: misma vista para los dos roles; soloLectura quita acciones ---
+        <Stack spacing={2}>
+          <Button startIcon={<ArrowBackIcon />} onClick={() => setSeleccion(null)} sx={{ alignSelf: "flex-start" }}>
+            Volver al listado de eventos
+          </Button>
+          {eventoSeleccionado && <FichaEvento ev={eventoSeleccionado} nombreArea={nombreArea} />}
           {servicioSeleccionado && (
             <HistorialReservasPanel
               key={`reserva-${servicioSeleccionado.id}-${refrescarEn}`}
               servicio={servicioSeleccionado}
+              soloLectura={!puedeGestionar}
             />
           )}
           {actividadSeleccionada && (
             <HistorialInscripcionesPanel
               key={`inscripcion-${actividadSeleccionada.id}-${refrescarEn}`}
               actividad={actividadSeleccionada}
+              soloLectura={!puedeGestionar}
             />
           )}
-        </>
+        </Stack>
       )}
 
       <Dialog open={dialogNuevaReserva} onClose={() => setDialogNuevaReserva(false)} maxWidth="xs" fullWidth>

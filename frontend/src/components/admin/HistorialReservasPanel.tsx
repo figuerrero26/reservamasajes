@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Alert, Box, Button, Checkbox, Chip, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack,
+  Alert, Box, Button, Chip, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack,
   Switch, TextField, Typography,
 } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
@@ -42,9 +42,6 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
   // El mismo evento puede tener agendas en varias áreas (p. ej. Masaje de relajación en
   // Oficinas y en Planta); este filtro ayuda a ubicar de un vistazo dónde reservó cada quien.
   const [filtroArea, setFiltroArea] = useState<string | "todas">("todas");
-  // Solo para el rol de solo consulta: no se valida asistencia, así que su vista se reduce a
-  // activas/canceladas (sin distinguir "asistió"/"no asistió"), activas por defecto.
-  const [mostrarCanceladas, setMostrarCanceladas] = useState(false);
   const [cancelando, setCancelando] = useState(false);
 
   const [aCancelar, setACancelar] = useState<ReservaAdmin | null>(null);
@@ -68,7 +65,6 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
   useEffect(() => {
     setFiltro("todas");
     setFiltroArea("todas");
-    setMostrarCanceladas(false);
     setReservas([]);
     cargar(servicio.id);
   }, [servicio.id]);
@@ -89,9 +85,8 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
     [reservas],
   );
   const activas = useMemo(() => reservas.filter((r) => r.estado === "activa"), [reservas]);
-  const canceladas = useMemo(() => reservas.filter((r) => r.estado === "cancelada"), [reservas]);
-  const visibles = (soloLectura ? [...activas, ...(mostrarCanceladas ? canceladas : [])] : reservas)
-    .filter((r) => soloLectura || filtro === "todas" || r.estado === filtro)
+  const visibles = reservas
+    .filter((r) => filtro === "todas" || r.estado === filtro)
     .filter((r) => filtroArea === "todas" || r.area_nombre === filtroArea);
 
   async function confirmarCancelarUna() {
@@ -176,24 +171,12 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
       )}
       {error && <Alert severity="error">{error}</Alert>}
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
-        {soloLectura ? (
-          <>
-            <Chip label={`Activas (${activas.length})`} color="primary" />
-            <FormControlLabel
-              control={<Checkbox size="small" checked={mostrarCanceladas} onChange={(e) => setMostrarCanceladas(e.target.checked)} />}
-              label={`Mostrar también canceladas (${canceladas.length})`}
-            />
-          </>
-        ) : (
-          <>
-            <Chip label={`Todas (${reservas.length})`} onClick={() => setFiltro("todas")}
-              color={filtro === "todas" ? "primary" : "default"} variant={filtro === "todas" ? "filled" : "outlined"} />
-            {ESTADOS.map((e) => (
-              <Chip key={e.valor} label={`${e.texto} (${conteo[e.valor] ?? 0})`} onClick={() => setFiltro(e.valor)}
-                color={filtro === e.valor ? "primary" : "default"} variant={filtro === e.valor ? "filled" : "outlined"} />
-            ))}
-          </>
-        )}
+        <Chip label={`Todas (${reservas.length})`} onClick={() => setFiltro("todas")}
+          color={filtro === "todas" ? "primary" : "default"} variant={filtro === "todas" ? "filled" : "outlined"} />
+        {ESTADOS.map((e) => (
+          <Chip key={e.valor} label={`${e.texto} (${conteo[e.valor] ?? 0})`} onClick={() => setFiltro(e.valor)}
+            color={filtro === e.valor ? "primary" : "default"} variant={filtro === e.valor ? "filled" : "outlined"} />
+        ))}
         {areas.length > 1 && (
           <FormControl size="small" sx={{ minWidth: 160, ml: { sm: 1 } }}>
             <InputLabel id="historial-reservas-area-label">Área</InputLabel>
