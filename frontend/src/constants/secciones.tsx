@@ -22,7 +22,7 @@ export interface SeccionAdmin {
  * cada uno tenía su propia lista y se habían desincronizado). */
 export const SECCIONES_ADMIN: SeccionAdmin[] = [
   { texto: "Inicio", descripcion: "Resumen del día.", ruta: "/admin", icono: <DashboardOutlinedIcon />, grupo: "operacion" },
-  { texto: "Reservas", descripcion: "Turnos del día, reservas manuales, asistencia y cancelaciones.", ruta: "/admin/reservas", icono: <EventAvailableOutlinedIcon />, grupo: "operacion" },
+  { texto: "Reservas", descripcion: "Historial por evento: reservas e inscripciones, asistencia y cancelaciones.", ruta: "/admin/reservas", icono: <EventAvailableOutlinedIcon />, grupo: "operacion" },
   { texto: "Usuarios", descripcion: "Cuentas de colaboradores: bloqueo, contraseña y excepciones.", ruta: "/admin/usuarios", icono: <PeopleOutlineIcon />, grupo: "operacion" },
   // Catálogo: todo lo de cada evento (también sus agendas, fechas e historial) se gestiona
   // dentro de «Eventos»; ya no hay una sección de agendas aparte.
