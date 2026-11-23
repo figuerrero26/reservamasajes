@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Alert, Box, Button, Chip, FormControlLabel, Stack, Switch, TextField, Typography,
+  Alert, Box, Button, Chip, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Stack, Switch,
+  TextField, Typography,
 } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import type { EstadoReserva, ReservaAdmin, Servicio } from "../../types";
@@ -40,6 +41,9 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<EstadoReserva | "todas">("todas");
+  // El mismo evento puede tener agendas en varias áreas (p. ej. Masaje de relajación en
+  // Oficinas y en Planta); este filtro ayuda a ubicar de un vistazo dónde reservó cada quien.
+  const [filtroArea, setFiltroArea] = useState<string | "todas">("todas");
   const [cancelando, setCancelando] = useState(false);
 
   const [aCancelar, setACancelar] = useState<ReservaAdmin | null>(null);
@@ -66,6 +70,7 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
 
   useEffect(() => {
     setFiltro("todas");
+    setFiltroArea("todas");
     setReservas([]);
     cargar(servicio.id);
   }, [servicio.id]);
@@ -81,7 +86,13 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
     () => reservas.filter((r) => r.estado === "activa" && esFutura(r, ahora.hoy, ahora.hora)),
     [reservas, ahora],
   );
-  const visibles = filtro === "todas" ? reservas : reservas.filter((r) => r.estado === filtro);
+  const areas = useMemo(
+    () => Array.from(new Set(reservas.map((r) => r.area_nombre))).sort((a, b) => a.localeCompare(b)),
+    [reservas],
+  );
+  const visibles = reservas
+    .filter((r) => filtro === "todas" || r.estado === filtro)
+    .filter((r) => filtroArea === "todas" || r.area_nombre === filtroArea);
 
   async function confirmarCancelarUna() {
     if (!aCancelar) return;
@@ -179,13 +190,27 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
         </Alert>
       )}
       {error && <Alert severity="error">{error}</Alert>}
-      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
         <Chip label={`Todas (${reservas.length})`} onClick={() => setFiltro("todas")}
           color={filtro === "todas" ? "primary" : "default"} variant={filtro === "todas" ? "filled" : "outlined"} />
         {ESTADOS.map((e) => (
           <Chip key={e.valor} label={`${e.texto} (${conteo[e.valor] ?? 0})`} onClick={() => setFiltro(e.valor)}
             color={filtro === e.valor ? "primary" : "default"} variant={filtro === e.valor ? "filled" : "outlined"} />
         ))}
+        {areas.length > 1 && (
+          <FormControl size="small" sx={{ minWidth: 160, ml: { sm: 1 } }}>
+            <InputLabel id="historial-reservas-area-label">Área</InputLabel>
+            <Select
+              labelId="historial-reservas-area-label"
+              label="Área"
+              value={filtroArea}
+              onChange={(e) => setFiltroArea(e.target.value)}
+            >
+              <MenuItem value="todas">Todas las áreas</MenuItem>
+              {areas.map((a) => <MenuItem key={a} value={a}>{a}</MenuItem>)}
+            </Select>
+          </FormControl>
+        )}
       </Stack>
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
         <Button size="small" startIcon={<DownloadIcon />} onClick={exportar} disabled={!reservas.length}>Exportar CSV</Button>
@@ -197,7 +222,7 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
       </Stack>
       {cargando ? <Loader /> : (
         <DataTable columnas={columnas} filas={visibles} obtenerId={(r) => r.id}
-          mensajeVacio="Este evento no tiene reservas con ese estado." />
+          mensajeVacio="Este evento no tiene reservas con esos filtros." />
       )}
       <ReservasAfectadasDialog
         abierto={cancelando}
