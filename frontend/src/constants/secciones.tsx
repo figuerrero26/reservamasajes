@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import CategoryOutlinedIcon from "@mui/icons-material/CategoryOutlined";
 import SpaOutlinedIcon from "@mui/icons-material/SpaOutlined";
-import EventNoteOutlinedIcon from "@mui/icons-material/EventNoteOutlined";
 import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
 import PeopleOutlineIcon from "@mui/icons-material/PeopleOutline";
 import BlockOutlinedIcon from "@mui/icons-material/BlockOutlined";
@@ -25,14 +24,14 @@ export const SECCIONES_ADMIN: SeccionAdmin[] = [
   { texto: "Inicio", descripcion: "Resumen del día.", ruta: "/admin", icono: <DashboardOutlinedIcon />, grupo: "operacion" },
   { texto: "Reservas", descripcion: "Turnos del día, reservas manuales, asistencia y cancelaciones.", ruta: "/admin/reservas", icono: <EventAvailableOutlinedIcon />, grupo: "operacion" },
   { texto: "Usuarios", descripcion: "Cuentas de colaboradores: bloqueo, contraseña y excepciones.", ruta: "/admin/usuarios", icono: <PeopleOutlineIcon />, grupo: "operacion" },
-  // Catálogo en el orden de trabajo pedido: Eventos (turnos y actividades juntos), Áreas, Agendas.
-  { texto: "Eventos", descripcion: "Reservas por turnos y actividades con inscripción: creación, agendas, sesiones e inscritos.", ruta: "/admin/eventos", icono: <SpaOutlinedIcon />, grupo: "catalogo" },
+  // Catálogo: todo lo de cada evento (también sus agendas, fechas e historial) se gestiona
+  // dentro de «Eventos»; ya no hay una sección de agendas aparte.
+  { texto: "Eventos", descripcion: "Eventos de reserva (agendas, horarios y turnos) y de inscripción (fechas, cupos e inscritos), todo en un solo lugar.", ruta: "/admin/eventos", icono: <SpaOutlinedIcon />, grupo: "catalogo" },
   { texto: "Áreas", descripcion: "Las áreas a las que pertenece cada evento.", ruta: "/admin/areas", icono: <CategoryOutlinedIcon />, grupo: "catalogo" },
-  { texto: "Agendas", descripcion: "Horario, duración de turnos y días de cada evento por área.", ruta: "/admin/agendas", icono: <EventNoteOutlinedIcon />, grupo: "catalogo" },
   { texto: "Bloqueos", descripcion: "Días u horas sin atención en una o todas las agendas.", ruta: "/admin/bloqueos", icono: <BlockOutlinedIcon />, grupo: "catalogo" },
   { texto: "Festivos", descripcion: "Días no laborables del calendario.", ruta: "/admin/festivos", icono: <CelebrationOutlinedIcon />, grupo: "catalogo" },
-  { texto: "Configuración", descripcion: "Marca, contacto, semana activa, reglas y correo.", ruta: "/admin/configuracion", icono: <SettingsOutlinedIcon />, grupo: "sistema" },
-  { texto: "Administradores", descripcion: "Cuentas y permisos del panel.", ruta: "/admin/administradores", icono: <AdminPanelSettingsOutlinedIcon />, grupo: "sistema" },
+  { texto: "Configuración", descripcion: "Marca, contacto, textos del portal y correo.", ruta: "/admin/configuracion", icono: <SettingsOutlinedIcon />, grupo: "sistema" },
+  { texto: "Administradores", descripcion: "Cuentas del panel, roles y contraseñas.", ruta: "/admin/administradores", icono: <AdminPanelSettingsOutlinedIcon />, grupo: "sistema" },
   { texto: "Auditoría", descripcion: "Historial de acciones administrativas.", ruta: "/admin/auditoria", icono: <HistoryOutlinedIcon />, grupo: "sistema" },
 ];
 

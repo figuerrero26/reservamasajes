@@ -3,9 +3,10 @@ import type { ConfiguracionGeneral } from "../types";
 import { obtenerConfiguracion } from "../services/configuracion";
 
 // Valores mientras llega la configuración real (primera visita, sin caché): la identidad de
-// la Semana Sigra Vive, para que el primer render ya tenga los colores y el título correctos.
+// la Semana Sigra Vive con la firma InfraestructurEF, para que el primer render ya tenga los
+// colores, el título y la firma correctos.
 const DEFAULT_CONFIG: ConfiguracionGeneral = {
-  empresa_nombre: "SIGRA S.A.S",
+  empresa_nombre: "InfraestructurEF",
   sistema_nombre: "Vive la Semana Sigra Vive | Reserva un espacio",
   logo_url: null,
   color_primario: "#7f9136",

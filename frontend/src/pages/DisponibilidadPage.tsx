@@ -1,23 +1,28 @@
 import { useEffect, useState } from "react";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import {
-  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
+  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
   Grid, Stack, Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import LoginOutlinedIcon from "@mui/icons-material/LoginOutlined";
+import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
 import RuleOutlinedIcon from "@mui/icons-material/RuleOutlined";
+import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 import Loader from "../components/Loader";
 import { PortadaEvento } from "../components/EventCard";
 import EmptyState from "../components/EmptyState";
-import AgendaCard from "../components/AgendaCard";
+import AgendaCard, { nombrePropioAgenda } from "../components/AgendaCard";
+import DetalleEvento from "../components/DetalleEvento";
 import WeekCalendar from "../components/WeekCalendar";
 import ReservationDialog from "../components/ReservationDialog";
 import type { AgendaPublica, EventoPublico, Slot } from "../types";
 import { obtenerEvento } from "../services/eventos";
 import { listarAgendasPublicas } from "../services/agendas";
 import { mensajeError } from "../utils/errors";
-import { textoVigencia } from "../utils/fechas";
+import { textoFechasLargas } from "../utils/fechas";
 import { useUsuarioAuth } from "../hooks/useUsuarioAuth";
 
 const CLAVE_RESERVA_PENDIENTE = "reserva_pendiente";
@@ -104,6 +109,24 @@ export default function DisponibilidadPage() {
     navigate(`${destino}?next=/eventos/${eventoId}`);
   }
 
+  // Información del lugar: el área (con su descripción, si hay un solo lugar) y, cuando la
+  // agenda tiene un nombre propio, el espacio o profesional que atiende.
+  const lugar = agendas.length === 0 ? (evento?.areas.join(" · ") || null)
+    : agendas.length === 1 ? (
+      <>
+        {agendas[0].area_nombre}
+        {nombrePropioAgenda(agendas[0]) ? ` · ${nombrePropioAgenda(agendas[0])}` : ""}
+        {agendas[0].area_descripcion && (
+          <Typography variant="body2" color="text.secondary" component="span" sx={{ display: "block" }}>
+            {agendas[0].area_descripcion}
+          </Typography>
+        )}
+      </>
+    ) : `${agendas.map((a) => a.area_nombre).join(" · ")} (eliges el lugar al reservar)`;
+  const duracion = !evento ? null : evento.duracion_minutos === evento.duracion_maxima
+    ? `${evento.duracion_minutos} minutos`
+    : `Entre ${evento.duracion_minutos} y ${evento.duracion_maxima} minutos, según el lugar`;
+
   if (cargando) return <Loader texto="Cargando horarios…" />;
   if (error || !evento) {
     return (
@@ -121,10 +144,10 @@ export default function DisponibilidadPage() {
         Volver
       </Button>
 
-      <Grid container spacing={{ xs: 3, md: 5 }} sx={{ mb: { xs: 3, md: 5 } }} alignItems="center">
+      <Grid container spacing={{ xs: 3, md: 5 }} sx={{ mb: { xs: 3, md: 4 } }} alignItems="center">
         <Grid item xs={12} md={evento.imagen_url ? 7 : 12}>
-          <Typography variant="overline" color="text.secondary" component="p">Reserva de turno</Typography>
-          <Typography variant="h3" component="h1" sx={{ fontSize: { xs: "2rem", sm: "2.6rem" } }}>
+          <Typography variant="overline" color="text.secondary" component="p">Evento de reserva</Typography>
+          <Typography variant="h3" component="h1" sx={{ fontSize: { xs: "2rem", sm: "2.6rem" }, wordBreak: "break-word" }}>
             {evento.nombre}
           </Typography>
           {(evento.descripcion_larga || evento.descripcion_corta) && (
@@ -132,32 +155,6 @@ export default function DisponibilidadPage() {
               {evento.descripcion_larga || evento.descripcion_corta}
             </Typography>
           )}
-          <Stack direction="row" spacing={1} sx={{ mt: 2 }} flexWrap="wrap" useFlexGap>
-            <Chip
-              size="small"
-              variant="outlined"
-              label={evento.duracion_minutos === evento.duracion_maxima
-                ? `Sesiones de ${evento.duracion_minutos} min`
-                : `Sesiones de ${evento.duracion_minutos}–${evento.duracion_maxima} min`}
-            />
-            {evento.areas.map((a) => <Chip key={a} size="small" variant="outlined" label={a} />)}
-            {textoVigencia(evento.vigencia_inicio, evento.vigencia_fin) && (
-              <Chip
-                size="small" variant="outlined" icon={<EventOutlinedIcon />}
-                label={textoVigencia(evento.vigencia_inicio, evento.vigencia_fin)}
-              />
-            )}
-            {/* La disponibilidad se muestra solo aquí, en el detalle (no en las tarjetas). */}
-            <Chip
-              size="small"
-              color={(evento.turnos_disponibles ?? 0) > 0 ? "primary" : "default"}
-              label={(evento.turnos_disponibles ?? 0) > 0 ? `${evento.turnos_disponibles} turnos disponibles` : "Sin turnos disponibles"}
-            />
-          </Stack>
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.5, color: "text.secondary" }}>
-            <RuleOutlinedIcon sx={{ fontSize: 18 }} />
-            <Typography variant="body2">{evento.regla_participacion}</Typography>
-          </Stack>
         </Grid>
         {evento.imagen_url && (
           <Grid item xs={12} md={5}>
@@ -166,8 +163,46 @@ export default function DisponibilidadPage() {
         )}
       </Grid>
 
-      {evento.informacion_adicional && (
-        <Alert severity="info" sx={{ mb: 3, whiteSpace: "pre-line" }}>{evento.informacion_adicional}</Alert>
+      {/* Solo lo que corresponde a un evento de reserva: dónde, cuándo, cuánto dura cada
+          sesión y qué necesita el colaborador para reservar. */}
+      <Grid container spacing={2} sx={{ mb: { xs: 4, md: 5 } }}>
+        <Grid item xs={12} md={6}>
+          <DetalleEvento
+            filas={[
+              { icono: <PlaceOutlinedIcon />, titulo: agendas.length > 1 ? "Lugares" : "Lugar", contenido: lugar },
+              { icono: <EventOutlinedIcon />, titulo: "Fechas", contenido: textoFechasLargas(evento.vigencia_inicio, evento.vigencia_fin) },
+              { icono: <ScheduleOutlinedIcon />, titulo: "Duración de cada sesión", contenido: duracion },
+            ]}
+          />
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <DetalleEvento
+            titulo="Para reservar"
+            filas={[
+              { icono: <RuleOutlinedIcon />, titulo: "Regla de reserva", contenido: evento.regla_participacion },
+              {
+                icono: <LoginOutlinedIcon />,
+                titulo: "Cómo reservar",
+                contenido: token
+                  ? "Elige el lugar, el día y el horario; confirmas tu turno en el siguiente paso."
+                  : "Puedes ver los horarios sin cuenta. Para confirmar un turno, inicia sesión o crea tu cuenta.",
+              },
+              {
+                icono: <InfoOutlinedIcon />,
+                titulo: "Ten en cuenta",
+                contenido: evento.informacion_adicional
+                  ? <Box component="span" sx={{ whiteSpace: "pre-line" }}>{evento.informacion_adicional}</Box>
+                  : null,
+              },
+            ]}
+          />
+        </Grid>
+      </Grid>
+
+      {agendas.length > 0 && evento.turnos_disponibles === 0 && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          Por ahora todos los turnos de estas fechas están ocupados. Si alguien cancela, el turno vuelve a quedar disponible.
+        </Alert>
       )}
 
       {agendas.length === 0 && (

@@ -1,13 +1,8 @@
 import { useEffect, useState } from "react";
 import {
-  Alert,
   AppBar,
   Box,
   Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   Divider,
   Drawer,
   IconButton,
@@ -16,7 +11,6 @@ import {
   ListItemIcon,
   ListItemText,
   ListSubheader,
-  TextField,
   Toolbar,
   Typography,
 } from "@mui/material";
@@ -26,92 +20,11 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { Link, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useConfig } from "../hooks/useConfig";
-import { cambiarPassword } from "../services/auth";
-import { mensajeError } from "../utils/errors";
+import CambiarPasswordPropiaDialog from "../components/admin/CambiarPasswordPropiaDialog";
 import { ETIQUETA_ROL, ROL_VISOR_RESERVAS } from "../constants/roles";
 import { ETIQUETA_GRUPO, SECCIONES_ADMIN } from "../constants/secciones";
 
 const DRAWER_WIDTH = 256;
-
-function CambiarPasswordDialog({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
-  const [actual, setActual] = useState("");
-  const [nueva, setNueva] = useState("");
-  const [confirmacion, setConfirmacion] = useState("");
-  const [enviando, setEnviando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [exito, setExito] = useState(false);
-
-  function cerrar() {
-    setActual("");
-    setNueva("");
-    setConfirmacion("");
-    setError(null);
-    setExito(false);
-    onCerrar();
-  }
-
-  async function enviar() {
-    if (!actual || !nueva) return;
-    if (nueva !== confirmacion) {
-      setError("La confirmación no coincide con la nueva contraseña.");
-      return;
-    }
-    setEnviando(true);
-    setError(null);
-    try {
-      await cambiarPassword(actual, nueva);
-      setExito(true);
-      setActual("");
-      setNueva("");
-      setConfirmacion("");
-    } catch (e) {
-      setError(mensajeError(e, "No se pudo cambiar la contraseña."));
-    } finally {
-      setEnviando(false);
-    }
-  }
-
-  return (
-    <Dialog open={abierto} onClose={cerrar} maxWidth="xs" fullWidth>
-      <DialogTitle>Cambiar contraseña</DialogTitle>
-      <DialogContent>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
-          {error && <Alert severity="error">{error}</Alert>}
-          {exito && <Alert severity="success">Contraseña actualizada correctamente.</Alert>}
-          <TextField
-            label="Contraseña actual"
-            type="password"
-            value={actual}
-            onChange={(e) => setActual(e.target.value)}
-            fullWidth
-          />
-          <TextField
-            label="Nueva contraseña"
-            type="password"
-            value={nueva}
-            onChange={(e) => setNueva(e.target.value)}
-            fullWidth
-          />
-          <TextField
-            label="Confirmar nueva contraseña"
-            type="password"
-            value={confirmacion}
-            onChange={(e) => setConfirmacion(e.target.value)}
-            fullWidth
-          />
-        </Box>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={cerrar} disabled={enviando}>
-          Cerrar
-        </Button>
-        <Button variant="contained" onClick={enviar} disabled={enviando || !actual || !nueva}>
-          Guardar
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
-}
 
 export default function AdminLayout() {
   const { token, nombre, rol, cerrarSesion } = useAuth();
@@ -146,8 +59,9 @@ export default function AdminLayout() {
     <Box sx={{ width: DRAWER_WIDTH, display: "flex", flexDirection: "column", height: "100%" }} role="presentation">
       <Toolbar sx={{ px: 2.5 }}>
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 700 }} noWrap>
-            {config.sistema_nombre || "Administración"}
+          {/* Solo el título (lo que va antes de «|»), en hasta dos líneas: no se corta con «…». */}
+          <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.25, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+            {(config.sistema_nombre || "").split("|")[0].trim() || "Administración"}
           </Typography>
           <Typography variant="caption" color="text.secondary" noWrap display="block">
             {rol ? ETIQUETA_ROL[rol] ?? rol : ""}
@@ -191,7 +105,7 @@ export default function AdminLayout() {
         </ListItemButton>
         <ListItemButton onClick={() => setDialogPasswordAbierto(true)}>
           <ListItemIcon><LockResetIcon fontSize="small" /></ListItemIcon>
-          <ListItemText primary="Cambiar contraseña" primaryTypographyProps={{ fontSize: "0.9rem" }} />
+          <ListItemText primary="Cambiar mi contraseña" primaryTypographyProps={{ fontSize: "0.9rem" }} />
         </ListItemButton>
       </List>
     </Box>
@@ -260,7 +174,7 @@ export default function AdminLayout() {
         </Box>
       </Box>
 
-      <CambiarPasswordDialog abierto={dialogPasswordAbierto} onCerrar={() => setDialogPasswordAbierto(false)} />
+      <CambiarPasswordPropiaDialog abierto={dialogPasswordAbierto} onCerrar={() => setDialogPasswordAbierto(false)} />
     </Box>
   );
 }

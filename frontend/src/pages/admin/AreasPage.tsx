@@ -102,7 +102,7 @@ export default function AreasPage() {
       if (area.activo) {
         const r = await desactivarArea(area.id);
         const actividadesTexto = r.actividades_afectadas
-          ? ` y ${r.actividades_afectadas} actividad(es) se ocultaron del portal (sus inscripciones se conservan)`
+          ? ` y ${r.actividades_afectadas} evento(s) de inscripción se ocultaron del portal (sus inscripciones se conservan)`
           : "";
         if (r.reservas_afectadas.length > 0) setAfectadas({ nombre: area.nombre, reservas: r.reservas_afectadas });
         setAviso(`«${area.nombre}» quedó desactivada: sus agendas dejan de ofrecer turnos${actividadesTexto}.`);
@@ -121,11 +121,11 @@ export default function AreasPage() {
     { key: "descripcion", label: "Descripción", render: (a) => a.descripcion || "—" },
     {
       key: "eventos",
-      label: "Agendas / actividades",
+      label: "Eventos",
       render: (a) => {
         const nAgendas = agendas.filter((g) => g.area_id === a.id).length;
         const nActividades = actividades.filter((x) => x.area_id === a.id).length;
-        return `${nAgendas} agenda(s) · ${nActividades} actividad(es)`;
+        return `${nAgendas} agenda(s) de reserva · ${nActividades} de inscripción`;
       },
     },
     {
@@ -159,7 +159,7 @@ export default function AreasPage() {
     <Box>
       <PageHeader
         titulo="Áreas"
-        descripcion="Las áreas organizan los eventos: todo evento, agenda y actividad pertenece a una. Un área inactiva deja de ofrecer sus turnos y oculta sus actividades del portal."
+        descripcion="Las áreas organizan los eventos: todo evento de reserva (por sus agendas) y de inscripción pertenece a una. Un área inactiva deja de ofrecer sus turnos y oculta sus eventos de inscripción del portal."
         acciones={<Button variant="contained" startIcon={<AddIcon />} onClick={abrirCrear}>Nueva área</Button>}
       />
 

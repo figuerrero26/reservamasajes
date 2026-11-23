@@ -5,13 +5,19 @@ import {
   LinearProgress, Paper, Stack, Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import CategoryOutlinedIcon from "@mui/icons-material/CategoryOutlined";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
+import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
+import HowToRegOutlinedIcon from "@mui/icons-material/HowToRegOutlined";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import LoginOutlinedIcon from "@mui/icons-material/LoginOutlined";
 import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
 import RuleOutlinedIcon from "@mui/icons-material/RuleOutlined";
 import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 import Loader from "../components/Loader";
 import { PortadaEvento } from "../components/EventCard";
+import DetalleEvento from "../components/DetalleEvento";
 import EmptyState from "../components/EmptyState";
 import EstadoChip from "../components/EstadoChip";
 import FormularioDinamico, { camposFaltantes } from "../components/FormularioDinamico";
@@ -19,7 +25,7 @@ import type { ActividadPublica, Sesion } from "../types";
 import { listarSesionesPublicas, obtenerActividadPublica } from "../services/actividades";
 import { crearInscripcion, type Respuestas } from "../services/inscripciones";
 import { mensajeError } from "../utils/errors";
-import { formatearFechaLarga, formatearHora, textoVigencia } from "../utils/fechas";
+import { formatearFechaLarga, formatearHora, textoFechasLargas } from "../utils/fechas";
 import { useUsuarioAuth } from "../hooks/useUsuarioAuth";
 
 const MENSAJE_ESTADO: Record<string, string> = {
@@ -29,9 +35,10 @@ const MENSAJE_ESTADO: Record<string, string> = {
   finalizada: "Esta actividad no tiene fechas próximas.",
 };
 
+/** Disponibilidad de cupos de una fecha (solo cuando la sesión tiene cupo definido). */
 function Ocupacion({ sesion }: { sesion: Sesion }) {
   if (sesion.cupo_maximo == null) {
-    return <Typography variant="caption" color="text.secondary">{sesion.inscritos} inscrito(s) · sin límite de cupo</Typography>;
+    return <Typography variant="caption" color="text.secondary">Cupos sin límite</Typography>;
   }
   const porcentaje = Math.min(100, (sesion.inscritos / sesion.cupo_maximo) * 100);
   return (
@@ -129,6 +136,24 @@ export default function ActividadDetallePage() {
   }
 
   const mensajeEstado = MENSAJE_ESTADO[actividad.estado_inscripcion];
+  const sesionUnica = sesiones.length === 1 ? sesiones[0] : null;
+  const realizacion = sesionUnica
+    ? `${formatearFechaLarga(sesionUnica.fecha)} · ${formatearHora(sesionUnica.hora_inicio)} a ${formatearHora(sesionUnica.hora_fin)}`
+      + (sesionUnica.lugar ? ` · ${sesionUnica.lugar}` : "")
+    : sesiones.length > 1
+      ? `${sesiones.length} fechas programadas, ${textoFechasLargas(sesiones[0].fecha, sesiones[sesiones.length - 1].fecha)?.toLowerCase()}. Elige la tuya en «Elige una fecha».`
+      : null;
+  const periodo = actividad.estado_inscripcion === "proximamente" && actividad.vigencia_inicio
+    ? `Abre el ${formatearFechaLarga(actividad.vigencia_inicio).toLowerCase()}`
+    : actividad.vigencia_fin && actividad.estado_inscripcion !== "finalizada"
+      ? `Hasta el ${formatearFechaLarga(actividad.vigencia_fin).toLowerCase()}, inclusive`
+      : textoFechasLargas(actividad.vigencia_inicio, actividad.vigencia_fin);
+  const conCupo = sesiones.filter((s) => s.cupo_maximo != null);
+  const cupos = sesiones.length === 0 ? null
+    : conCupo.length === 0 ? "Sin límite de participantes"
+      : conCupo.length === sesiones.length && new Set(conCupo.map((s) => s.cupo_maximo)).size === 1
+        ? `Hasta ${conCupo[0].cupo_maximo} participantes por fecha`
+        : "Cupos limitados: revisa la disponibilidad de cada fecha";
 
   return (
     <Box>
@@ -140,13 +165,11 @@ export default function ActividadDetallePage() {
         <Grid item xs={12} md={7}>
           <Stack spacing={2.5}>
             <Box>
-              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-                <Typography variant="overline" color="text.secondary">
-                  Actividad{actividad.area_nombre ? ` · ${actividad.area_nombre}` : ""}
-                </Typography>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }} flexWrap="wrap" useFlexGap>
+                <Typography variant="overline" color="text.secondary">Evento de inscripción</Typography>
                 <EstadoChip tipo="actividad" estado={actividad.estado_inscripcion} />
               </Stack>
-              <Typography variant="h3" component="h1" sx={{ fontSize: { xs: "2rem", sm: "2.6rem" } }}>
+              <Typography variant="h3" component="h1" sx={{ fontSize: { xs: "2rem", sm: "2.6rem" }, wordBreak: "break-word" }}>
                 {actividad.nombre}
               </Typography>
               {actividad.descripcion_corta && (
@@ -159,35 +182,44 @@ export default function ActividadDetallePage() {
             {actividad.descripcion_larga && (
               <Typography variant="body1" sx={{ whiteSpace: "pre-line" }}>{actividad.descripcion_larga}</Typography>
             )}
-            {actividad.informacion_adicional && (
-              <Paper variant="outlined" sx={{ p: 2.5, bgcolor: "background.default" }}>
-                <Typography variant="subtitle2" gutterBottom>Información importante</Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "pre-line" }}>
-                  {actividad.informacion_adicional}
-                </Typography>
-              </Paper>
-            )}
-            <Stack spacing={0.75} sx={{ color: "text.secondary" }}>
-              {textoVigencia(actividad.vigencia_inicio, actividad.vigencia_fin) && (
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <EventOutlinedIcon sx={{ fontSize: 18 }} />
-                  <Typography variant="body2">
-                    Inscripciones: {textoVigencia(actividad.vigencia_inicio, actividad.vigencia_fin)?.toLowerCase()}
-                  </Typography>
-                </Stack>
-              )}
-              <Stack direction="row" spacing={1} alignItems="center">
-                <RuleOutlinedIcon sx={{ fontSize: 18 }} />
-                <Typography variant="body2">{actividad.regla_participacion}</Typography>
-              </Stack>
-            </Stack>
+            {/* Solo lo que corresponde a un evento de inscripción: área, cuándo se realiza,
+                hasta cuándo hay inscripciones y qué hace falta para participar. */}
+            <DetalleEvento
+              filas={[
+                { icono: <CategoryOutlinedIcon />, titulo: "Área", contenido: actividad.area_nombre },
+                { icono: <EventOutlinedIcon />, titulo: sesiones.length === 1 ? "Fecha y horario" : "Fechas", contenido: realizacion },
+                { icono: <HowToRegOutlinedIcon />, titulo: "Periodo de inscripción", contenido: periodo },
+                { icono: <GroupsOutlinedIcon />, titulo: "Cupos", contenido: cupos },
+              ]}
+            />
+            <DetalleEvento
+              titulo="Para participar"
+              filas={[
+                { icono: <RuleOutlinedIcon />, titulo: "Regla de participación", contenido: actividad.regla_participacion },
+                {
+                  icono: <LoginOutlinedIcon />,
+                  titulo: "Cómo inscribirte",
+                  contenido: (token
+                    ? "Elige una fecha con cupo y confirma tu inscripción"
+                    : "Inicia sesión o crea tu cuenta y elige una fecha con cupo")
+                    + (actividad.campos_formulario.length > 0 ? "; te pediremos algunos datos adicionales." : "."),
+                },
+                {
+                  icono: <InfoOutlinedIcon />,
+                  titulo: "Información importante",
+                  contenido: actividad.informacion_adicional
+                    ? <Box component="span" sx={{ whiteSpace: "pre-line" }}>{actividad.informacion_adicional}</Box>
+                    : null,
+                },
+              ]}
+            />
           </Stack>
         </Grid>
 
         <Grid item xs={12} md={5}>
           <Box sx={{ position: { md: "sticky" }, top: { md: 96 } }}>
             <Typography variant="h6" sx={{ mb: 1.5 }}>
-              {sesiones.length === 1 ? "Fecha" : "Elige una fecha"}
+              {sesiones.length === 1 ? "Fecha y horario" : "Elige una fecha"}
             </Typography>
             {mensajeEstado && <Alert severity="info" sx={{ mb: 2 }}>{mensajeEstado}</Alert>}
             {sesiones.length === 0 ? (

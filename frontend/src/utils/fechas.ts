@@ -68,6 +68,41 @@ export function textoVigencia(inicio?: string | null, fin?: string | null): stri
   return null;
 }
 
+/** Fechas de un evento en lenguaje natural, para el detalle del portal:
+ * "Del lunes 23 al viernes 27 de noviembre", "Del lunes 30 de noviembre al viernes 4 de
+ * diciembre", "El lunes 23 de noviembre" (con el año solo si no es el actual). */
+export function textoFechasLargas(inicio?: string | null, fin?: string | null): string | null {
+  const conAnio = (f: string) => (f.slice(0, 4) === hoyBogota().slice(0, 4) ? "" : ` de ${f.slice(0, 4)}`);
+  const larga = (f: string) => `${formatearFechaLarga(f).toLowerCase()}${conAnio(f)}`;
+  if (inicio && fin) {
+    if (inicio === fin) return `El ${larga(inicio)}`;
+    const mismoMes = inicio.slice(0, 7) === fin.slice(0, 7);
+    if (mismoMes) {
+      const [, , d] = inicio.split("-").map(Number);
+      return `Del ${nombreDia(inicio).toLowerCase()} ${d} al ${larga(fin)}`;
+    }
+    return `Del ${larga(inicio)} al ${larga(fin)}`;
+  }
+  if (fin) return `Hasta el ${larga(fin)}`;
+  if (inicio) return `Desde el ${larga(inicio)}`;
+  return null;
+}
+
+const DIAS_CORTOS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+
+/** "0,1,2,3,4" → "Lunes a viernes"; "0,2,4" → "Lun, Mié, Vie". */
+export function resumenDiasSemana(csv?: string | null): string {
+  const dias = (csv ?? "").split(",").map(Number).filter((d) => !Number.isNaN(d) && d >= 0 && d <= 6).sort((a, b) => a - b);
+  const clave = dias.join(",");
+  if (clave === "0,1,2,3,4") return "Lunes a viernes";
+  if (clave === "0,1,2,3,4,5") return "Lunes a sábado";
+  if (clave === "0,1,2,3,4,5,6") return "Todos los días";
+  if (dias.length > 2 && dias.every((d, i) => i === 0 || d === dias[i - 1] + 1)) {
+    return `${NOMBRES_DIA[dias[0]]} a ${NOMBRES_DIA[dias[dias.length - 1]].toLowerCase()}`;
+  }
+  return dias.map((d) => DIAS_CORTOS[d]).join(", ");
+}
+
 /** "24 nov · 10:00" a partir de un datetime ISO local ("2026-11-24T10:00:00"). */
 export function formatearFechaHora(datetimeISO: string): string {
   return `${formatearFecha(datetimeISO.slice(0, 10))} · ${datetimeISO.slice(11, 16)}`;

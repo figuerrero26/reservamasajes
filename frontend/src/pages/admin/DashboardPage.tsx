@@ -58,7 +58,7 @@ export default function DashboardPage() {
       <Grid container spacing={2} sx={{ mb: 5 }}>
         <Grid item xs={6} md={3}><Indicador etiqueta="Reservas de hoy" valor={resumen?.reservasHoy ?? null} /></Grid>
         <Grid item xs={6} md={3}><Indicador etiqueta="Turnos libres hoy" valor={resumen?.disponiblesHoy ?? null} /></Grid>
-        <Grid item xs={6} md={3}><Indicador etiqueta="Actividades abiertas" valor={resumen?.actividadesAbiertas ?? null} /></Grid>
+        <Grid item xs={6} md={3}><Indicador etiqueta="Inscripciones abiertas" valor={resumen?.actividadesAbiertas ?? null} /></Grid>
         <Grid item xs={6} md={3}><Indicador etiqueta="Inscritos próximos" valor={resumen?.inscritosProximos ?? null} /></Grid>
       </Grid>
 

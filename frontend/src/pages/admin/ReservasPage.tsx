@@ -25,6 +25,8 @@ import {
   TableRow,
   TextField,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import type { Agenda, AgendaDia, EstadoSlot, Servicio, SlotDia } from "../../types";
@@ -78,6 +80,54 @@ interface CancelarInfo {
 export default function ReservasPage() {
   const { rol } = useAuth();
   const puedeGestionar = rol === ROL_ADMINISTRADOR;
+  const theme = useTheme();
+  const vistaCompacta = useMediaQuery(theme.breakpoints.down("md"));
+
+  const chipsSlot = (slot: SlotDia) => (
+    <>
+      <Chip
+        size="small"
+        label={etiquetaSlot(slot)}
+        color={colorSlot(slot)}
+        variant={slot.estado === "disponible" ? "outlined" : "filled"}
+      />
+      {slot.estado === "bloqueado" && slot.reserva_id && slot.reserva_estado === "activa" && (
+        <Chip size="small" color="warning" variant="outlined" label="Reserva en día bloqueado" />
+      )}
+      {slot.fuera_de_grilla && <Chip size="small" variant="outlined" label="Fuera del horario actual" />}
+    </>
+  );
+
+  const accionesSlot = (agenda: AgendaDia, slot: SlotDia, alineacion: "flex-start" | "flex-end") =>
+    slot.reserva_id && slot.reserva_estado === "activa" ? (
+      <Stack direction="row" spacing={1} justifyContent={alineacion} flexWrap="wrap" useFlexGap sx={{ mt: alineacion === "flex-start" ? 1 : 0 }}>
+        {slot.puede_marcar_asistencia && (
+          <>
+            <Button size="small" color="success" variant={alineacion === "flex-start" ? "outlined" : "text"}
+              onClick={() => { setDialogAsistencia({ agenda, slot, asistio: true }); setErrorAsistencia(null); }}>
+              Asistió
+            </Button>
+            <Button size="small" color="warning" variant={alineacion === "flex-start" ? "outlined" : "text"}
+              onClick={() => { setDialogAsistencia({ agenda, slot, asistio: false }); setErrorAsistencia(null); }}>
+              No asistió
+            </Button>
+          </>
+        )}
+        <Button
+          size="small"
+          color="error"
+          variant={alineacion === "flex-start" ? "outlined" : "text"}
+          onClick={() => {
+            setDialogCancelar({ agenda, slot });
+            setErrorCancelar(null);
+            setMotivoCancelar("");
+            setNotificarCancelar(true);
+          }}
+        >
+          Cancelar
+        </Button>
+      </Stack>
+    ) : null;
 
   const [fecha, setFecha] = useState(hoyISO());
   const [servicioId, setServicioId] = useState<number | "">("");
@@ -276,6 +326,29 @@ export default function ReservasPage() {
                       Sin turnos este día.
                     </Typography>
                   </Box>
+                ) : vistaCompacta ? (
+                  // Móvil y tableta vertical: cada turno en una fila apilada (sin tabla que
+                  // obligue a desplazarse de lado).
+                  <Box>
+                    {agenda.slots.map((slot, i) => (
+                      <Box key={`${slot.hora_inicio}-${slot.reserva_id ?? "libre"}`} sx={{ px: 2, py: 1.5, borderTop: i ? 1 : 0, borderColor: "divider" }}>
+                        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                          <Typography variant="body2" fontWeight={700}>{slot.hora_inicio.slice(0, 5)} – {slot.hora_fin.slice(0, 5)}</Typography>
+                          {chipsSlot(slot)}
+                        </Stack>
+                        {slot.usuario_nombre && (
+                          <Typography variant="body2" sx={{ mt: 0.5, overflowWrap: "anywhere" }}>
+                            {slot.usuario_nombre} {slot.usuario_apellido ?? ""}
+                            {slot.usuario_correo && (
+                              <Typography component="span" variant="body2" color="text.secondary"> · {slot.usuario_correo}</Typography>
+                            )}
+                          </Typography>
+                        )}
+                        {slot.notes && <Typography variant="caption" color="text.secondary" display="block">{slot.notes}</Typography>}
+                        {puedeGestionar && accionesSlot(agenda, slot, "flex-start")}
+                      </Box>
+                    ))}
+                  </Box>
                 ) : (
                   <TableContainer sx={{ overflowX: "auto" }}>
                     <Table size="small">
@@ -294,70 +367,14 @@ export default function ReservasPage() {
                           <TableRow key={`${slot.hora_inicio}-${slot.reserva_id ?? "libre"}`} hover>
                             <TableCell>{slot.hora_inicio.slice(0, 5)} – {slot.hora_fin.slice(0, 5)}</TableCell>
                             <TableCell>
-                              <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                                <Chip
-                                  size="small"
-                                  label={etiquetaSlot(slot)}
-                                  color={colorSlot(slot)}
-                                  variant={slot.estado === "disponible" ? "outlined" : "filled"}
-                                />
-                                {slot.estado === "bloqueado" && slot.reserva_id && slot.reserva_estado === "activa" && (
-                                  <Chip size="small" color="warning" variant="outlined" label="Reserva en día bloqueado" />
-                                )}
-                                {slot.fuera_de_grilla && (
-                                  <Chip size="small" variant="outlined" label="Fuera del horario actual" />
-                                )}
-                              </Stack>
+                              <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>{chipsSlot(slot)}</Stack>
                             </TableCell>
                             <TableCell>
                               {slot.usuario_nombre ? `${slot.usuario_nombre} ${slot.usuario_apellido ?? ""}` : "—"}
                             </TableCell>
                             <TableCell>{slot.usuario_correo || "—"}</TableCell>
                             <TableCell>{slot.notes || "—"}</TableCell>
-                            {puedeGestionar && (
-                              <TableCell align="right">
-                                {slot.reserva_id && slot.reserva_estado === "activa" && (
-                                  <Stack direction="row" spacing={1} justifyContent="flex-end" flexWrap="wrap">
-                                    {slot.puede_marcar_asistencia && (
-                                      <>
-                                        <Button
-                                          size="small"
-                                          color="success"
-                                          onClick={() => {
-                                            setDialogAsistencia({ agenda, slot, asistio: true });
-                                            setErrorAsistencia(null);
-                                          }}
-                                        >
-                                          Asistió
-                                        </Button>
-                                        <Button
-                                          size="small"
-                                          color="warning"
-                                          onClick={() => {
-                                            setDialogAsistencia({ agenda, slot, asistio: false });
-                                            setErrorAsistencia(null);
-                                          }}
-                                        >
-                                          No asistió
-                                        </Button>
-                                      </>
-                                    )}
-                                    <Button
-                                      size="small"
-                                      color="error"
-                                      onClick={() => {
-                                        setDialogCancelar({ agenda, slot });
-                                        setErrorCancelar(null);
-                                        setMotivoCancelar("");
-                                        setNotificarCancelar(true);
-                                      }}
-                                    >
-                                      Cancelar
-                                    </Button>
-                                  </Stack>
-                                )}
-                              </TableCell>
-                            )}
+                            {puedeGestionar && <TableCell align="right">{accionesSlot(agenda, slot, "flex-end")}</TableCell>}
                           </TableRow>
                         ))}
                       </TableBody>

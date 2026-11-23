@@ -34,14 +34,15 @@ export interface ServicioInfoPayload {
   activo?: boolean;
 }
 
-/** Crea el evento junto con su área, su primera agenda y su vigencia (una sola operación). */
-export const crearServicio = async (payload: ServicioInfoPayload & VigenciaPayload & { agenda: AgendaInicialPayload }) =>
-  (await api.post<Servicio>("/servicios", payload)).data;
+/** Crea el evento de reserva junto con sus agendas (una por área), su vigencia y su regla, en
+ * una sola operación. `tipo: "reserva"`: el backend rechaza configuraciones de inscripción. */
+export const crearServicio = async (payload: ServicioInfoPayload & VigenciaPayload & { agendas: AgendaInicialPayload[] }) =>
+  (await api.post<Servicio>("/servicios", { tipo: "reserva", ...payload })).data;
 
 /** Si se acorta la vigencia, `reservas_afectadas` trae las reservas futuras que quedaron fuera
  * del nuevo periodo (se conservan: el administrador decide si las cancela). */
 export const actualizarServicio = async (id: number, payload: Partial<ServicioInfoPayload & VigenciaPayload>) =>
-  (await api.put<Servicio & ConReservasAfectadas>(`/servicios/${id}`, payload)).data;
+  (await api.put<Servicio & ConReservasAfectadas>(`/servicios/${id}`, { tipo: "reserva", ...payload })).data;
 
 /** Corta nuevas reservas del evento; devuelve las reservas futuras que se conservan. */
 export const desactivarServicio = async (id: number) =>

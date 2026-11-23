@@ -118,6 +118,9 @@ export function createAppTheme(colorPrimario?: string | null, colorSecundario?: 
             MozOsxFontSmoothing: "grayscale",
           },
           "::selection": { backgroundColor: alpha(primario, 0.18) },
+          // Edge agrega su propio botón para ver la contraseña; los formularios ya traen uno
+          // (ojo) y dos controles iguales confunden.
+          "input::-ms-reveal, input::-ms-clear": { display: "none" },
         },
       },
       MuiAppBar: {

@@ -49,31 +49,36 @@ interface Props {
   participaciones: "reservas" | "inscripciones";
 }
 
-/** Vigencia del evento: periodo en que se publica en el portal y recibe participaciones. Al
- * terminar se cierra solo (lo controla el backend con la fecha de Bogotá, aunque nadie entre
- * al panel) y conserva todo su historial. */
+/** Vigencia del evento: periodo en que se publica en el portal y recibe participaciones. En
+ * un evento de reserva son las fechas en que se atiende (los turnos se ofrecen dentro de
+ * ellas); en uno de inscripción es el periodo de inscripción (la realización la definen sus
+ * fechas). Al terminar se cierra solo (lo controla el backend con la fecha de Bogotá, aunque
+ * nadie entre al panel) y conserva todo su historial. */
 export default function VigenciaCampos({ valor, onChange, creando, participaciones }: Props) {
   const error = errorVigencia(valor, creando);
   const estado = estadoDeVigencia(valor);
   const fueraDeOrden = !!valor.inicio && !!valor.fin && valor.fin < valor.inicio;
+  const esReserva = participaciones === "reservas";
 
   return (
     <>
       <Grid container spacing={2}>
         <Grid item xs={12} sm={6}>
           <TextField
-            label="Inicio" type="date" required fullWidth InputLabelProps={{ shrink: true }}
+            label={esReserva ? "Primer día de atención" : "Inscripciones desde"} type="date" required fullWidth
+            InputLabelProps={{ shrink: true }}
             value={valor.inicio} onChange={(e) => onChange({ ...valor, inicio: e.target.value })}
-            helperText="Desde este día se publica y recibe participaciones"
+            helperText={esReserva ? "Desde este día se publica y se puede reservar" : "Desde este día se publica y recibe inscripciones"}
           />
         </Grid>
         <Grid item xs={12} sm={6}>
           <TextField
-            label="Finalización" type="date" required fullWidth InputLabelProps={{ shrink: true }}
+            label={esReserva ? "Último día de atención" : "Inscripciones hasta"} type="date" required fullWidth
+            InputLabelProps={{ shrink: true }}
             value={valor.fin} onChange={(e) => onChange({ ...valor, fin: e.target.value })}
             inputProps={{ min: valor.inicio || undefined }}
             error={fueraDeOrden}
-            helperText={fueraDeOrden ? "Debe ser igual o posterior al inicio" : "Último día (incluido)"}
+            helperText={fueraDeOrden ? "Debe ser igual o posterior al inicio" : esReserva ? "Último día con turnos (incluido)" : "Último día para inscribirse (incluido)"}
           />
         </Grid>
       </Grid>

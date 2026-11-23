@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   Box,
   Paper,
@@ -34,10 +34,14 @@ interface DataTableProps<T> {
   cargando?: boolean;
   mensajeVacio?: string;
   filasPorPaginaOpciones?: number[];
+  /** Ancho mínimo (px) para mostrarla como tabla; por defecto ~125 px por columna. Por
+   * debajo se muestran tarjetas, en vez de columnas tan angostas que parten las palabras. */
+  anchoMinimo?: number;
 }
 
-/** Tabla paginada. En pantallas pequeñas cada fila se presenta como una tarjeta apilada
- * (etiqueta: valor), para que nada se desborde ni obligue a desplazarse horizontalmente. */
+/** Tabla paginada. En pantallas pequeñas —o cuando la tabla no cabe en el espacio disponible,
+ * p. ej. en una tableta con el menú lateral abierto— cada fila se presenta como una tarjeta
+ * apilada (etiqueta: valor), para que nada se desborde ni obligue a desplazarse de lado. */
 export default function DataTable<T>({
   columnas,
   filas,
@@ -45,11 +49,42 @@ export default function DataTable<T>({
   cargando = false,
   mensajeVacio = "No hay registros para mostrar.",
   filasPorPaginaOpciones = [10, 25, 50],
+  anchoMinimo,
 }: DataTableProps<T>) {
   const theme = useTheme();
-  const esMovil = useMediaQuery(theme.breakpoints.down("sm"));
+  const pantallaChica = useMediaQuery(theme.breakpoints.down("sm"));
   const [pagina, setPagina] = useState(0);
   const [filasPorPagina, setFilasPorPagina] = useState(filasPorPaginaOpciones[0]);
+
+  // Ancho disponible y ancho que pidió la tabla la última vez que no cupo: si no cabe, se
+  // pasa a tarjetas; si el espacio vuelve a alcanzar, se vuelve a la tabla.
+  const envoltorio = useRef<HTMLDivElement>(null);
+  const contenedorTabla = useRef<HTMLDivElement>(null);
+  const [anchoDisponible, setAnchoDisponible] = useState<number | null>(null);
+  const [anchoNecesario, setAnchoNecesario] = useState<number | null>(null);
+  const anchoMinimoTabla = anchoMinimo ?? columnas.length * 125;
+  const comoTarjetas = pantallaChica
+    || (anchoDisponible != null && anchoDisponible < anchoMinimoTabla)
+    || (anchoNecesario != null && anchoDisponible != null && anchoDisponible < anchoNecesario);
+
+  useLayoutEffect(() => {
+    const el = envoltorio.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observador = new ResizeObserver(([entrada]) => setAnchoDisponible(Math.floor(entrada.contentRect.width)));
+    observador.observe(el);
+    return () => observador.disconnect();
+  }, []);
+
+  // Al cambiar los datos se vuelve a medir la tabla (antes de pintar: no hay parpadeo).
+  useLayoutEffect(() => {
+    setAnchoNecesario(null);
+  }, [filas, columnas.length]);
+
+  useLayoutEffect(() => {
+    const tc = contenedorTabla.current;
+    if (comoTarjetas || !tc) return;
+    if (tc.scrollWidth > tc.clientWidth + 1) setAnchoNecesario(tc.scrollWidth);
+  });
 
   const paginaSegura = Math.min(pagina, Math.max(0, Math.ceil(filas.length / filasPorPagina) - 1));
   const inicio = paginaSegura * filasPorPagina;
@@ -72,7 +107,7 @@ export default function DataTable<T>({
         setPagina(0);
       }}
       rowsPerPageOptions={filasPorPaginaOpciones}
-      labelRowsPerPage={esMovil ? "Filas" : "Filas por página"}
+      labelRowsPerPage={pantallaChica ? "Filas" : "Filas por página"}
       labelDisplayedRows={({ from, to, count }) => `${from}–${to} de ${count}`}
     />
   );
@@ -85,8 +120,10 @@ export default function DataTable<T>({
     </Box>
   );
 
-  if (esMovil) {
+  // Envoltorio estable (el mismo elemento en los dos modos): es el que se mide.
+  if (comoTarjetas) {
     return (
+      <Box ref={envoltorio}>
       <Paper variant="outlined">
         {filasPagina.map((fila, i) => (
           <Box key={obtenerId(fila)} sx={{ p: 2, borderTop: i ? 1 : 0, borderColor: "divider" }}>
@@ -118,12 +155,14 @@ export default function DataTable<T>({
         {vacio}
         {paginacion}
       </Paper>
+      </Box>
     );
   }
 
   return (
+    <Box ref={envoltorio}>
     <Paper variant="outlined" sx={{ overflow: "hidden" }}>
-      <TableContainer sx={{ overflowX: "auto" }}>
+      <TableContainer sx={{ overflowX: "auto" }} ref={contenedorTabla}>
         <Table size="small">
           <TableHead>
             <TableRow>
@@ -150,5 +189,6 @@ export default function DataTable<T>({
       {vacio}
       {paginacion}
     </Paper>
+    </Box>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import { Alert, Box, Button, Chip, Grid, Stack, Typography, useTheme } from "@mui/material";
 import { alpha } from "@mui/material/styles";
+import CategoryOutlinedIcon from "@mui/icons-material/CategoryOutlined";
 import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
 import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
@@ -9,12 +10,13 @@ import SpaOutlinedIcon from "@mui/icons-material/SpaOutlined";
 import EventCard, { type DatoTarjeta } from "../components/EventCard";
 import EmptyState from "../components/EmptyState";
 import Loader from "../components/Loader";
+import Marca from "../components/Marca";
 import MutedVideo from "../components/MutedVideo";
 import type { ActividadPublica, EventoPublico } from "../types";
 import { listarEventos } from "../services/eventos";
 import { listarActividadesPublicas } from "../services/actividades";
 import { mensajeError } from "../utils/errors";
-import { textoVigencia } from "../utils/fechas";
+import { formatearFecha, nombreDia, textoVigencia } from "../utils/fechas";
 import { esVideo } from "../utils/media";
 import { useConfig } from "../hooks/useConfig";
 import { useUsuarioAuth } from "../hooks/useUsuarioAuth";
@@ -27,41 +29,53 @@ interface TarjetaCatalogo {
   props: Parameters<typeof EventCard>[0];
 }
 
-// Las tarjetas solo muestran información general e identificativa (tipo, nombre, descripción,
-// duración, área y vigencia). La disponibilidad —turnos o cupos— se consulta en el detalle.
+// Las tarjetas solo muestran información general e identificativa, propia de cada tipo:
+// reserva (lugar, fechas y duración de las sesiones) o inscripción (área y fecha de
+// realización). La disponibilidad —turnos o cupos— se consulta en el detalle.
 
 function datoVigencia(inicio?: string | null, fin?: string | null): DatoTarjeta[] {
   const texto = textoVigencia(inicio, fin);
   return texto ? [{ icono: <EventOutlinedIcon />, texto }] : [];
 }
 
+/** Evento de reserva: lugar, fechas y duración de cada sesión (cada persona elige su turno). */
 function tarjetaDeEvento(e: EventoPublico): TarjetaCatalogo {
   const duracion = e.duracion_minutos === e.duracion_maxima
     ? `Sesiones de ${e.duracion_minutos} min`
     : `Sesiones de ${e.duracion_minutos}–${e.duracion_maxima} min`;
-  const datos: DatoTarjeta[] = [{ icono: <ScheduleOutlinedIcon />, texto: duracion }];
+  const datos: DatoTarjeta[] = [];
   if (e.areas.length > 0) datos.push({ icono: <PlaceOutlinedIcon />, texto: e.areas.join(" · ") });
   datos.push(...datoVigencia(e.vigencia_inicio, e.vigencia_fin));
+  datos.push({ icono: <ScheduleOutlinedIcon />, texto: duracion });
   return {
     key: `evento-${e.id}`,
     clase: "turnos",
     props: {
-      tipo: "Reserva de turno", titulo: e.nombre, descripcionCorta: e.descripcion_corta, imagenUrl: e.imagen_url,
+      tipo: "Evento de reserva", titulo: e.nombre, descripcionCorta: e.descripcion_corta, imagenUrl: e.imagen_url,
       datos, ruta: `/eventos/${e.id}`, textoAccion: "Ver horarios",
     },
   };
 }
 
+/** Evento de inscripción: área y fecha de realización (nada de turnos ni duraciones). */
 function tarjetaDeActividad(a: ActividadPublica): TarjetaCatalogo {
   const datos: DatoTarjeta[] = [];
-  if (a.area_nombre) datos.push({ icono: <PlaceOutlinedIcon />, texto: a.area_nombre });
-  datos.push(...datoVigencia(a.vigencia_inicio, a.vigencia_fin));
+  if (a.area_nombre) datos.push({ icono: <CategoryOutlinedIcon />, texto: a.area_nombre });
+  const { sesiones_futuras: cuantas, proxima_fecha: proxima } = a.resumen;
+  if (proxima) {
+    datos.push({
+      icono: <EventOutlinedIcon />,
+      texto: cuantas > 1 ? `${cuantas} fechas · desde el ${formatearFecha(proxima)}` : `${nombreDia(proxima)} ${formatearFecha(proxima)}`,
+    });
+  } else {
+    datos.push(...datoVigencia(a.vigencia_inicio, a.vigencia_fin));
+  }
   return {
     key: `actividad-${a.id}`,
     clase: "actividades",
     props: {
-      tipo: "Actividad con inscripción", titulo: a.nombre, descripcionCorta: a.descripcion_corta, imagenUrl: a.imagen_url,
-      datos, ruta: `/actividades/${a.id}`, textoAccion: "Ver detalle",
+      tipo: "Evento de inscripción", titulo: a.nombre, descripcionCorta: a.descripcion_corta, imagenUrl: a.imagen_url,
+      datos, ruta: `/actividades/${a.id}`, textoAccion: "Ver e inscribirme",
     },
   };
 }
@@ -103,9 +117,12 @@ export default function EventosPage() {
       <Grid container spacing={{ xs: 4, md: 6 }} alignItems="center" sx={{ mb: { xs: 6, md: 10 } }}>
         <Grid item xs={12} md={media ? 6 : 12}>
           {config.empresa_nombre && (
-            <Typography variant="overline" color="text.secondary" component="p" sx={{ mb: 1 }}>
-              {config.empresa_nombre}
-            </Typography>
+            <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.5, color: "text.secondary" }}>
+              <Box sx={{ width: 22, height: 2, bgcolor: "secondary.main", borderRadius: 1, flexShrink: 0 }} />
+              <Typography component="p" sx={{ fontSize: "0.9rem", color: "inherit" }}>
+                <Marca nombre={config.empresa_nombre} acento={theme.palette.primary.main} />
+              </Typography>
+            </Stack>
           )}
           <Typography
             variant="h2"
@@ -161,7 +178,7 @@ export default function EventosPage() {
           </Box>
           {hayAmbos && (
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              {([["todo", "Todo"], ["turnos", "Reservas de turno"], ["actividades", "Actividades"]] as [Filtro, string][]).map(
+              {([["todo", "Todo"], ["turnos", "Reservas"], ["actividades", "Inscripciones"]] as [Filtro, string][]).map(
                 ([valor, texto]) => (
                   <Chip
                     key={valor}

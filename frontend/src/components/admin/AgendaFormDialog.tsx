@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, MenuItem, Stack,
-  Switch, TextField, Typography,
+  Switch, TextField, Typography, useMediaQuery, useTheme,
 } from "@mui/material";
 import type { Agenda, Area, ReservaAdmin, Servicio } from "../../types";
 import { actualizarAgenda, crearAgenda } from "../../services/agendas";
@@ -18,16 +18,23 @@ interface Props {
   agenda: Agenda | null;
   areas: Area[];
   servicios: Servicio[];
-  /** Al abrirse desde un evento: el evento queda fijo. */
+  /** Al abrirse desde un evento: el evento queda fijo (no se muestra el selector). */
   servicioFijo?: Servicio | null;
+  /** Áreas que ya tienen agenda en ese evento (no se ofrecen). */
+  areasOcupadas?: number[];
   onCerrar: () => void;
   onGuardada: () => void;
 }
 
-/** Alta y edición de una agenda (evento + área + horario). El área se elige primero y es
- * obligatoria. Si un cambio dejaría reservas futuras fuera de los nuevos turnos, el backend
- * lo rechaza y se muestran esas reservas para resolverlas antes de reintentar. */
-export default function AgendaFormDialog({ abierto, agenda, areas, servicios, servicioFijo, onCerrar, onGuardada }: Props) {
+/** Alta y edición de una agenda de un evento de reserva (área + horario de atención +
+ * duración de los turnos). El área es obligatoria. Si un cambio dejaría reservas futuras
+ * fuera de los nuevos turnos, el backend lo rechaza y se muestran esas reservas para
+ * resolverlas antes de reintentar. */
+export default function AgendaFormDialog({
+  abierto, agenda, areas, servicios, servicioFijo, areasOcupadas = [], onCerrar, onGuardada,
+}: Props) {
+  const theme = useTheme();
+  const pantallaChica = useMediaQuery(theme.breakpoints.down("sm"));
   const [areaId, setAreaId] = useState<number | "">("");
   const [servicioId, setServicioId] = useState<number | "">("");
   const [nombre, setNombre] = useState("");
@@ -49,7 +56,7 @@ export default function AgendaFormDialog({ abierto, agenda, areas, servicios, se
 
   const opcionesServicio = servicios.filter((s) => s.activo || s.id === servicioId);
   const nombreSugerido = () => {
-    const s = servicios.find((x) => x.id === servicioId)?.nombre;
+    const s = servicios.find((x) => x.id === servicioId)?.nombre ?? servicioFijo?.nombre;
     const a = areas.find((x) => x.id === areaId)?.nombre;
     return s && a ? `${s} - ${a}` : "";
   };
@@ -84,38 +91,41 @@ export default function AgendaFormDialog({ abierto, agenda, areas, servicios, se
     }
   }
 
+  const titulo = agenda ? "Editar agenda" : servicioFijo ? `Nueva agenda de «${servicioFijo.nombre}»` : "Nueva agenda";
+
   return (
     <>
-      <Dialog open={abierto} onClose={() => !guardando && onCerrar()} maxWidth="sm" fullWidth>
-        <DialogTitle>{agenda ? "Editar agenda" : servicioFijo ? `Nueva agenda de «${servicioFijo.nombre}»` : "Nueva agenda"}</DialogTitle>
+      <Dialog open={abierto} onClose={() => !guardando && onCerrar()} maxWidth="sm" fullWidth fullScreen={pantallaChica}>
+        <DialogTitle sx={{ wordBreak: "break-word" }}>{titulo}</DialogTitle>
         <DialogContent>
           <Stack spacing={2.5} sx={{ mt: 1 }}>
             {error && <Alert severity="error">{error}</Alert>}
-            <AreaSelect areas={areas} valor={areaId} onChange={setAreaId} />
+            <AreaSelect areas={areas} valor={areaId} onChange={setAreaId} label="Área (lugar)" excluir={areasOcupadas} />
+            {!servicioFijo && (
+              <TextField
+                select
+                required
+                label="Evento"
+                value={servicioId}
+                onChange={(e) => setServicioId(Number(e.target.value))}
+                fullWidth
+              >
+                {opcionesServicio.map((s) => (
+                  <MenuItem key={s.id} value={s.id}>{s.nombre}{s.activo ? "" : " (inactivo)"}</MenuItem>
+                ))}
+              </TextField>
+            )}
             <TextField
-              select
-              required
-              label="Evento"
-              value={servicioId}
-              onChange={(e) => setServicioId(Number(e.target.value))}
-              disabled={!!servicioFijo}
-              fullWidth
-            >
-              {opcionesServicio.map((s) => (
-                <MenuItem key={s.id} value={s.id}>{s.nombre}{s.activo ? "" : " (inactivo)"}</MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              label="Nombre de la agenda"
-              placeholder={nombreSugerido() || "Ej: Masajes - Oficinas"}
-              helperText="Si lo dejas vacío se usa «Evento - Área»."
+              label="Espacio o profesional (opcional)"
+              placeholder={nombreSugerido() || "Ej.: Sala de bienestar · Terapeuta Ana"}
+              helperText="Lo ve el colaborador al elegir dónde reservar. Si lo dejas vacío se usa «Evento - Área»."
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
               inputProps={{ maxLength: 140 }}
               fullWidth
             />
             <Divider />
-            <Typography variant="subtitle2">Horario y turnos</Typography>
+            <Typography variant="subtitle2">Horario de atención y turnos</Typography>
             <HorarioCampos valor={horario} onChange={setHorario} />
             {agenda && (
               <FormControlLabel control={<Switch checked={activo} onChange={(e) => setActivo(e.target.checked)} />} label="Agenda activa" />

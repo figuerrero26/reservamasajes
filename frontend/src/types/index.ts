@@ -6,6 +6,11 @@ export interface AgendaPublica {
   area_nombre: string;
   servicio_nombre: string;
   duracion_minutos: number;
+  /** Información del lugar y horario de atención (para elegir dónde reservar). */
+  area_descripcion?: string | null;
+  hora_inicio?: string | null;
+  hora_fin?: string | null;
+  dias_habilitados?: string | null;
 }
 
 export interface Area {
@@ -317,6 +322,8 @@ export interface Administrador {
   rol: string;
   activo: boolean;
   created_at: string;
+  /** Cuándo se fijó la contraseña vigente (null = antes de que se registrara). Nunca viaja la contraseña. */
+  password_actualizada_en?: string | null;
 }
 
 export interface SmtpConfig {

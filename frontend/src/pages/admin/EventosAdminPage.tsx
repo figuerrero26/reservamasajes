@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  Alert, Box, Button, Chip, InputAdornment, ListItemText, Menu, MenuItem, Stack, TextField, Typography,
+  Alert, Box, Button, Chip, InputAdornment, MenuItem, Stack, TextField, Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import SearchIcon from "@mui/icons-material/Search";
-import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import type { Actividad, Agenda, Area, EstadoVigencia, ReservaAdmin, Servicio } from "../../types";
 import { listarActividades, activarActividad, desactivarActividad } from "../../services/actividades";
 import { listarAgendas } from "../../services/agendas";
@@ -18,17 +17,14 @@ import EstadoChip from "../../components/EstadoChip";
 import Loader from "../../components/Loader";
 import PageHeader from "../../components/PageHeader";
 import ReservasAfectadasDialog from "../../components/ReservasAfectadasDialog";
-import ActividadFormDialog from "../../components/admin/ActividadFormDialog";
-import AgendasEventoDialog from "../../components/admin/AgendasEventoDialog";
-import EventoTurnosDialog from "../../components/admin/EventoTurnosDialog";
-import HistorialReservasDialog from "../../components/admin/HistorialReservasDialog";
-import SesionesDialog from "../../components/admin/SesionesDialog";
-
-type Tipo = "turnos" | "actividad";
+import EventoInscripcionDialog, { type PestanaInscripcion } from "../../components/admin/EventoInscripcionDialog";
+import EventoReservaDialog, { type PestanaReserva } from "../../components/admin/EventoReservaDialog";
+import type { TipoEvento } from "../../components/admin/ReglaParticipacionCampo";
+import TipoEventoDialog, { NOMBRE_TIPO_EVENTO } from "../../components/admin/TipoEventoDialog";
 
 interface Fila {
   key: string;
-  tipo: Tipo;
+  tipo: TipoEvento;
   nombre: string;
   areaIds: number[];
   activo: boolean;
@@ -40,8 +36,6 @@ interface Fila {
   agendas: Agenda[];
 }
 
-const ETIQUETA_TIPO: Record<Tipo, string> = { turnos: "Reserva por turnos", actividad: "Actividad con inscripción" };
-
 type FiltroVigencia = EstadoVigencia | "todos";
 
 const VIGENCIA: Record<EstadoVigencia, { texto: string; filtro: string; color: "success" | "info" | "default" | "warning" }> = {
@@ -51,6 +45,13 @@ const VIGENCIA: Record<EstadoVigencia, { texto: string; filtro: string; color: "
   sin_vigencia: { texto: "Sin vigencia", filtro: "Sin vigencia", color: "warning" },
 };
 
+/** Enlaces antiguos (?tipo=turnos / ?tipo=actividad) siguen funcionando. */
+function tipoDesdeUrl(valor: string | null): TipoEvento | "todos" {
+  if (valor === "reserva" || valor === "turnos") return "reserva";
+  if (valor === "inscripcion" || valor === "actividad") return "inscripcion";
+  return "todos";
+}
+
 interface Afectadas {
   titulo: string;
   descripcion: string;
@@ -58,11 +59,14 @@ interface Afectadas {
   reservas: ReservaAdmin[];
 }
 
-/** Módulo unificado de eventos: los eventos de reserva por turnos (con sus agendas) y las
- * actividades con inscripción (con sus sesiones) se crean, consultan y filtran por área y por
- * vigencia (vigentes, próximos, finalizados) en un solo lugar. Cada tipo conserva su propia
- * lógica: las agendas generan turnos y las actividades controlan inscripciones y cupos. Los
- * eventos finalizados conservan todo su historial (reservas o sesiones e inscritos). */
+/** Módulo único de eventos. «Nuevo evento» pide primero el tipo:
+ * - Evento de reserva (turnos individuales): se crea con sus agendas —lugar, horario de
+ *   atención y duración de turnos— y se gestiona entero desde aquí (agendas e historial
+ *   incluidos, sin ir a otra sección).
+ * - Evento de inscripción (cupos): se crea con sus fechas de realización y límite de
+ *   participantes, y aquí mismo se gestionan sus fechas e inscritos.
+ * Cada tipo conserva su propia lógica y el backend rechaza configuraciones del otro tipo. Los
+ * eventos se filtran por área, tipo y vigencia; los finalizados conservan todo su historial. */
 export default function EventosAdminPage() {
   const [params, setParams] = useSearchParams();
   const [servicios, setServicios] = useState<Servicio[]>([]);
@@ -74,17 +78,14 @@ export default function EventosAdminPage() {
   const [aviso, setAviso] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState("");
 
-  const [menuNuevo, setMenuNuevo] = useState<HTMLElement | null>(null);
-  const [eventoForm, setEventoForm] = useState<{ servicio: Servicio | null } | null>(null);
-  const [actividadForm, setActividadForm] = useState<{ actividad: Actividad | null } | null>(null);
-  const [agendasDe, setAgendasDe] = useState<Servicio | null>(null);
-  const [sesionesDe, setSesionesDe] = useState<Actividad | null>(null);
-  const [historialDe, setHistorialDe] = useState<Servicio | null>(null);
+  const [eligiendoTipo, setEligiendoTipo] = useState(false);
+  const [reservaAbierta, setReservaAbierta] = useState<{ id: number | null; pestana: PestanaReserva } | null>(null);
+  const [inscripcionAbierta, setInscripcionAbierta] = useState<{ id: number | null; pestana: PestanaInscripcion } | null>(null);
   const [afectadas, setAfectadas] = useState<Afectadas | null>(null);
 
   // Filtros en la URL: permiten llegar filtrado desde Áreas ("Ver eventos") o desde un enlace.
   const filtroArea = params.get("area") ?? "todas"; // "todas" | "sin" | id
-  const filtroTipo = (params.get("tipo") ?? "todos") as Tipo | "todos";
+  const filtroTipo = tipoDesdeUrl(params.get("tipo"));
   const filtroVigencia = (params.get("vigencia") ?? "todos") as FiltroVigencia;
   const setFiltro = (clave: string, valor: string) => {
     const nuevos = new URLSearchParams(params);
@@ -116,13 +117,13 @@ export default function EventosAdminPage() {
     ...servicios.map((s) => {
       const propias = agendas.filter((a) => a.servicio_id === s.id);
       return {
-        key: `s-${s.id}`, tipo: "turnos" as const, nombre: s.nombre, activo: s.activo, servicio: s, agendas: propias,
+        key: `s-${s.id}`, tipo: "reserva" as const, nombre: s.nombre, activo: s.activo, servicio: s, agendas: propias,
         areaIds: Array.from(new Set(propias.map((a) => a.area_id))),
         estadoVigencia: s.estado_vigencia, vigenciaInicio: s.vigencia_inicio, vigenciaFin: s.vigencia_fin,
       };
     }),
     ...actividades.map((a) => ({
-      key: `a-${a.id}`, tipo: "actividad" as const, nombre: a.nombre, activo: a.activo, actividad: a, agendas: [],
+      key: `a-${a.id}`, tipo: "inscripcion" as const, nombre: a.nombre, activo: a.activo, actividad: a, agendas: [],
       areaIds: a.area_id ? [a.area_id] : [],
       estadoVigencia: a.estado_vigencia, vigenciaInicio: a.vigencia_inicio, vigenciaFin: a.vigencia_fin,
     })),
@@ -141,6 +142,22 @@ export default function EventosAdminPage() {
   const hayAreasActivas = areas.some((a) => a.activo);
   const areaInicial = filtroArea !== "todas" && filtroArea !== "sin" ? Number(filtroArea) : "";
   const sinArea = filas.filter((f) => f.areaIds.length === 0).length;
+
+  const servicioAbierto = reservaAbierta?.id != null ? servicios.find((s) => s.id === reservaAbierta.id) ?? null : null;
+  const actividadAbierta = inscripcionAbierta?.id != null ? actividades.find((a) => a.id === inscripcionAbierta.id) ?? null : null;
+
+  function elegirTipo(tipo: TipoEvento) {
+    setEligiendoTipo(false);
+    setAviso(null);
+    if (tipo === "reserva") setReservaAbierta({ id: null, pestana: "info" });
+    else setInscripcionAbierta({ id: null, pestana: "info" });
+  }
+
+  function cambiarTipo() {
+    setReservaAbierta(null);
+    setInscripcionAbierta(null);
+    setEligiendoTipo(true);
+  }
 
   async function alternarServicio(s: Servicio) {
     setAviso(null);
@@ -173,25 +190,25 @@ export default function EventosAdminPage() {
         setAviso(`«${a.nombre}» se ocultó del portal.` + (a.resumen.inscritos_futuros ? ` Sus ${a.resumen.inscritos_futuros} inscripción(es) futura(s) se conservan.` : ""));
       } else {
         await activarActividad(a.id);
-        setAviso(`«${a.nombre}» está publicada de nuevo.`);
+        setAviso(`«${a.nombre}» está publicado de nuevo.`);
       }
       await cargar();
     } catch (e) {
-      setError(mensajeError(e, "No se pudo cambiar el estado de la actividad."));
+      setError(mensajeError(e, "No se pudo cambiar el estado del evento."));
     }
   }
 
   const programacion = (f: Fila) => {
-    if (f.tipo === "turnos") {
+    if (f.tipo === "reserva") {
       if (f.agendas.length === 0) return <Typography variant="body2" color="warning.main">Sin agendas</Typography>;
       const activas = f.agendas.filter((a) => a.activo).length;
       const duraciones = Array.from(new Set(f.agendas.map((a) => a.duracion_minutos))).sort((x, y) => x - y);
-      return `${activas} de ${f.agendas.length} agenda(s) activa(s) · ${duraciones.join("/")} min`;
+      return `${activas} de ${f.agendas.length} agenda(s) activa(s) · turnos de ${duraciones.join("/")} min`;
     }
     const r = f.actividad!.resumen;
-    if (!r.proxima_fecha) return <Typography variant="body2" color="text.secondary">Sin sesiones próximas</Typography>;
+    if (!r.proxima_fecha) return <Typography variant="body2" color="text.secondary">Sin fechas próximas</Typography>;
     return `${nombreDia(r.proxima_fecha).slice(0, 3)} ${formatearFecha(r.proxima_fecha)} · ${formatearHora(r.proxima_hora_inicio ?? "")}`
-      + (r.sesiones_futuras > 1 ? ` (+${r.sesiones_futuras - 1})` : "");
+      + (r.sesiones_futuras > 1 ? ` (+${r.sesiones_futuras - 1} fecha${r.sesiones_futuras > 2 ? "s" : ""})` : "");
   };
 
   const columnas: ColumnaDataTable<Fila>[] = [
@@ -200,9 +217,9 @@ export default function EventosAdminPage() {
       label: "Evento",
       principal: true,
       render: (f) => (
-        <Box>
+        <Box sx={{ minWidth: 0 }}>
           <Typography variant="body2" fontWeight={600}>{f.nombre}</Typography>
-          <Typography variant="caption" color="text.secondary">{ETIQUETA_TIPO[f.tipo]}</Typography>
+          <Typography variant="caption" color="text.secondary">{NOMBRE_TIPO_EVENTO[f.tipo]}</Typography>
         </Box>
       ),
     },
@@ -221,7 +238,9 @@ export default function EventosAdminPage() {
           <Chip size="small" label={VIGENCIA[f.estadoVigencia].texto} color={VIGENCIA[f.estadoVigencia].color}
             variant={f.estadoVigencia === "vigente" ? "filled" : "outlined"} />
           {textoVigencia(f.vigenciaInicio, f.vigenciaFin) && (
-            <Typography variant="caption" color="text.secondary">{textoVigencia(f.vigenciaInicio, f.vigenciaFin)}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {f.tipo === "inscripcion" ? "Inscripciones: " : ""}{textoVigencia(f.vigenciaInicio, f.vigenciaFin)}
+            </Typography>
           )}
         </Stack>
       ),
@@ -238,13 +257,13 @@ export default function EventosAdminPage() {
             const texto = publicado ? "Publicado" : !f.activo ? "Oculto" : f.estadoVigencia === "proximo" ? "Aún no publicado" : "Cerrado";
             return <Chip size="small" label={texto} color={publicado ? "success" : "default"} variant={publicado ? "filled" : "outlined"} />;
           })()}
-          {f.tipo === "actividad" && f.activo && f.estadoVigencia === "vigente" && (
+          {f.tipo === "inscripcion" && f.activo && f.estadoVigencia === "vigente" && (
             <EstadoChip tipo="actividad" estado={f.actividad!.estado_inscripcion} />
           )}
-          {f.tipo === "actividad" && (
+          {f.tipo === "inscripcion" && (
             <Typography variant="caption" color="text.secondary">
               {f.actividad!.resumen.inscritos_futuros} inscrito(s)
-              {f.actividad!.resumen.cupos_disponibles != null ? ` · ${f.actividad!.resumen.cupos_disponibles} libre(s)` : ""}
+              {f.actividad!.resumen.cupos_disponibles != null ? ` · ${f.actividad!.resumen.cupos_disponibles} cupo(s) libre(s)` : ""}
             </Typography>
           )}
         </Stack>
@@ -256,19 +275,22 @@ export default function EventosAdminPage() {
       align: "right",
       render: (f) => (
         <Stack direction="row" spacing={0.5} justifyContent="flex-end" flexWrap="wrap" useFlexGap>
-          {f.tipo === "turnos" ? (
+          {f.tipo === "reserva" ? (
             <>
-              <Button size="small" variant="outlined" onClick={() => setAgendasDe(f.servicio!)}>Agendas ({f.agendas.length})</Button>
-              <Button size="small" onClick={() => setHistorialDe(f.servicio!)}>Historial</Button>
-              <Button size="small" onClick={() => setEventoForm({ servicio: f.servicio! })}>Editar</Button>
+              <Button size="small" variant="outlined" onClick={() => setReservaAbierta({ id: f.servicio!.id, pestana: "info" })}>Gestionar</Button>
+              <Button size="small" onClick={() => setReservaAbierta({ id: f.servicio!.id, pestana: "agendas" })}>
+                Agendas ({f.agendas.length})
+              </Button>
               <Button size="small" color={f.activo ? "error" : "primary"} onClick={() => alternarServicio(f.servicio!)}>
                 {f.activo ? "Desactivar" : "Activar"}
               </Button>
             </>
           ) : (
             <>
-              <Button size="small" variant="outlined" onClick={() => setSesionesDe(f.actividad!)}>Sesiones e inscritos</Button>
-              <Button size="small" onClick={() => setActividadForm({ actividad: f.actividad! })}>Editar</Button>
+              <Button size="small" variant="outlined" onClick={() => setInscripcionAbierta({ id: f.actividad!.id, pestana: "info" })}>Gestionar</Button>
+              <Button size="small" onClick={() => setInscripcionAbierta({ id: f.actividad!.id, pestana: "fechas" })}>
+                Fechas e inscritos
+              </Button>
               <Button size="small" color={f.activo ? "error" : "primary"} onClick={() => alternarActividad(f.actividad!)}>
                 {f.activo ? "Ocultar" : "Publicar"}
               </Button>
@@ -283,23 +305,13 @@ export default function EventosAdminPage() {
     <Box>
       <PageHeader
         titulo="Eventos"
-        descripcion="Todos los eventos en un solo lugar: reservas por turnos (con sus agendas) y actividades con inscripción (con sus sesiones y cupos). Cada evento pertenece a un área y tiene su vigencia: al terminar se cierra solo y conserva su historial."
+        descripcion="Todo lo de cada evento en un solo lugar. Los eventos de reserva se configuran con sus agendas (lugar, horario de atención y turnos); los de inscripción, con sus fechas y límite de participantes. Cada evento pertenece a un área y tiene sus fechas: al terminar se cierra solo y conserva su historial."
         acciones={
-          <Button variant="contained" startIcon={<AddIcon />} endIcon={<KeyboardArrowDownIcon />}
-            onClick={(e) => setMenuNuevo(e.currentTarget)} disabled={!hayAreasActivas}>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setEligiendoTipo(true)} disabled={!hayAreasActivas}>
             Nuevo evento
           </Button>
         }
       />
-      <Menu anchorEl={menuNuevo} open={!!menuNuevo} onClose={() => setMenuNuevo(null)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
-        <MenuItem onClick={() => { setMenuNuevo(null); setEventoForm({ servicio: null }); }}>
-          <ListItemText primary="Reserva por turnos" secondary="Turnos individuales con horario (p. ej. masajes)" />
-        </MenuItem>
-        <MenuItem onClick={() => { setMenuNuevo(null); setActividadForm({ actividad: null }); }}>
-          <ListItemText primary="Actividad con inscripción" secondary="Cupos por sesión (p. ej. caminata o taller)" />
-        </MenuItem>
-      </Menu>
 
       {!cargando && !hayAreasActivas && (
         <Alert severity="info" sx={{ mb: 2 }}>Para crear eventos primero registra al menos un área activa en la sección Áreas.</Alert>
@@ -318,7 +330,7 @@ export default function EventosAdminPage() {
       {aviso && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setAviso(null)}>{aviso}</Alert>}
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ mb: 2 }} alignItems={{ md: "center" }}>
+      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ mb: 2 }} alignItems={{ md: "center" }} flexWrap="wrap" useFlexGap>
         <TextField
           select size="small" label="Área" value={filtroArea} onChange={(e) => setFiltro("area", e.target.value)}
           sx={{ minWidth: 200 }}
@@ -328,7 +340,7 @@ export default function EventosAdminPage() {
           <MenuItem value="sin">Sin área asignada</MenuItem>
         </TextField>
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-          {([["todos", "Todos"], ["turnos", "Reservas por turnos"], ["actividad", "Actividades"]] as [string, string][]).map(([v, t]) => (
+          {([["todos", "Todos"], ["reserva", "De reserva"], ["inscripcion", "De inscripción"]] as [string, string][]).map(([v, t]) => (
             <Chip key={v} label={t} onClick={() => setFiltro("tipo", v)}
               color={filtroTipo === v ? "primary" : "default"} variant={filtroTipo === v ? "filled" : "outlined"} />
           ))}
@@ -356,21 +368,27 @@ export default function EventosAdminPage() {
           mensajeVacio={filas.length ? "No hay eventos con esos filtros." : "Todavía no hay eventos. Crea el primero con «Nuevo evento»."} />
       )}
 
-      <EventoTurnosDialog
-        abierto={!!eventoForm}
-        servicio={eventoForm?.servicio ?? null}
+      <TipoEventoDialog abierto={eligiendoTipo} onCerrar={() => setEligiendoTipo(false)} onElegir={elegirTipo} />
+
+      <EventoReservaDialog
+        abierto={!!reservaAbierta}
+        servicio={servicioAbierto}
+        agendas={agendas}
         areas={areas}
         areaInicial={areaInicial}
-        onCerrar={() => setEventoForm(null)}
+        pestana={reservaAbierta?.pestana}
+        onCerrar={() => setReservaAbierta(null)}
+        onCambio={cargar}
+        onCambiarTipo={cambiarTipo}
         onGuardado={async (s, creado, fueraDeVigencia) => {
-          setEventoForm(null);
-          const publicado = s.estado_vigencia === "vigente" && s.activo;
-          setAviso(creado
-            ? `«${s.nombre}» creado con su agenda. ${publicado ? "Ya aparece en el portal." : "Se publicará cuando empiece su vigencia."}`
-            : `«${s.nombre}» actualizado.`);
+          if (creado) {
+            setReservaAbierta(null);
+            const publicado = s.estado_vigencia === "vigente" && s.activo;
+            setAviso(`«${s.nombre}» creado con sus agendas. ${publicado ? "Ya aparece en el portal." : "Se publicará cuando empiece su vigencia."}`);
+          }
           if (fueraDeVigencia.length > 0) {
             setAfectadas({
-              titulo: `Reservas fuera de la nueva vigencia de «${s.nombre}»`,
+              titulo: `Reservas fuera de las nuevas fechas de «${s.nombre}»`,
               descripcion: "Con las nuevas fechas, estas reservas futuras quedaron fuera de la vigencia del evento. Se conservan tal cual (no se cancelan solas): puedes mantenerlas o cancelarlas y avisar a cada colaborador.",
               motivo: "Cambió la programación del evento.",
               reservas: fueraDeVigencia,
@@ -379,35 +397,23 @@ export default function EventosAdminPage() {
           await cargar();
         }}
       />
-      <ActividadFormDialog
-        abierto={!!actividadForm}
-        actividad={actividadForm?.actividad ?? null}
+      <EventoInscripcionDialog
+        abierto={!!inscripcionAbierta}
+        actividad={actividadAbierta}
         areas={areas}
         areaInicial={areaInicial}
-        onCerrar={() => setActividadForm(null)}
+        pestana={inscripcionAbierta?.pestana}
+        onCerrar={() => setInscripcionAbierta(null)}
+        onCambio={cargar}
+        onCambiarTipo={cambiarTipo}
         onGuardada={async (a, creada) => {
-          setActividadForm(null);
-          await cargar();
-          if (creada && a.resumen.sesiones_futuras === 0) {
-            setAviso(`«${a.nombre}» creada. Agrega al menos una sesión para publicarla en el portal.`);
-            setSesionesDe(a);
-          } else {
-            setAviso(creada
-              ? `«${a.nombre}» creada${a.estado_vigencia === "vigente" ? " y publicada" : ": se publicará cuando empiece su vigencia"}.`
-              : `«${a.nombre}» actualizada.`);
+          if (creada) {
+            setInscripcionAbierta(null);
+            setAviso(`«${a.nombre}» creado${a.estado_vigencia === "vigente" ? " y publicado" : ": se publicará cuando empiece su periodo de inscripción"}.`);
           }
+          await cargar();
         }}
       />
-      <AgendasEventoDialog
-        servicio={agendasDe}
-        agendas={agendas}
-        areas={areas}
-        servicios={servicios}
-        onCerrar={() => setAgendasDe(null)}
-        onCambio={cargar}
-      />
-      <SesionesDialog actividad={sesionesDe} onCerrar={() => setSesionesDe(null)} onCambio={cargar} />
-      <HistorialReservasDialog servicio={historialDe} onCerrar={() => setHistorialDe(null)} />
       <ReservasAfectadasDialog
         abierto={!!afectadas}
         titulo={afectadas?.titulo ?? ""}

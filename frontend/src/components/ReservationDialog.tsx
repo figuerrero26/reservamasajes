@@ -9,6 +9,7 @@ import { crearReserva, verificarReserva } from "../services/reservas";
 import { mensajeError, esConflicto } from "../utils/errors";
 import { formatearFechaLarga, formatearHora } from "../utils/fechas";
 import { useUsuarioAuth } from "../hooks/useUsuarioAuth";
+import { nombrePropioAgenda } from "./AgendaCard";
 
 interface Props {
   open: boolean;
@@ -24,10 +25,11 @@ interface Props {
 }
 
 function Fila({ label, valor }: { label: string; valor: string }) {
+  // En pantallas angostas un valor largo (p. ej. el correo) se parte en vez de desbordar.
   return (
     <Stack direction="row" justifyContent="space-between" spacing={2}>
-      <Typography variant="body2" color="text.secondary">{label}</Typography>
-      <Typography variant="body2" fontWeight={600} textAlign="right">{valor}</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0 }}>{label}</Typography>
+      <Typography variant="body2" fontWeight={600} textAlign="right" sx={{ minWidth: 0, overflowWrap: "anywhere" }}>{valor}</Typography>
     </Stack>
   );
 }
@@ -107,7 +109,7 @@ export default function ReservationDialog({ open, agenda, fecha, slot, onClose, 
               {formatearFechaLarga(fecha)} · {formatearHora(slot.hora_inicio)} – {formatearHora(slot.hora_fin)}
             </Typography>
           </Box>
-          <Fila label="Área" valor={agenda.area_nombre} />
+          <Fila label="Lugar" valor={nombrePropioAgenda(agenda) ? `${agenda.area_nombre} · ${nombrePropioAgenda(agenda)}` : agenda.area_nombre} />
           <Divider />
           <Fila label="A nombre de" valor={nombre ?? ""} />
           <Fila label="Correo" valor={correo ?? ""} />

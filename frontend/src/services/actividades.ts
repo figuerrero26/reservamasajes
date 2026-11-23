@@ -36,14 +36,15 @@ export async function listarActividades(): Promise<Actividad[]> {
   return data;
 }
 
-/** Crea la actividad (área obligatoria) y, si se envían, sus primeras sesiones en la misma operación. */
+/** Crea el evento de inscripción (área obligatoria) y sus fechas de realización (sesiones) en
+ * la misma operación. `tipo: "inscripcion"`: el backend rechaza configuraciones de reserva. */
 export async function crearActividad(payload: ActividadPayload & { sesiones?: SesionPayload[] }): Promise<Actividad> {
-  const { data } = await api.post<Actividad>("/actividades", payload);
+  const { data } = await api.post<Actividad>("/actividades", { tipo: "inscripcion", ...payload });
   return data;
 }
 
 export async function actualizarActividad(id: number, payload: Partial<ActividadPayload> & { activo?: boolean }): Promise<Actividad> {
-  const { data } = await api.put<Actividad>(`/actividades/${id}`, payload);
+  const { data } = await api.put<Actividad>(`/actividades/${id}`, { tipo: "inscripcion", ...payload });
   return data;
 }
 

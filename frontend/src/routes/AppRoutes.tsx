@@ -21,7 +21,6 @@ const LoginPage = lazy(() => import("../pages/LoginPage"));
 const DashboardPage = lazy(() => import("../pages/admin/DashboardPage"));
 const EventosAdminPage = lazy(() => import("../pages/admin/EventosAdminPage"));
 const AreasPage = lazy(() => import("../pages/admin/AreasPage"));
-const AgendasPage = lazy(() => import("../pages/admin/AgendasPage"));
 const ReservasPage = lazy(() => import("../pages/admin/ReservasPage"));
 const UsuariosPage = lazy(() => import("../pages/admin/UsuariosPage"));
 const AdministradoresPage = lazy(() => import("../pages/admin/AdministradoresPage"));
@@ -55,11 +54,12 @@ export default function AppRoutes() {
           <Route path="/admin" element={<DashboardPage />} />
           <Route path="/admin/eventos" element={<EventosAdminPage />} />
           <Route path="/admin/areas" element={<AreasPage />} />
-          <Route path="/admin/agendas" element={<AgendasPage />} />
           <Route path="/admin/reservas" element={<ReservasPage />} />
-          {/* Secciones unificadas en «Eventos»: los enlaces antiguos siguen funcionando. */}
-          <Route path="/admin/servicios" element={<Navigate to="/admin/eventos?tipo=turnos" replace />} />
-          <Route path="/admin/actividades" element={<Navigate to="/admin/eventos?tipo=actividad" replace />} />
+          {/* Secciones unificadas en «Eventos» (las agendas se gestionan dentro de cada evento
+              de reserva): los enlaces antiguos siguen funcionando. */}
+          <Route path="/admin/agendas" element={<Navigate to="/admin/eventos?tipo=reserva" replace />} />
+          <Route path="/admin/servicios" element={<Navigate to="/admin/eventos?tipo=reserva" replace />} />
+          <Route path="/admin/actividades" element={<Navigate to="/admin/eventos?tipo=inscripcion" replace />} />
           <Route path="/admin/usuarios" element={<UsuariosPage />} />
           <Route path="/admin/bloqueos" element={<BloqueosPage />} />
           <Route path="/admin/festivos" element={<FestivosPage />} />

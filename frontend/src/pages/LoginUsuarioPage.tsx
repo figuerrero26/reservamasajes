@@ -51,7 +51,7 @@ export default function LoginUsuarioPage() {
         <Button type="submit" variant="contained" size="large" fullWidth disabled={!correo.trim() || !password || cargando}>
           {cargando ? "Ingresando…" : "Ingresar"}
         </Button>
-        <Link component={RouterLink} to="/olvide-password" variant="body2" sx={{ alignSelf: "center" }}>
+        <Link component={RouterLink} to="/olvide-password" variant="body2" sx={{ alignSelf: "center", py: 1 }}>
           ¿Olvidaste tu contraseña?
         </Link>
         <Typography variant="body2" align="center" color="text.secondary">

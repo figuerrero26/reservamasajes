@@ -354,9 +354,10 @@ export default function ConfiguracionPage() {
           <Grid container spacing={2}>
             <Grid item xs={12} sm={6}>
               <TextField
-                label="Nombre de la empresa"
+                label="Firma de la plataforma (organización)"
                 value={form.empresa_nombre}
                 onChange={(e) => setForm({ ...form, empresa_nombre: e.target.value })}
+                helperText="Aparece en la portada, el pie de página y los correos (p. ej. InfraestructurEF)"
                 fullWidth
               />
             </Grid>
@@ -406,7 +407,7 @@ export default function ConfiguracionPage() {
                 fullWidth
               />
             </Grid>
-            <Grid item xs={6} sm={3}>
+            <Grid item xs={12} sm={6}>
               <TextField
                 label="Color de los botones de las tarjetas"
                 type="color"
@@ -415,7 +416,7 @@ export default function ConfiguracionPage() {
                 fullWidth
               />
             </Grid>
-            <Grid item xs={6} sm={3}>
+            <Grid item xs={12} sm={6}>
               <TextField
                 label="Color de fondo de la bienvenida"
                 type="color"
