@@ -6,7 +6,7 @@ import {
 import type { Actividad, Sesion } from "../../types";
 import { actualizarSesion, crearSesion, desactivarSesion, generarSesiones, listarSesiones } from "../../services/actividades";
 import { mensajeError } from "../../utils/errors";
-import { formatearFechaLarga, formatearHora } from "../../utils/fechas";
+import { formatearFechaLarga, formatearHora, textoVigencia } from "../../utils/fechas";
 import EstadoChip from "../EstadoChip";
 import Loader from "../Loader";
 import InscritosDialog, { OcupacionSesion } from "./InscritosDialog";
@@ -35,7 +35,8 @@ interface Props {
   onCambio: () => void;
 }
 
-/** Fechas, horarios, lugar y cupo de una actividad, con acceso a los inscritos de cada sesión. */
+/** Fechas, horarios, lugar y cupo de una actividad, con acceso a los inscritos de cada sesión
+ * (también de las sesiones pasadas y de las actividades finalizadas: el historial se conserva). */
 export default function SesionesDialog({ actividad, onCerrar, onCambio }: Props) {
   const [sesiones, setSesiones] = useState<Sesion[]>([]);
   const [cargando, setCargando] = useState(false);
@@ -159,6 +160,14 @@ export default function SesionesDialog({ actividad, onCerrar, onCambio }: Props)
       <Dialog open={!!actividad} onClose={onCerrar} maxWidth="md" fullWidth>
         <DialogTitle>Sesiones de {actividad?.nombre}</DialogTitle>
         <DialogContent>
+          {actividad && (
+            <Alert severity={actividad.estado_vigencia === "finalizado" ? "info" : "success"} icon={false} sx={{ mb: 2 }}>
+              {actividad.estado_vigencia === "finalizado"
+                ? "Esta actividad finalizó: ya no recibe inscripciones nuevas. Sus sesiones e inscritos se conservan."
+                : `Inscripciones: ${textoVigencia(actividad.vigencia_inicio, actividad.vigencia_fin)?.toLowerCase() ?? "sin vigencia definida"}. `
+                  + "Las sesiones no pueden ser anteriores al inicio; si una es posterior al fin, las inscripciones cierran igual al terminar la vigencia."}
+            </Alert>
+          )}
           {aviso && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setAviso(null)}>{aviso}</Alert>}
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
           {cargando ? (
@@ -200,6 +209,7 @@ export default function SesionesDialog({ actividad, onCerrar, onCambio }: Props)
           <Grid container spacing={1.5} sx={{ mb: 3 }}>
             <Grid item xs={12} sm={4}>
               <TextField label="Fecha" type="date" size="small" fullWidth InputLabelProps={{ shrink: true }}
+                inputProps={{ min: actividad?.vigencia_inicio ?? undefined }}
                 value={nueva.fecha} onChange={(e) => setNueva({ ...nueva, fecha: e.target.value })} />
             </Grid>
             <Grid item xs={6} sm={4}>
@@ -229,6 +239,7 @@ export default function SesionesDialog({ actividad, onCerrar, onCambio }: Props)
           <Grid container spacing={1.5} alignItems="center">
             <Grid item xs={6} sm={3}>
               <TextField label="Desde" type="date" size="small" fullWidth InputLabelProps={{ shrink: true }}
+                inputProps={{ min: actividad?.vigencia_inicio ?? undefined }}
                 value={lote.fecha_inicio} onChange={(e) => setLote({ ...lote, fecha_inicio: e.target.value })} />
             </Grid>
             <Grid item xs={6} sm={3}>

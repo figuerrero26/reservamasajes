@@ -6,13 +6,13 @@ import {
 import AddIcon from "@mui/icons-material/Add";
 import SearchIcon from "@mui/icons-material/Search";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
-import type { Actividad, Agenda, Area, ReservaAdmin, Servicio } from "../../types";
+import type { Actividad, Agenda, Area, EstadoVigencia, ReservaAdmin, Servicio } from "../../types";
 import { listarActividades, activarActividad, desactivarActividad } from "../../services/actividades";
 import { listarAgendas } from "../../services/agendas";
 import { listarAreas } from "../../services/areas";
 import { activarServicio, desactivarServicio, listarServicios } from "../../services/servicios";
 import { mensajeError } from "../../utils/errors";
-import { formatearFecha, formatearHora, nombreDia } from "../../utils/fechas";
+import { formatearFecha, formatearHora, nombreDia, textoVigencia } from "../../utils/fechas";
 import DataTable, { type ColumnaDataTable } from "../../components/DataTable";
 import EstadoChip from "../../components/EstadoChip";
 import Loader from "../../components/Loader";
@@ -21,6 +21,7 @@ import ReservasAfectadasDialog from "../../components/ReservasAfectadasDialog";
 import ActividadFormDialog from "../../components/admin/ActividadFormDialog";
 import AgendasEventoDialog from "../../components/admin/AgendasEventoDialog";
 import EventoTurnosDialog from "../../components/admin/EventoTurnosDialog";
+import HistorialReservasDialog from "../../components/admin/HistorialReservasDialog";
 import SesionesDialog from "../../components/admin/SesionesDialog";
 
 type Tipo = "turnos" | "actividad";
@@ -31,6 +32,9 @@ interface Fila {
   nombre: string;
   areaIds: number[];
   activo: boolean;
+  estadoVigencia: EstadoVigencia;
+  vigenciaInicio?: string | null;
+  vigenciaFin?: string | null;
   servicio?: Servicio;
   actividad?: Actividad;
   agendas: Agenda[];
@@ -38,10 +42,27 @@ interface Fila {
 
 const ETIQUETA_TIPO: Record<Tipo, string> = { turnos: "Reserva por turnos", actividad: "Actividad con inscripción" };
 
+type FiltroVigencia = EstadoVigencia | "todos";
+
+const VIGENCIA: Record<EstadoVigencia, { texto: string; filtro: string; color: "success" | "info" | "default" | "warning" }> = {
+  vigente: { texto: "Vigente", filtro: "Vigentes", color: "success" },
+  proximo: { texto: "Próximo", filtro: "Próximos", color: "info" },
+  finalizado: { texto: "Finalizado", filtro: "Finalizados", color: "default" },
+  sin_vigencia: { texto: "Sin vigencia", filtro: "Sin vigencia", color: "warning" },
+};
+
+interface Afectadas {
+  titulo: string;
+  descripcion: string;
+  motivo: string;
+  reservas: ReservaAdmin[];
+}
+
 /** Módulo unificado de eventos: los eventos de reserva por turnos (con sus agendas) y las
- * actividades con inscripción (con sus sesiones) se crean, consultan y filtran por área en
- * un solo lugar. Cada tipo conserva su propia lógica: las agendas generan turnos y las
- * actividades controlan inscripciones y cupos. */
+ * actividades con inscripción (con sus sesiones) se crean, consultan y filtran por área y por
+ * vigencia (vigentes, próximos, finalizados) en un solo lugar. Cada tipo conserva su propia
+ * lógica: las agendas generan turnos y las actividades controlan inscripciones y cupos. Los
+ * eventos finalizados conservan todo su historial (reservas o sesiones e inscritos). */
 export default function EventosAdminPage() {
   const [params, setParams] = useSearchParams();
   const [servicios, setServicios] = useState<Servicio[]>([]);
@@ -58,11 +79,13 @@ export default function EventosAdminPage() {
   const [actividadForm, setActividadForm] = useState<{ actividad: Actividad | null } | null>(null);
   const [agendasDe, setAgendasDe] = useState<Servicio | null>(null);
   const [sesionesDe, setSesionesDe] = useState<Actividad | null>(null);
-  const [afectadas, setAfectadas] = useState<{ nombre: string; reservas: ReservaAdmin[] } | null>(null);
+  const [historialDe, setHistorialDe] = useState<Servicio | null>(null);
+  const [afectadas, setAfectadas] = useState<Afectadas | null>(null);
 
   // Filtros en la URL: permiten llegar filtrado desde Áreas ("Ver eventos") o desde un enlace.
   const filtroArea = params.get("area") ?? "todas"; // "todas" | "sin" | id
   const filtroTipo = (params.get("tipo") ?? "todos") as Tipo | "todos";
+  const filtroVigencia = (params.get("vigencia") ?? "todos") as FiltroVigencia;
   const setFiltro = (clave: string, valor: string) => {
     const nuevos = new URLSearchParams(params);
     if (valor === "todas" || valor === "todos") nuevos.delete(clave);
@@ -95,20 +118,24 @@ export default function EventosAdminPage() {
       return {
         key: `s-${s.id}`, tipo: "turnos" as const, nombre: s.nombre, activo: s.activo, servicio: s, agendas: propias,
         areaIds: Array.from(new Set(propias.map((a) => a.area_id))),
+        estadoVigencia: s.estado_vigencia, vigenciaInicio: s.vigencia_inicio, vigenciaFin: s.vigencia_fin,
       };
     }),
     ...actividades.map((a) => ({
       key: `a-${a.id}`, tipo: "actividad" as const, nombre: a.nombre, activo: a.activo, actividad: a, agendas: [],
       areaIds: a.area_id ? [a.area_id] : [],
+      estadoVigencia: a.estado_vigencia, vigenciaInicio: a.vigencia_inicio, vigenciaFin: a.vigencia_fin,
     })),
   ].sort((x, y) => x.nombre.localeCompare(y.nombre)), [servicios, actividades, agendas]);
 
   const texto = busqueda.trim().toLowerCase();
   const visibles = filas.filter((f) =>
     (filtroTipo === "todos" || f.tipo === filtroTipo)
+    && (filtroVigencia === "todos" || f.estadoVigencia === filtroVigencia)
     && (filtroArea === "todas" || (filtroArea === "sin" ? f.areaIds.length === 0 : f.areaIds.includes(Number(filtroArea))))
     && (!texto || f.nombre.toLowerCase().includes(texto)),
   );
+  const porVigencia = (estado: EstadoVigencia) => filas.filter((f) => f.estadoVigencia === estado).length;
 
   const nombreArea = (id: number) => areas.find((a) => a.id === id)?.nombre ?? `#${id}`;
   const hayAreasActivas = areas.some((a) => a.activo);
@@ -120,8 +147,14 @@ export default function EventosAdminPage() {
     try {
       if (s.activo) {
         const r = await desactivarServicio(s.id);
-        if (r.reservas_afectadas.length > 0) setAfectadas({ nombre: s.nombre, reservas: r.reservas_afectadas });
-        else setAviso(`«${s.nombre}» quedó desactivado: ya no se muestra ni acepta reservas.`);
+        if (r.reservas_afectadas.length > 0) {
+          setAfectadas({
+            titulo: `«${s.nombre}» desactivado`,
+            descripcion: "El evento ya no acepta reservas nuevas. Estas reservas futuras siguen vigentes: puedes mantenerlas (se atienden normalmente) o cancelarlas y avisar a cada colaborador.",
+            motivo: "El evento fue suspendido temporalmente.",
+            reservas: r.reservas_afectadas,
+          });
+        } else setAviso(`«${s.nombre}» quedó desactivado: ya no se muestra ni acepta reservas.`);
       } else {
         await activarServicio(s.id);
         setAviso(`«${s.nombre}» está activo de nuevo con las agendas que tenía habilitadas.`);
@@ -180,14 +213,34 @@ export default function EventosAdminPage() {
         ? f.areaIds.map(nombreArea).join(" · ")
         : <Chip size="small" color="warning" variant="outlined" label="Sin área" />,
     },
+    {
+      key: "vigencia",
+      label: "Vigencia",
+      render: (f) => (
+        <Stack spacing={0.5} alignItems={{ xs: "flex-end", sm: "flex-start" }}>
+          <Chip size="small" label={VIGENCIA[f.estadoVigencia].texto} color={VIGENCIA[f.estadoVigencia].color}
+            variant={f.estadoVigencia === "vigente" ? "filled" : "outlined"} />
+          {textoVigencia(f.vigenciaInicio, f.vigenciaFin) && (
+            <Typography variant="caption" color="text.secondary">{textoVigencia(f.vigenciaInicio, f.vigenciaFin)}</Typography>
+          )}
+        </Stack>
+      ),
+    },
     { key: "programacion", label: "Programación", render: programacion },
     {
       key: "estado",
       label: "Estado",
       render: (f) => (
         <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap alignItems="center" justifyContent={{ xs: "flex-end", sm: "flex-start" }}>
-          <Chip size="small" label={f.activo ? "Publicado" : "Oculto"} color={f.activo ? "success" : "default"} variant={f.activo ? "filled" : "outlined"} />
-          {f.tipo === "actividad" && f.activo && <EstadoChip tipo="actividad" estado={f.actividad!.estado_inscripcion} />}
+          {/* Publicado = activo y dentro de su vigencia (lo mismo que decide el portal). */}
+          {(() => {
+            const publicado = f.activo && (f.estadoVigencia === "vigente" || f.estadoVigencia === "sin_vigencia");
+            const texto = publicado ? "Publicado" : !f.activo ? "Oculto" : f.estadoVigencia === "proximo" ? "Aún no publicado" : "Cerrado";
+            return <Chip size="small" label={texto} color={publicado ? "success" : "default"} variant={publicado ? "filled" : "outlined"} />;
+          })()}
+          {f.tipo === "actividad" && f.activo && f.estadoVigencia === "vigente" && (
+            <EstadoChip tipo="actividad" estado={f.actividad!.estado_inscripcion} />
+          )}
           {f.tipo === "actividad" && (
             <Typography variant="caption" color="text.secondary">
               {f.actividad!.resumen.inscritos_futuros} inscrito(s)
@@ -206,6 +259,7 @@ export default function EventosAdminPage() {
           {f.tipo === "turnos" ? (
             <>
               <Button size="small" variant="outlined" onClick={() => setAgendasDe(f.servicio!)}>Agendas ({f.agendas.length})</Button>
+              <Button size="small" onClick={() => setHistorialDe(f.servicio!)}>Historial</Button>
               <Button size="small" onClick={() => setEventoForm({ servicio: f.servicio! })}>Editar</Button>
               <Button size="small" color={f.activo ? "error" : "primary"} onClick={() => alternarServicio(f.servicio!)}>
                 {f.activo ? "Desactivar" : "Activar"}
@@ -213,7 +267,7 @@ export default function EventosAdminPage() {
             </>
           ) : (
             <>
-              <Button size="small" variant="outlined" onClick={() => setSesionesDe(f.actividad!)}>Sesiones</Button>
+              <Button size="small" variant="outlined" onClick={() => setSesionesDe(f.actividad!)}>Sesiones e inscritos</Button>
               <Button size="small" onClick={() => setActividadForm({ actividad: f.actividad! })}>Editar</Button>
               <Button size="small" color={f.activo ? "error" : "primary"} onClick={() => alternarActividad(f.actividad!)}>
                 {f.activo ? "Ocultar" : "Publicar"}
@@ -229,7 +283,7 @@ export default function EventosAdminPage() {
     <Box>
       <PageHeader
         titulo="Eventos"
-        descripcion="Todos los eventos en un solo lugar: reservas por turnos (con sus agendas) y actividades con inscripción (con sus sesiones y cupos). Cada evento pertenece a un área."
+        descripcion="Todos los eventos en un solo lugar: reservas por turnos (con sus agendas) y actividades con inscripción (con sus sesiones y cupos). Cada evento pertenece a un área y tiene su vigencia: al terminar se cierra solo y conserva su historial."
         acciones={
           <Button variant="contained" startIcon={<AddIcon />} endIcon={<KeyboardArrowDownIcon />}
             onClick={(e) => setMenuNuevo(e.currentTarget)} disabled={!hayAreasActivas}>
@@ -255,6 +309,12 @@ export default function EventosAdminPage() {
           {sinArea} evento(s) sin área asignada. Edítalos para asignarles una.
         </Alert>
       )}
+      {porVigencia("sin_vigencia") > 0 && filtroVigencia !== "sin_vigencia" && (
+        <Alert severity="warning" sx={{ mb: 2 }}
+          action={<Button color="inherit" size="small" onClick={() => setFiltro("vigencia", "sin_vigencia")}>Ver</Button>}>
+          {porVigencia("sin_vigencia")} evento(s) sin vigencia definida. Edítalos para indicar sus fechas de inicio y finalización.
+        </Alert>
+      )}
       {aviso && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setAviso(null)}>{aviso}</Alert>}
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
@@ -273,6 +333,15 @@ export default function EventosAdminPage() {
               color={filtroTipo === v ? "primary" : "default"} variant={filtroTipo === v ? "filled" : "outlined"} />
           ))}
         </Stack>
+        <TextField
+          select size="small" label="Vigencia" value={filtroVigencia} onChange={(e) => setFiltro("vigencia", e.target.value)}
+          sx={{ minWidth: 180 }}
+        >
+          <MenuItem value="todos">Todas ({filas.length})</MenuItem>
+          {(["vigente", "proximo", "finalizado", "sin_vigencia"] as EstadoVigencia[])
+            .filter((e) => e !== "sin_vigencia" || porVigencia(e) > 0)
+            .map((e) => <MenuItem key={e} value={e}>{VIGENCIA[e].filtro} ({porVigencia(e)})</MenuItem>)}
+        </TextField>
         <TextField
           size="small" placeholder="Buscar por nombre" value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
           sx={{ ml: { md: "auto" }, minWidth: { md: 240 } }}
@@ -293,9 +362,20 @@ export default function EventosAdminPage() {
         areas={areas}
         areaInicial={areaInicial}
         onCerrar={() => setEventoForm(null)}
-        onGuardado={async (s, creado) => {
+        onGuardado={async (s, creado, fueraDeVigencia) => {
           setEventoForm(null);
-          setAviso(creado ? `«${s.nombre}» creado con su agenda. Ya aparece en el portal.` : `«${s.nombre}» actualizado.`);
+          const publicado = s.estado_vigencia === "vigente" && s.activo;
+          setAviso(creado
+            ? `«${s.nombre}» creado con su agenda. ${publicado ? "Ya aparece en el portal." : "Se publicará cuando empiece su vigencia."}`
+            : `«${s.nombre}» actualizado.`);
+          if (fueraDeVigencia.length > 0) {
+            setAfectadas({
+              titulo: `Reservas fuera de la nueva vigencia de «${s.nombre}»`,
+              descripcion: "Con las nuevas fechas, estas reservas futuras quedaron fuera de la vigencia del evento. Se conservan tal cual (no se cancelan solas): puedes mantenerlas o cancelarlas y avisar a cada colaborador.",
+              motivo: "Cambió la programación del evento.",
+              reservas: fueraDeVigencia,
+            });
+          }
           await cargar();
         }}
       />
@@ -312,7 +392,9 @@ export default function EventosAdminPage() {
             setAviso(`«${a.nombre}» creada. Agrega al menos una sesión para publicarla en el portal.`);
             setSesionesDe(a);
           } else {
-            setAviso(creada ? `«${a.nombre}» creada y publicada.` : `«${a.nombre}» actualizada.`);
+            setAviso(creada
+              ? `«${a.nombre}» creada${a.estado_vigencia === "vigente" ? " y publicada" : ": se publicará cuando empiece su vigencia"}.`
+              : `«${a.nombre}» actualizada.`);
           }
         }}
       />
@@ -325,12 +407,13 @@ export default function EventosAdminPage() {
         onCambio={cargar}
       />
       <SesionesDialog actividad={sesionesDe} onCerrar={() => setSesionesDe(null)} onCambio={cargar} />
+      <HistorialReservasDialog servicio={historialDe} onCerrar={() => setHistorialDe(null)} />
       <ReservasAfectadasDialog
         abierto={!!afectadas}
-        titulo={`«${afectadas?.nombre ?? ""}» desactivado`}
-        descripcion="El evento ya no acepta reservas nuevas. Estas reservas futuras siguen vigentes: puedes mantenerlas (se atienden normalmente) o cancelarlas y avisar a cada colaborador."
+        titulo={afectadas?.titulo ?? ""}
+        descripcion={afectadas?.descripcion ?? ""}
         reservas={afectadas?.reservas ?? []}
-        motivoSugerido="El evento fue suspendido temporalmente."
+        motivoSugerido={afectadas?.motivo ?? ""}
         onCerrar={() => setAfectadas(null)}
       />
     </Box>

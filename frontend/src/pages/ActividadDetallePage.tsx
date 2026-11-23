@@ -8,8 +8,10 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
 import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
+import RuleOutlinedIcon from "@mui/icons-material/RuleOutlined";
 import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 import Loader from "../components/Loader";
+import { PortadaEvento } from "../components/EventCard";
 import EmptyState from "../components/EmptyState";
 import EstadoChip from "../components/EstadoChip";
 import FormularioDinamico, { camposFaltantes } from "../components/FormularioDinamico";
@@ -17,13 +19,13 @@ import type { ActividadPublica, Sesion } from "../types";
 import { listarSesionesPublicas, obtenerActividadPublica } from "../services/actividades";
 import { crearInscripcion, type Respuestas } from "../services/inscripciones";
 import { mensajeError } from "../utils/errors";
-import { formatearFechaHora, formatearFechaLarga, formatearHora } from "../utils/fechas";
+import { formatearFechaLarga, formatearHora, textoVigencia } from "../utils/fechas";
 import { useUsuarioAuth } from "../hooks/useUsuarioAuth";
 
 const MENSAJE_ESTADO: Record<string, string> = {
   agotada: "Todos los cupos están ocupados. Si alguien cancela, el cupo vuelve a quedar disponible.",
-  proximamente: "Las inscripciones todavía no están abiertas.",
-  cerrada: "Las inscripciones para esta actividad están cerradas.",
+  proximamente: "Este evento todavía no abre sus inscripciones.",
+  cerrada: "Las inscripciones están pausadas por el momento.",
   finalizada: "Esta actividad no tiene fechas próximas.",
 };
 
@@ -153,14 +155,7 @@ export default function ActividadDetallePage() {
                 </Typography>
               )}
             </Box>
-            {actividad.imagen_url && (
-              <Box
-                component="img"
-                src={actividad.imagen_url}
-                alt=""
-                sx={{ width: "100%", aspectRatio: "16 / 9", objectFit: "cover", borderRadius: 4 }}
-              />
-            )}
+            {actividad.imagen_url && <PortadaEvento imagenUrl={actividad.imagen_url} radio={4} />}
             {actividad.descripcion_larga && (
               <Typography variant="body1" sx={{ whiteSpace: "pre-line" }}>{actividad.descripcion_larga}</Typography>
             )}
@@ -172,16 +167,20 @@ export default function ActividadDetallePage() {
                 </Typography>
               </Paper>
             )}
-            {actividad.fecha_cierre_inscripciones && actividad.estado_inscripcion === "abierta" && (
-              <Typography variant="body2" color="text.secondary">
-                Inscripciones abiertas hasta el {formatearFechaHora(actividad.fecha_cierre_inscripciones)}.
-              </Typography>
-            )}
-            {actividad.fecha_apertura_inscripciones && actividad.estado_inscripcion === "proximamente" && (
-              <Typography variant="body2" color="text.secondary">
-                Las inscripciones abren el {formatearFechaHora(actividad.fecha_apertura_inscripciones)}.
-              </Typography>
-            )}
+            <Stack spacing={0.75} sx={{ color: "text.secondary" }}>
+              {textoVigencia(actividad.vigencia_inicio, actividad.vigencia_fin) && (
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <EventOutlinedIcon sx={{ fontSize: 18 }} />
+                  <Typography variant="body2">
+                    Inscripciones: {textoVigencia(actividad.vigencia_inicio, actividad.vigencia_fin)?.toLowerCase()}
+                  </Typography>
+                </Stack>
+              )}
+              <Stack direction="row" spacing={1} alignItems="center">
+                <RuleOutlinedIcon sx={{ fontSize: 18 }} />
+                <Typography variant="body2">{actividad.regla_participacion}</Typography>
+              </Stack>
+            </Stack>
           </Stack>
         </Grid>
 
@@ -196,7 +195,11 @@ export default function ActividadDetallePage() {
             ) : (
               <Stack spacing={1.5}>
                 {sesiones.map((s) => {
-                  const disponible = s.estado === "disponible" && !s.inscrito;
+                  // `puede_inscribirse` (con sesión iniciada) suma el límite de participación del
+                  // evento; sin sesión solo se conoce el estado de la sesión.
+                  const disponible = s.estado === "disponible" && !s.inscrito && s.puede_inscribirse !== false;
+                  const motivoLimite = s.estado === "disponible" && !s.inscrito && s.puede_inscribirse === false
+                    ? s.motivo_no_disponible : null;
                   return (
                     <Paper key={s.id} variant="outlined" sx={{ p: 2.5, borderColor: s.inscrito ? "primary.main" : undefined }}>
                       <Stack spacing={1.5}>
@@ -229,9 +232,12 @@ export default function ActividadDetallePage() {
                             <Button size="small" component={RouterLink} to="/mis-inscripciones">Gestionar</Button>
                           </Stack>
                         ) : (
-                          <Button variant="contained" fullWidth disabled={!disponible} onClick={() => abrirInscripcion(s)}>
-                            {s.estado === "cupo_lleno" ? "Sin cupos" : "Inscribirme"}
-                          </Button>
+                          <Stack spacing={0.75}>
+                            {motivoLimite && <Typography variant="caption" color="text.secondary">{motivoLimite}</Typography>}
+                            <Button variant="contained" fullWidth disabled={!disponible} onClick={() => abrirInscripcion(s)}>
+                              {s.estado === "cupo_lleno" ? "Sin cupos" : motivoLimite ? "No disponible para ti" : "Inscribirme"}
+                            </Button>
+                          </Stack>
                         )}
                       </Stack>
                     </Paper>

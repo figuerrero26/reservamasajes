@@ -16,14 +16,11 @@ import type { ConfiguracionGeneral, PlantillaCorreo, SmtpConfig } from "../../ty
 import {
   actualizarConfiguracion,
   actualizarConfiguracionSmtp,
-  definirSemanaActiva,
   enviarCorreoPrueba,
   obtenerConfiguracion,
   obtenerConfiguracionSmtp,
   obtenerPlantillaCorreo,
-  obtenerSemanaActiva,
   previsualizarPlantillaCorreo,
-  reiniciarSemana,
   subirImagenBienvenida,
   subirImagenCorreo,
 } from "../../services/configuracion";
@@ -31,8 +28,8 @@ import { mensajeError } from "../../utils/errors";
 import { esVideo } from "../../utils/media";
 import Loader from "../../components/Loader";
 import MutedVideo from "../../components/MutedVideo";
-import ConfirmDialog from "../../components/ConfirmDialog";
 import PageHeader from "../../components/PageHeader";
+import { Link as RouterLink } from "react-router-dom";
 
 interface FormularioSmtp {
   host: string;
@@ -105,23 +102,6 @@ export default function ConfiguracionPage() {
   const [errorImagen, setErrorImagen] = useState<string | null>(null);
   const inputImagenRef = useRef<HTMLInputElement>(null);
 
-  const [semanaInicio, setSemanaInicio] = useState("");
-  const [semanaFin, setSemanaFin] = useState("");
-  const [guardandoSemana, setGuardandoSemana] = useState(false);
-  const [errorSemana, setErrorSemana] = useState<string | null>(null);
-  const [exitoSemana, setExitoSemana] = useState<string | null>(null);
-
-  const [eventoUnicoPorSemana, setEventoUnicoPorSemana] = useState(false);
-  const [guardandoRestriccion, setGuardandoRestriccion] = useState(false);
-  const [errorRestriccion, setErrorRestriccion] = useState<string | null>(null);
-  const [exitoRestriccion, setExitoRestriccion] = useState<string | null>(null);
-
-  const [fechaLunes, setFechaLunes] = useState("");
-  const [dialogReiniciar, setDialogReiniciar] = useState(false);
-  const [reiniciando, setReiniciando] = useState(false);
-  const [errorReiniciar, setErrorReiniciar] = useState<string | null>(null);
-  const [resultadoReinicio, setResultadoReinicio] = useState<number | null>(null);
-
   const [smtp, setSmtp] = useState<FormularioSmtp | null>(null);
   const [smtpPasswordConfigurada, setSmtpPasswordConfigurada] = useState(false);
   const [guardandoSmtp, setGuardandoSmtp] = useState(false);
@@ -152,9 +132,8 @@ export default function ConfiguracionPage() {
     setCargando(true);
     setError(null);
     try {
-      const [config, semana, configSmtp, plantilla] = await Promise.all([
+      const [config, configSmtp, plantilla] = await Promise.all([
         obtenerConfiguracion(),
-        obtenerSemanaActiva(),
         obtenerConfiguracionSmtp(),
         obtenerPlantillaCorreo(),
       ]);
@@ -162,9 +141,6 @@ export default function ConfiguracionPage() {
       setOriginal(f);
       setForm(f);
       setImagenBienvenidaUrl(config.imagen_bienvenida_url ?? "");
-      setEventoUnicoPorSemana(config.evento_unico_por_semana ?? false);
-      setSemanaInicio(semana.inicio ?? "");
-      setSemanaFin(semana.fin ?? "");
       setSmtp(aFormularioSmtp(configSmtp));
       setSmtpPasswordConfigurada(configSmtp.password_configurada);
       aplicarPlantilla(plantilla);
@@ -226,56 +202,6 @@ export default function ConfiguracionPage() {
       setErrorImagen(mensajeError(e, "No se pudo quitar la imagen."));
     } finally {
       setSubiendoImagen(false);
-    }
-  }
-
-  async function guardarSemana() {
-    if (!semanaInicio || !semanaFin) return;
-    setGuardandoSemana(true);
-    setErrorSemana(null);
-    setExitoSemana(null);
-    try {
-      await definirSemanaActiva(semanaInicio, semanaFin);
-      setExitoSemana("Semana activa actualizada.");
-    } catch (e) {
-      setErrorSemana(mensajeError(e, "No se pudo definir la semana activa."));
-    } finally {
-      setGuardandoSemana(false);
-    }
-  }
-
-  async function guardarRestriccion(valor: boolean) {
-    setEventoUnicoPorSemana(valor);
-    setGuardandoRestriccion(true);
-    setErrorRestriccion(null);
-    setExitoRestriccion(null);
-    try {
-      await actualizarConfiguracion("evento_unico_por_semana", String(valor));
-      setExitoRestriccion(
-        valor
-          ? "Cada evento ahora se puede reservar como máximo una vez por semana activa."
-          : "Restricción desactivada: un mismo evento puede reservarse cualquier día."
-      );
-    } catch (e) {
-      setEventoUnicoPorSemana(!valor);
-      setErrorRestriccion(mensajeError(e, "No se pudo guardar el cambio."));
-    } finally {
-      setGuardandoRestriccion(false);
-    }
-  }
-
-  async function confirmarReinicio() {
-    if (!fechaLunes) return;
-    setReiniciando(true);
-    setErrorReiniciar(null);
-    try {
-      const r = await reiniciarSemana(fechaLunes);
-      setResultadoReinicio(r.reservas_afectadas);
-      setDialogReiniciar(false);
-    } catch (e) {
-      setErrorReiniciar(mensajeError(e, "No se pudo reiniciar la semana."));
-    } finally {
-      setReiniciando(false);
     }
   }
 
@@ -413,7 +339,7 @@ export default function ConfiguracionPage() {
     <Box>
       <PageHeader
         titulo="Configuración"
-        descripcion="Identidad del portal, contacto, periodo de reservas, reglas y correo."
+        descripcion="Identidad del portal, contacto y correo."
       />
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -482,7 +408,7 @@ export default function ConfiguracionPage() {
             </Grid>
             <Grid item xs={6} sm={3}>
               <TextField
-                label="Color del botón 'Ver disponibilidad'"
+                label="Color de los botones de las tarjetas"
                 type="color"
                 value={form.color_boton_disponibilidad}
                 onChange={(e) => setForm({ ...form, color_boton_disponibilidad: e.target.value })}
@@ -603,93 +529,11 @@ export default function ConfiguracionPage() {
         </Paper>
       )}
 
-      <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>
-          Semana activa
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Define el rango de fechas que los colaboradores pueden reservar en el portal público.
-        </Typography>
-        {errorSemana && <Alert severity="error" sx={{ mb: 2 }}>{errorSemana}</Alert>}
-        {exitoSemana && <Alert severity="success" sx={{ mb: 2 }}>{exitoSemana}</Alert>}
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }}>
-          <TextField
-            label="Inicio"
-            type="date"
-            value={semanaInicio}
-            onChange={(e) => setSemanaInicio(e.target.value)}
-            InputLabelProps={{ shrink: true }}
-          />
-          <TextField
-            label="Fin"
-            type="date"
-            value={semanaFin}
-            onChange={(e) => setSemanaFin(e.target.value)}
-            InputLabelProps={{ shrink: true }}
-          />
-          <Button variant="contained" onClick={guardarSemana} disabled={guardandoSemana || !semanaInicio || !semanaFin}>
-            Guardar semana
-          </Button>
-        </Stack>
-      </Paper>
-
-      <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>
-          Restricción de reservas
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Los días del calendario del portal siempre se muestran completos — esto no oculta ningún día, solo
-          decide si un colaborador puede repetir el mismo evento en un día distinto de la semana activa.
-        </Typography>
-        {errorRestriccion && <Alert severity="error" sx={{ mb: 2 }}>{errorRestriccion}</Alert>}
-        {exitoRestriccion && <Alert severity="success" sx={{ mb: 2 }}>{exitoRestriccion}</Alert>}
-        <FormControlLabel
-          control={
-            <Switch
-              checked={eventoUnicoPorSemana}
-              disabled={guardandoRestriccion}
-              onChange={(e) => guardarRestriccion(e.target.checked)}
-            />
-          }
-          label="Cada evento se puede reservar como máximo una vez por semana activa (si ya lo reservó, no puede repetirlo otro día — sí puede reservar un evento distinto)"
-        />
-      </Paper>
-
-      <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>
-          Reiniciar semana
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Cancela las reservas activas de la semana indicada que todavía no han ocurrido y avisa a cada colaborador
-          por correo. Las que ya pasaron se conservan para registrar la asistencia. Ninguna reserva se elimina.
-        </Typography>
-        {resultadoReinicio !== null && (
-          <Alert severity="success" sx={{ mb: 2 }}>
-            Semana reiniciada: {resultadoReinicio} reserva(s) afectada(s).
-          </Alert>
-        )}
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }}>
-          <TextField
-            label="Lunes de la semana"
-            type="date"
-            value={fechaLunes}
-            onChange={(e) => setFechaLunes(e.target.value)}
-            InputLabelProps={{ shrink: true }}
-          />
-          <Button
-            variant="outlined"
-            color="warning"
-            disabled={!fechaLunes}
-            onClick={() => {
-              setResultadoReinicio(null);
-              setErrorReiniciar(null);
-              setDialogReiniciar(true);
-            }}
-          >
-            Reiniciar semana
-          </Button>
-        </Stack>
-      </Paper>
+      <Alert severity="info" sx={{ mb: 3 }}>
+        La vigencia (fechas de inicio y fin) y la regla de participación ya no son globales: se definen en cada
+        evento, al crearlo o editarlo en <RouterLink to="/admin/eventos">Catálogo → Eventos</RouterLink>. Al terminar
+        su vigencia, cada evento se cierra solo y conserva su historial.
+      </Alert>
 
       {smtp && (
         <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
@@ -903,22 +747,6 @@ export default function ConfiguracionPage() {
         </Grid>
       </Paper>
 
-      <ConfirmDialog
-        abierto={dialogReiniciar}
-        titulo="Reiniciar semana"
-        contenido={
-          <span>
-            Esta acción cancelará todas las reservas activas de la semana que inicia el {fechaLunes}. Las
-            reservas quedarán marcadas como canceladas, no se eliminarán. ¿Deseas continuar?
-          </span>
-        }
-        textoConfirmar="Reiniciar semana"
-        colorConfirmar="warning"
-        cargando={reiniciando}
-        error={errorReiniciar}
-        onConfirmar={confirmarReinicio}
-        onCancelar={() => setDialogReiniciar(false)}
-      />
     </Box>
   );
 }

@@ -1,6 +1,7 @@
 import api from "./api";
 import apiUsuario from "./apiUsuario";
 import type { Actividad, ActividadPublica, CampoFormulario, Sesion } from "../types";
+import type { VigenciaPayload } from "./servicios";
 
 // ---- Portal público (sin autenticación) ----
 export async function listarActividadesPublicas(): Promise<ActividadPublica[]> {
@@ -19,7 +20,7 @@ export async function listarSesionesPublicas(actividadId: number): Promise<Sesio
 }
 
 // ---- Administración ----
-export interface ActividadPayload {
+export interface ActividadPayload extends VigenciaPayload {
   area_id: number;
   nombre: string;
   descripcion_corta?: string | null;
@@ -28,8 +29,6 @@ export interface ActividadPayload {
   informacion_adicional?: string | null;
   campos_formulario: CampoFormulario[];
   inscripcion_abierta: boolean;
-  fecha_apertura_inscripciones?: string | null;
-  fecha_cierre_inscripciones?: string | null;
 }
 
 export async function listarActividades(): Promise<Actividad[]> {

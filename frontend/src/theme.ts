@@ -1,4 +1,4 @@
-import { alpha, createTheme, darken, getContrastRatio, lighten } from "@mui/material/styles";
+import { alpha, createTheme, darken, decomposeColor, getContrastRatio, getLuminance, lighten } from "@mui/material/styles";
 
 /**
  * Sistema visual de la plataforma: minimalista, con mucho aire, tipografía protagonista y
@@ -36,6 +36,34 @@ export function textoLegibleSobre(fondo: string): string {
  * blanco se puede usar sobre verdes medios y combinar con el negro de los textos pequeños. */
 export function textoGrandeSobre(fondo: string): string {
   return getContrastRatio(fondo, BLANCO) >= 3 ? BLANCO : NEGRO;
+}
+
+function aHsl(color: string): [number, number, number] {
+  const [r, g, b] = decomposeColor(color).values.slice(0, 3).map((v) => v / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l * 100];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, s * 100, l * 100];
+}
+
+/** El mismo color (mismo matiz, saturado) con la luminosidad justa para alcanzar `minimo` de
+ * contraste sobre `fondo`. Ej.: los bordes amarillos del menú verde — el amarillo de SIGRA
+ * (#edcd30) da solo 2,2:1 sobre el verde (#7f9136); este tono más luminoso del mismo amarillo
+ * llega a 3:1, el mínimo recomendado (WCAG) para bordes de controles. */
+export function tonoConContraste(color: string, fondo: string, minimo = 3): string {
+  if (getContrastRatio(color, fondo) >= minimo) return color;
+  const [h, s, l] = aHsl(color);
+  const aclarar = getLuminance(fondo) < 0.5;
+  for (let paso = 1; paso <= 100; paso++) {
+    const luz = aclarar ? Math.min(100, l + paso) : Math.max(0, l - paso);
+    const candidato = `hsl(${Math.round(h)}, ${Math.round(Math.max(s, 90))}%, ${Math.round(luz)}%)`;
+    if (getContrastRatio(candidato, fondo) >= minimo) return candidato;
+  }
+  return aclarar ? BLANCO : NEGRO;
 }
 
 /** Tonos suaves y opacos (sólidos, no transparentes) derivados del color de marca, para

@@ -16,21 +16,6 @@ export const subirImagenBienvenida = async (archivo: File) => {
     .data.imagen_bienvenida_url;
 };
 
-export const obtenerSemanaActiva = async () =>
-  (await api.get<{ inicio: string | null; fin: string | null }>("/semana/activa")).data;
-
-/** Días que el portal ofrece para reservar. Los calcula el backend (única fuente de verdad,
- * la misma que usa el resumen de disponibilidad de las tarjetas). */
-export const obtenerDiasReservables = async () => (await api.get<string[]>("/semana/dias-reservables")).data;
-
-export const definirSemanaActiva = async (inicio: string, fin: string) =>
-  api.put("/semana/activa", { inicio, fin });
-
-export const reiniciarSemana = async (fecha_lunes: string) =>
-  (await api.post<{ reservas_afectadas: number }>("/semana/reiniciar", null, {
-    params: { fecha_lunes },
-  })).data;
-
 export const obtenerConfiguracionSmtp = async () =>
   (await api.get<SmtpConfig>("/configuracion/smtp")).data;
 

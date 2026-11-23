@@ -12,6 +12,7 @@ import {
   Stack,
   Switch,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
@@ -83,7 +84,7 @@ export default function UsuariosPage() {
       await setReservasMultiples(usuario.id, !usuario.permite_reservas_multiples);
       await buscar();
     } catch (e) {
-      setError(mensajeError(e, "No se pudo cambiar el permiso de reservas múltiples."));
+      setError(mensajeError(e, "No se pudo cambiar la excepción a los límites de participación."));
     } finally {
       setActualizandoId(null);
     }
@@ -144,14 +145,19 @@ export default function UsuariosPage() {
       ),
     },
     {
+      // Excepción por colaborador: puede superar el límite de participación de los eventos
+      // (incluida la regla de una reserva por día). La validación vive en el backend.
       key: "permite_reservas_multiples",
-      label: "Reservas múltiples",
+      label: "Excepción a límites",
       render: (u) => (
-        <Switch
-          checked={u.permite_reservas_multiples}
-          disabled={actualizandoId === u.id}
-          onChange={() => alternarReservasMultiples(u)}
-        />
+        <Tooltip title="Permite a este colaborador superar el límite de participación de cada evento (reservas e inscripciones)">
+          <Switch
+            checked={u.permite_reservas_multiples}
+            disabled={actualizandoId === u.id}
+            onChange={() => alternarReservasMultiples(u)}
+            inputProps={{ "aria-label": "Excepción a los límites de participación" }}
+          />
+        </Tooltip>
       ),
     },
     {

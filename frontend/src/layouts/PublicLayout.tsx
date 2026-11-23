@@ -11,7 +11,7 @@ import { Link as RouterLink, Outlet, useLocation } from "react-router-dom";
 import { useConfig } from "../hooks/useConfig";
 import { useUsuarioAuth } from "../hooks/useUsuarioAuth";
 import Footer from "../components/Footer";
-import { NEGRO, textoGrandeSobre, textoLegibleSobre } from "../theme";
+import { NEGRO, textoGrandeSobre, textoLegibleSobre, tonoConContraste } from "../theme";
 
 interface Enlace {
   texto: string;
@@ -38,6 +38,9 @@ export default function PublicLayout() {
   const textoGrande = textoGrandeSobre(verde);
   const textoChico = textoLegibleSobre(verde);
   const [titulo, lema] = partirNombre(config.sistema_nombre);
+  // Cada botón del menú lleva un borde amarillo fino: el amarillo de la marca ajustado para
+  // contrastar con el verde (ver tonoConContraste).
+  const bordeAmarillo = `1.5px solid ${tonoConContraste(theme.palette.secondary.main, verde, 3)}`;
 
   const enlaces: Enlace[] = token
     ? [
@@ -53,6 +56,7 @@ export default function PublicLayout() {
     bgcolor: NEGRO, color: "#FFFFFF",
     "&:hover": { bgcolor: "#000000" },
   };
+  const botonMenu = { border: bordeAmarillo, px: 1.75 };
 
   return (
     <Box sx={{ minHeight: "100vh", display: "flex", flexDirection: "column", bgcolor: "background.default" }}>
@@ -88,14 +92,15 @@ export default function PublicLayout() {
               </Box>
             </Box>
 
-            <Stack direction="row" spacing={0.5} alignItems="center" sx={{ display: { xs: "none", md: "flex" } }}>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ display: { xs: "none", md: "flex" } }}>
               {enlaces.map((e) => (
                 <Button
                   key={e.ruta}
                   component={RouterLink}
                   to={e.ruta}
+                  aria-current={activo(e.ruta) ? "page" : undefined}
                   sx={{
-                    fontWeight: 600, px: 1.75,
+                    fontWeight: 600, ...botonMenu,
                     ...(activo(e.ruta)
                       ? { bgcolor: alpha("#FFFFFF", 0.92), color: NEGRO, "&:hover": { bgcolor: "#FFFFFF" } }
                       : { color: textoChico, "&:hover": { bgcolor: alpha(NEGRO, 0.08) } }),
@@ -111,19 +116,18 @@ export default function PublicLayout() {
                     Hola, {nombre}
                   </Typography>
                   <Button
-                    variant="outlined"
                     onClick={cerrarSesion}
-                    sx={{ color: textoChico, borderColor: alpha(textoChico, 0.55), "&:hover": { borderColor: textoChico, bgcolor: alpha(NEGRO, 0.06) } }}
+                    sx={{ ...botonMenu, color: textoChico, fontWeight: 600, "&:hover": { bgcolor: alpha(NEGRO, 0.08) } }}
                   >
                     Salir
                   </Button>
                 </>
               ) : (
                 <>
-                  <Button component={RouterLink} to="/login" sx={{ color: textoChico, fontWeight: 600, "&:hover": { bgcolor: alpha(NEGRO, 0.08) } }}>
+                  <Button component={RouterLink} to="/login" sx={{ ...botonMenu, color: textoChico, fontWeight: 600, "&:hover": { bgcolor: alpha(NEGRO, 0.08) } }}>
                     Iniciar sesión
                   </Button>
-                  <Button component={RouterLink} to="/registro" variant="contained" sx={botonOscuro}>
+                  <Button component={RouterLink} to="/registro" variant="contained" sx={{ ...botonOscuro, ...botonMenu }}>
                     Crear cuenta
                   </Button>
                 </>
@@ -133,7 +137,7 @@ export default function PublicLayout() {
             <IconButton
               aria-label="Abrir menú"
               onClick={() => setMenuAbierto(true)}
-              sx={{ display: { xs: "inline-flex", md: "none" }, color: textoGrande, "&:hover": { bgcolor: alpha(NEGRO, 0.08) } }}
+              sx={{ display: { xs: "inline-flex", md: "none" }, color: textoGrande, border: bordeAmarillo, "&:hover": { bgcolor: alpha(NEGRO, 0.08) } }}
             >
               <MenuIcon />
             </IconButton>

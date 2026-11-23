@@ -17,8 +17,32 @@ export interface Area {
   updated_at: string;
 }
 
+/** Estado de la vigencia de un evento, calculado por el backend con la fecha de Bogotá:
+ * fuera de "vigente" (o "sin_vigencia", eventos antiguos) no recibe participaciones. */
+export type EstadoVigencia = "sin_vigencia" | "proximo" | "vigente" | "finalizado";
+
+/** Periodo en que se cuenta el límite de participación por persona ("evento" = toda la vigencia). */
+export type PeriodoLimite = "evento" | "dia" | "semana" | "mes";
+
+/** Vigencia y regla de participación propias de cada evento (turnos o actividad). */
+export interface VigenciaYRegla {
+  vigencia_inicio?: string | null;
+  vigencia_fin?: string | null;
+  /** null = sin límite. */
+  limite_participaciones?: number | null;
+  periodo_limite: PeriodoLimite;
+}
+
+export interface EstadoDeVigencia {
+  estado_vigencia: EstadoVigencia;
+  /** Cuándo la tarea programada registró el fin de la vigencia (solo informativo). */
+  finalizado_en?: string | null;
+  /** La regla de participación en palabras (redactada por el backend). */
+  regla_participacion: string;
+}
+
 /** "Servicio" es el nombre interno; en el portal público se presenta como "Evento". */
-export interface Servicio {
+export interface Servicio extends VigenciaYRegla, EstadoDeVigencia {
   id: number;
   nombre: string;
   descripcion_corta?: string | null;
@@ -27,8 +51,6 @@ export interface Servicio {
   duracion_minutos: number;
   informacion_adicional?: string | null;
   activo: boolean;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface Agenda {
@@ -52,8 +74,9 @@ export interface AgendaResumen {
   area_nombre: string;
 }
 
-/** Tarjeta pública de un evento por turnos. Duración y disponibilidad salen de sus agendas
- * reservables (ver backend EventoPublico). */
+/** Evento por turnos en el portal. En el catálogo (tarjetas) solo trae información general;
+ * la disponibilidad (`dias_reservables`, `turnos_disponibles`, `proximo_turno_*`) llega
+ * únicamente en el detalle, GET /eventos/{id} (ver backend EventoPublico). */
 export interface EventoPublico {
   id: number;
   nombre: string;
@@ -66,9 +89,19 @@ export interface EventoPublico {
   areas: string[];
   area_ids: number[];
   agendas: AgendaResumen[];
-  turnos_disponibles: number;
+  vigencia_inicio?: string | null;
+  vigencia_fin?: string | null;
+  regla_participacion: string;
+  dias_reservables?: string[] | null;
+  turnos_disponibles?: number | null;
   proximo_turno_fecha?: string | null;
   proximo_turno_hora?: string | null;
+}
+
+/** ¿El colaborador puede reservar en ese evento ese día? (GET /reservas/verificar). */
+export interface VerificacionReserva {
+  permitido: boolean;
+  motivo?: string | null;
 }
 
 export type EstadoSlot = "disponible" | "ocupado" | "bloqueado" | "pasado";
@@ -158,7 +191,7 @@ export interface ReservaCreada extends Reserva {
 }
 
 /** Respuesta de acciones administrativas que no cancelan reservas pero las afectan
- * (desactivar evento/área/agenda, crear bloqueo o festivo). */
+ * (desactivar evento/área/agenda, acortar la vigencia de un evento, crear bloqueo o festivo). */
 export interface ConReservasAfectadas {
   reservas_afectadas: ReservaAdmin[];
   /** Solo al desactivar un área: actividades activas que quedan ocultas del portal. */
@@ -262,14 +295,11 @@ export interface ConfiguracionGeneral {
   imagen_bienvenida_url?: string | null;
   color_boton_disponibilidad?: string | null;
   color_fondo_bienvenida?: string | null;
-  evento_unico_por_semana?: boolean;
   contacto_correo?: string | null;
   contacto_telefono?: string | null;
   contacto_direccion?: string | null;
   terminos_condiciones?: string | null;
   zona_horaria: string;
-  semana_activa_inicio?: string | null;
-  semana_activa_fin?: string | null;
 }
 
 /** Plantilla efectiva del correo de confirmación de reserva (ver GET /configuracion/plantilla-correo). */
@@ -356,7 +386,7 @@ export interface ResumenSesiones {
   cupos_disponibles?: number | null; // null = alguna sesión sin límite
 }
 
-export interface Actividad {
+export interface Actividad extends VigenciaYRegla, EstadoDeVigencia {
   id: number;
   /** null solo en actividades creadas antes de que el área fuera obligatoria. */
   area_id?: number | null;
@@ -367,9 +397,8 @@ export interface Actividad {
   imagen_url?: string | null;
   informacion_adicional?: string | null;
   campos_formulario: CampoFormulario[];
+  /** Pausa manual de las inscripciones del portal (el administrador sí puede inscribir). */
   inscripcion_abierta: boolean;
-  fecha_apertura_inscripciones?: string | null;
-  fecha_cierre_inscripciones?: string | null;
   activo: boolean;
   estado_inscripcion: EstadoActividad;
   resumen: ResumenSesiones;
@@ -388,8 +417,9 @@ export interface ActividadPublica {
   campos_formulario: CampoFormulario[];
   inscripcion_disponible: boolean;
   estado_inscripcion: EstadoActividad;
-  fecha_apertura_inscripciones?: string | null;
-  fecha_cierre_inscripciones?: string | null;
+  vigencia_inicio?: string | null;
+  vigencia_fin?: string | null;
+  regla_participacion: string;
   resumen: ResumenSesiones;
 }
 
@@ -405,8 +435,11 @@ export interface Sesion {
   inscritos: number;
   cupos_disponibles?: number | null; // null = sin límite
   estado: EstadoSesion;
-  /** Solo en el portal con sesión iniciada: si el colaborador ya está inscrito. */
+  /** Solo en el portal con sesión iniciada: si el colaborador ya está inscrito, si puede
+   * inscribirse (estado de la sesión + límite de participación) y por qué no. */
   inscrito?: boolean | null;
+  puede_inscribirse?: boolean | null;
+  motivo_no_disponible?: string | null;
 }
 
 export type EstadoInscripcion = "activa" | "cancelada" | "completada" | "no_asistio";

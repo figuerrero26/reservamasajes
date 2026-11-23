@@ -9,6 +9,9 @@ import type { Actividad, Area, CampoFormulario, TipoCampoFormulario } from "../.
 import { actualizarActividad, crearActividad } from "../../services/actividades";
 import { mensajeError } from "../../utils/errors";
 import AreaSelect from "./AreaSelect";
+import ImagenEventoCampo, { errorImagen } from "./ImagenEventoCampo";
+import ReglaParticipacionCampo, { errorRegla, reglaDesde, reglaPorDefecto, type ReglaForm } from "./ReglaParticipacionCampo";
+import VigenciaCampos, { errorVigencia, vigenciaDesde, vigenciaPorDefecto, type VigenciaForm } from "./VigenciaCampos";
 
 const TIPOS_CAMPO: { value: TipoCampoFormulario; label: string }[] = [
   { value: "texto", label: "Texto" },
@@ -25,8 +28,8 @@ interface Formulario {
   imagenUrl: string;
   informacionAdicional: string;
   inscripcionAbierta: boolean;
-  fechaApertura: string;
-  fechaCierre: string;
+  vigencia: VigenciaForm;
+  regla: ReglaForm;
   campos: CampoFormulario[];
 }
 
@@ -49,8 +52,8 @@ function aFormulario(a: Actividad | null, areaInicial: number | ""): Formulario 
     imagenUrl: a?.imagen_url ?? "",
     informacionAdicional: a?.informacion_adicional ?? "",
     inscripcionAbierta: a?.inscripcion_abierta ?? true,
-    fechaApertura: a?.fecha_apertura_inscripciones?.slice(0, 16) ?? "",
-    fechaCierre: a?.fecha_cierre_inscripciones?.slice(0, 16) ?? "",
+    vigencia: a ? vigenciaDesde(a.vigencia_inicio, a.vigencia_fin) : vigenciaPorDefecto(),
+    regla: a ? reglaDesde("actividad", a.limite_participaciones, a.periodo_limite) : reglaPorDefecto("actividad"),
     campos: a?.campos_formulario ?? [],
   };
 }
@@ -64,9 +67,10 @@ interface Props {
   onGuardada: (actividad: Actividad, creada: boolean) => void;
 }
 
-/** Actividad con inscripción y cupo. El área es obligatoria y va primero. Al crearla se
- * puede definir de una vez la primera sesión (fecha, horario, cupo y lugar): actividad y
- * sesión se guardan en una sola operación. */
+/** Actividad con inscripción y cupo. El área es obligatoria y va primero; la vigencia define
+ * cuándo se publica y recibe inscripciones, y la regla de participación cuántas veces puede
+ * inscribirse cada persona. Al crearla se puede definir de una vez la primera sesión (fecha,
+ * horario, cupo y lugar): actividad y sesión se guardan en una sola operación. */
 export default function ActividadFormDialog({ abierto, actividad, areas, areaInicial = "", onCerrar, onGuardada }: Props) {
   const [form, setForm] = useState<Formulario>(aFormulario(null, ""));
   const [sesion, setSesion] = useState<PrimeraSesion>(SESION_VACIA);
@@ -84,18 +88,19 @@ export default function ActividadFormDialog({ abierto, actividad, areas, areaIni
   const sesionIniciada = Object.values(sesion).some((v) => v.trim() !== "");
   const sesionCompleta = !!sesion.fecha && !!sesion.hora_inicio && !!sesion.hora_fin;
   const clavesRepetidas = new Set(form.campos.map((c) => c.clave)).size !== form.campos.length;
-  const ventanaInvalida = !!form.fechaApertura && !!form.fechaCierre && form.fechaCierre <= form.fechaApertura;
 
   const problema =
     form.areaId === "" ? "Selecciona el área."
       : !form.nombre.trim() ? "Escribe el nombre."
-        : clavesRepetidas ? "Cada pregunta debe tener una clave distinta."
-          : ventanaInvalida ? "El cierre de inscripciones debe ser posterior a la apertura."
+        : errorImagen(form.imagenUrl) ?? errorVigencia(form.vigencia, creando) ?? errorRegla(form.regla, "actividad")
+          ?? (clavesRepetidas ? "Cada pregunta debe tener una clave distinta."
             : form.campos.some((c) => !c.clave.trim() || !c.etiqueta.trim() || (c.tipo === "seleccion" && !(c.opciones ?? []).length))
               ? "Completa las preguntas del formulario."
               : creando && sesionIniciada && !sesionCompleta ? "Completa la fecha y el horario de la primera sesión, o déjala vacía."
                 : creando && sesionCompleta && sesion.hora_fin <= sesion.hora_inicio ? "La sesión debe terminar después de empezar."
-                  : null;
+                  : creando && sesionCompleta && sesion.fecha < form.vigencia.inicio
+                    ? "La primera sesión no puede ser anterior al inicio de la vigencia."
+                    : null);
 
   const actualizarCampo = (idx: number, cambios: Partial<CampoFormulario>) =>
     setForm({ ...form, campos: form.campos.map((c, i) => (i === idx ? { ...c, ...cambios } : c)) });
@@ -113,8 +118,10 @@ export default function ActividadFormDialog({ abierto, actividad, areas, areaIni
       informacion_adicional: form.informacionAdicional.trim() || null,
       campos_formulario: form.campos,
       inscripcion_abierta: form.inscripcionAbierta,
-      fecha_apertura_inscripciones: form.fechaApertura || null,
-      fecha_cierre_inscripciones: form.fechaCierre || null,
+      vigencia_inicio: form.vigencia.inicio,
+      vigencia_fin: form.vigencia.fin,
+      limite_participaciones: form.regla.limite,
+      periodo_limite: form.regla.periodo,
     };
     try {
       const guardada = actividad
@@ -144,6 +151,9 @@ export default function ActividadFormDialog({ abierto, actividad, areas, areaIni
           {actividad && actividad.area_id == null && (
             <Alert severity="warning">Esta actividad se creó antes de que el área fuera obligatoria: asígnale una.</Alert>
           )}
+          {actividad?.estado_vigencia === "sin_vigencia" && (
+            <Alert severity="warning">Esta actividad no tiene vigencia: defínela para controlar cuándo se publica.</Alert>
+          )}
           <Typography variant="overline" color="text.secondary">1 · Área</Typography>
           <AreaSelect areas={areas} valor={form.areaId} onChange={(id) => setForm({ ...form, areaId: id })} />
 
@@ -154,29 +164,30 @@ export default function ActividadFormDialog({ abierto, actividad, areas, areaIni
             onChange={(e) => setForm({ ...form, descripcionCorta: e.target.value })} inputProps={{ maxLength: 300 }} fullWidth />
           <TextField label="Descripción larga" value={form.descripcionLarga} multiline minRows={3}
             onChange={(e) => setForm({ ...form, descripcionLarga: e.target.value })} fullWidth />
-          <TextField label="URL de la imagen (opcional)" value={form.imagenUrl}
-            onChange={(e) => setForm({ ...form, imagenUrl: e.target.value })} fullWidth />
+          <ImagenEventoCampo valor={form.imagenUrl} onChange={(imagenUrl) => setForm((f) => ({ ...f, imagenUrl }))} />
           <TextField label="Información adicional" helperText="Recomendaciones o instrucciones (también va en el correo de confirmación)"
             value={form.informacionAdicional} multiline minRows={2}
             onChange={(e) => setForm({ ...form, informacionAdicional: e.target.value })} fullWidth />
 
           <Divider />
-          <Typography variant="overline" color="text.secondary">3 · Inscripciones</Typography>
+          <Typography variant="overline" color="text.secondary">3 · Vigencia e inscripciones</Typography>
+          <VigenciaCampos valor={form.vigencia} onChange={(vigencia) => setForm({ ...form, vigencia })} creando={creando}
+            participaciones="inscripciones" />
           <FormControlLabel
             control={<Switch checked={form.inscripcionAbierta} onChange={(e) => setForm({ ...form, inscripcionAbierta: e.target.checked })} />}
-            label="Inscripciones habilitadas"
+            label={
+              <Box>
+                <Typography variant="body2">Inscripciones habilitadas en el portal</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Apágalo para pausarlas temporalmente dentro de la vigencia (tú sí puedes inscribir desde el panel).
+                </Typography>
+              </Box>
+            }
           />
-          <Grid container spacing={2}>
-            <Grid item xs={12} sm={6}>
-              <TextField label="Apertura (opcional)" type="datetime-local" value={form.fechaApertura} InputLabelProps={{ shrink: true }}
-                onChange={(e) => setForm({ ...form, fechaApertura: e.target.value })} fullWidth />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField label="Cierre (opcional)" type="datetime-local" value={form.fechaCierre} InputLabelProps={{ shrink: true }}
-                onChange={(e) => setForm({ ...form, fechaCierre: e.target.value })} fullWidth
-                error={ventanaInvalida} helperText={ventanaInvalida ? "Debe ser posterior a la apertura" : undefined} />
-            </Grid>
-          </Grid>
+          <Box>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>Regla de participación</Typography>
+            <ReglaParticipacionCampo tipo="actividad" valor={form.regla} onChange={(regla) => setForm({ ...form, regla })} />
+          </Box>
 
           <Box>
             <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
@@ -242,6 +253,7 @@ export default function ActividadFormDialog({ abierto, actividad, areas, areaIni
                 <Grid container spacing={1.5}>
                   <Grid item xs={12} sm={4}>
                     <TextField label="Fecha" type="date" size="small" fullWidth InputLabelProps={{ shrink: true }}
+                      inputProps={{ min: form.vigencia.inicio || undefined }}
                       value={sesion.fecha} onChange={(e) => setSesion({ ...sesion, fecha: e.target.value })} />
                   </Grid>
                   <Grid item xs={6} sm={4}>
@@ -267,6 +279,7 @@ export default function ActividadFormDialog({ abierto, actividad, areas, areaIni
         </Stack>
       </DialogContent>
       <DialogActions>
+        {problema && <Typography variant="caption" color="text.secondary" sx={{ mr: "auto", pl: 1 }}>{problema}</Typography>}
         <Button onClick={onCerrar} disabled={guardando}>Cancelar</Button>
         <Button variant="contained" onClick={guardar} disabled={guardando || !!problema}>
           {guardando ? "Guardando…" : creando ? "Crear actividad" : "Guardar"}

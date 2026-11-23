@@ -1,9 +1,17 @@
 import api from "./api";
-import type { ConReservasAfectadas, Servicio } from "../types";
+import type { ConReservasAfectadas, PeriodoLimite, Servicio } from "../types";
 
 /** Eventos por turnos. Con `areaId`, solo los que tienen agenda en esa área. */
 export const listarServicios = async (areaId?: number) =>
   (await api.get<Servicio[]>("/servicios", { params: areaId ? { area_id: areaId } : {} })).data;
+
+/** Vigencia y regla de participación, comunes a los eventos por turnos y a las actividades. */
+export interface VigenciaPayload {
+  vigencia_inicio: string;
+  vigencia_fin: string;
+  limite_participaciones: number | null;
+  periodo_limite: PeriodoLimite;
+}
 
 /** Área y horario con los que nace un evento por turnos (su primera agenda). */
 export interface AgendaInicialPayload {
@@ -26,12 +34,14 @@ export interface ServicioInfoPayload {
   activo?: boolean;
 }
 
-/** Crea el evento junto con su área y su primera agenda (una sola operación en el backend). */
-export const crearServicio = async (payload: ServicioInfoPayload & { agenda: AgendaInicialPayload }) =>
+/** Crea el evento junto con su área, su primera agenda y su vigencia (una sola operación). */
+export const crearServicio = async (payload: ServicioInfoPayload & VigenciaPayload & { agenda: AgendaInicialPayload }) =>
   (await api.post<Servicio>("/servicios", payload)).data;
 
-export const actualizarServicio = async (id: number, payload: Partial<ServicioInfoPayload>) =>
-  (await api.put<Servicio>(`/servicios/${id}`, payload)).data;
+/** Si se acorta la vigencia, `reservas_afectadas` trae las reservas futuras que quedaron fuera
+ * del nuevo periodo (se conservan: el administrador decide si las cancela). */
+export const actualizarServicio = async (id: number, payload: Partial<ServicioInfoPayload & VigenciaPayload>) =>
+  (await api.put<Servicio & ConReservasAfectadas>(`/servicios/${id}`, payload)).data;
 
 /** Corta nuevas reservas del evento; devuelve las reservas futuras que se conservan. */
 export const desactivarServicio = async (id: number) =>

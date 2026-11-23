@@ -5,11 +5,9 @@ import {
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import { Link as RouterLink } from "react-router-dom";
 import type { AgendaPublica, ReservaCreada, Slot } from "../types";
-import { crearReserva, misReservas } from "../services/reservas";
-import { obtenerPerfil } from "../services/cuenta";
+import { crearReserva, verificarReserva } from "../services/reservas";
 import { mensajeError, esConflicto } from "../utils/errors";
 import { formatearFechaLarga, formatearHora } from "../utils/fechas";
-import { useConfig } from "../hooks/useConfig";
 import { useUsuarioAuth } from "../hooks/useUsuarioAuth";
 
 interface Props {
@@ -25,9 +23,6 @@ interface Props {
   onReservada?: (reserva: ReservaCreada) => void;
 }
 
-const MENSAJE_EVENTO_DIA = "Ya tienes una reserva para este evento en esta fecha.";
-const MENSAJE_EVENTO_SEMANA = "Ya tienes una reserva para este evento esta semana.";
-
 function Fila({ label, valor }: { label: string; valor: string }) {
   return (
     <Stack direction="row" justifyContent="space-between" spacing={2}>
@@ -39,34 +34,22 @@ function Fila({ label, valor }: { label: string; valor: string }) {
 
 export default function ReservationDialog({ open, agenda, fecha, slot, onClose, onConflicto, onReservada }: Props) {
   const { nombre, correo } = useUsuarioAuth();
-  const config = useConfig();
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reservaCreada, setReservaCreada] = useState<ReservaCreada | null>(null);
-  const [yaReservado, setYaReservado] = useState(false);
-  const [conflictoSemana, setConflictoSemana] = useState(false);
+  const [impedimento, setImpedimento] = useState<string | null>(null);
   const [verificando, setVerificando] = useState(true);
 
-  // Aviso previo, en espejo de la regla del backend (una reserva activa por evento por día,
-  // o por semana activa si está configurado), salvo la excepción habilitada por el admin.
-  // La barrera real está en el backend; esto solo avisa antes de confirmar.
+  // Aviso previo con la MISMA regla del backend (vigencia del evento y su límite de
+  // participación por persona, con la excepción que habilita el administrador). La barrera
+  // real está en el backend al confirmar; esto solo avisa antes.
   useEffect(() => {
     let cancelado = false;
     setVerificando(true);
-    setYaReservado(false);
-    Promise.all([misReservas(), obtenerPerfil()])
-      .then(([reservas, perfil]) => {
-        if (cancelado) return;
-        const rango =
-          config.evento_unico_por_semana && config.semana_activa_inicio && config.semana_activa_fin
-            ? { inicio: config.semana_activa_inicio, fin: config.semana_activa_fin }
-            : null;
-        const otra = reservas.find((r) => {
-          if (r.estado !== "activa" || r.servicio_id !== agenda.servicio_id) return false;
-          return rango ? r.fecha >= rango.inicio && r.fecha <= rango.fin : r.fecha === fecha;
-        });
-        setConflictoSemana(!!otra && !!rango && otra.fecha !== fecha);
-        setYaReservado(!!otra && !perfil.permite_reservas_multiples);
+    setImpedimento(null);
+    verificarReserva(agenda.id, fecha)
+      .then((v) => {
+        if (!cancelado) setImpedimento(v.permitido ? null : v.motivo || "No puedes reservar en este evento ese día.");
       })
       .catch(() => undefined) // si falla la verificación, el backend igual protege al confirmar
       .finally(() => {
@@ -75,7 +58,7 @@ export default function ReservationDialog({ open, agenda, fecha, slot, onClose, 
     return () => {
       cancelado = true;
     };
-  }, [agenda.servicio_id, fecha, config.evento_unico_por_semana, config.semana_activa_inicio, config.semana_activa_fin]);
+  }, [agenda.id, fecha]);
 
   async function confirmar() {
     setEnviando(true);
@@ -116,9 +99,7 @@ export default function ReservationDialog({ open, agenda, fecha, slot, onClose, 
       <DialogTitle>Confirmar reserva</DialogTitle>
       <DialogContent>
         <Stack spacing={1.25}>
-          {yaReservado && (
-            <Alert severity="warning">{conflictoSemana ? MENSAJE_EVENTO_SEMANA : MENSAJE_EVENTO_DIA}</Alert>
-          )}
+          {impedimento && <Alert severity="warning">{impedimento}</Alert>}
           {error && <Alert severity="error">{error}</Alert>}
           <Box sx={{ p: 2, borderRadius: 2, bgcolor: "background.default", border: 1, borderColor: "divider" }}>
             <Typography variant="subtitle1">{agenda.servicio_nombre}</Typography>
@@ -134,7 +115,7 @@ export default function ReservationDialog({ open, agenda, fecha, slot, onClose, 
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={enviando}>Cancelar</Button>
-        <Button variant="contained" onClick={confirmar} disabled={enviando || verificando || yaReservado}>
+        <Button variant="contained" onClick={confirmar} disabled={enviando || verificando || !!impedimento}>
           {enviando ? "Reservando…" : "Confirmar reserva"}
         </Button>
       </DialogActions>

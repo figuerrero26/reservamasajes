@@ -1,7 +1,8 @@
 import api from "./api";
 import apiUsuario from "./apiUsuario";
 import type {
-  AgendaDia, CancelarLoteResultado, HorariosResponse, MiReserva, Reserva, ReservaCreada,
+  AgendaDia, CancelarLoteResultado, HorariosResponse, MiReserva, Reserva, ReservaAdmin, ReservaCreada,
+  VerificacionReserva,
 } from "../types";
 
 // ---- Portal público (requiere sesión de usuario, salvo horarios que es abierto) ----
@@ -21,6 +22,15 @@ export async function crearReserva(payload: {
   return data;
 }
 
+/** Antes de elegir un turno: ¿el colaborador puede reservar en este evento ese día? (vigencia
+ * del evento y límite de participación). La validación definitiva ocurre al reservar. */
+export async function verificarReserva(agendaId: number, fecha: string): Promise<VerificacionReserva> {
+  const { data } = await apiUsuario.get<VerificacionReserva>("/reservas/verificar", {
+    params: { agenda_id: agendaId, fecha },
+  });
+  return data;
+}
+
 export async function misReservas(): Promise<MiReserva[]> {
   const { data } = await apiUsuario.get<MiReserva[]>("/reservas/mias");
   return data;
@@ -32,6 +42,12 @@ export async function cancelarReservaPropia(id: number): Promise<Reserva> {
 }
 
 // ---- Administración ----
+/** Historial de reservas de un evento (todas, en cualquier estado; también de eventos finalizados). */
+export async function buscarReservas(filtros: { servicio_id?: number; estado?: string }): Promise<ReservaAdmin[]> {
+  const { data } = await api.get<ReservaAdmin[]>("/reservas", { params: filtros });
+  return data;
+}
+
 export async function obtenerDia(fecha: string, servicioId?: number): Promise<AgendaDia[]> {
   const { data } = await api.get<AgendaDia[]>("/reservas/dia", {
     params: { fecha, servicio_id: servicioId },

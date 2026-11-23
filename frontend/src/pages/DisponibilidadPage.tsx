@@ -5,7 +5,10 @@ import {
   Grid, Stack, Typography,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
+import RuleOutlinedIcon from "@mui/icons-material/RuleOutlined";
 import Loader from "../components/Loader";
+import { PortadaEvento } from "../components/EventCard";
 import EmptyState from "../components/EmptyState";
 import AgendaCard from "../components/AgendaCard";
 import WeekCalendar from "../components/WeekCalendar";
@@ -13,8 +16,8 @@ import ReservationDialog from "../components/ReservationDialog";
 import type { AgendaPublica, EventoPublico, Slot } from "../types";
 import { obtenerEvento } from "../services/eventos";
 import { listarAgendasPublicas } from "../services/agendas";
-import { obtenerDiasReservables } from "../services/configuracion";
 import { mensajeError } from "../utils/errors";
+import { textoVigencia } from "../utils/fechas";
 import { useUsuarioAuth } from "../hooks/useUsuarioAuth";
 
 const CLAVE_RESERVA_PENDIENTE = "reserva_pendiente";
@@ -51,14 +54,14 @@ export default function DisponibilidadPage() {
     setAgendaSeleccionada(null);
     setSeleccion(null);
 
-    // Los días los decide el backend (semana activa desde hoy o días hábiles restantes): es la
-    // misma regla con la que se calcula la disponibilidad que muestran las tarjetas.
-    Promise.all([obtenerEvento(eventoId), listarAgendasPublicas(eventoId), obtenerDiasReservables()])
-      .then(([eventoData, agendasData, diasReservables]) => {
+    // Los días los decide el backend (dentro de la vigencia del evento, desde hoy): es la misma
+    // regla con la que valida cada reserva.
+    Promise.all([obtenerEvento(eventoId), listarAgendasPublicas(eventoId)])
+      .then(([eventoData, agendasData]) => {
         setEvento(eventoData);
         setAgendas(agendasData);
         if (agendasData.length === 1) setAgendaSeleccionada(agendasData[0]);
-        setDias(diasReservables);
+        setDias(eventoData.dias_reservables ?? []);
       })
       .catch((e) => setError(mensajeError(e, "No se pudo cargar el evento.")))
       .finally(() => setCargando(false));
@@ -138,16 +141,27 @@ export default function DisponibilidadPage() {
                 : `Sesiones de ${evento.duracion_minutos}–${evento.duracion_maxima} min`}
             />
             {evento.areas.map((a) => <Chip key={a} size="small" variant="outlined" label={a} />)}
+            {textoVigencia(evento.vigencia_inicio, evento.vigencia_fin) && (
+              <Chip
+                size="small" variant="outlined" icon={<EventOutlinedIcon />}
+                label={textoVigencia(evento.vigencia_inicio, evento.vigencia_fin)}
+              />
+            )}
+            {/* La disponibilidad se muestra solo aquí, en el detalle (no en las tarjetas). */}
             <Chip
               size="small"
-              color={evento.turnos_disponibles > 0 ? "primary" : "default"}
-              label={evento.turnos_disponibles > 0 ? `${evento.turnos_disponibles} turnos disponibles` : "Sin turnos disponibles"}
+              color={(evento.turnos_disponibles ?? 0) > 0 ? "primary" : "default"}
+              label={(evento.turnos_disponibles ?? 0) > 0 ? `${evento.turnos_disponibles} turnos disponibles` : "Sin turnos disponibles"}
             />
+          </Stack>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.5, color: "text.secondary" }}>
+            <RuleOutlinedIcon sx={{ fontSize: 18 }} />
+            <Typography variant="body2">{evento.regla_participacion}</Typography>
           </Stack>
         </Grid>
         {evento.imagen_url && (
           <Grid item xs={12} md={5}>
-            <Box component="img" src={evento.imagen_url} alt="" sx={{ width: "100%", aspectRatio: "4 / 3", objectFit: "cover", borderRadius: 4 }} />
+            <PortadaEvento imagenUrl={evento.imagen_url} proporcion="4 / 3" radio={4} />
           </Grid>
         )}
       </Grid>
@@ -176,7 +190,7 @@ export default function DisponibilidadPage() {
       {agendaSeleccionada && dias.length === 0 && (
         <EmptyState
           titulo="No hay fechas abiertas para reservar"
-          descripcion="El periodo de reservas configurado ya terminó. Pronto se publicarán nuevas fechas."
+          descripcion="Este evento ya no tiene días disponibles dentro de su vigencia."
         />
       )}
 

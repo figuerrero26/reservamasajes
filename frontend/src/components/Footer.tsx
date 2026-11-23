@@ -89,8 +89,14 @@ export default function Footer() {
               Términos y condiciones
             </Link>
           </Typography>
-          <Typography sx={{ alignSelf: { xs: "flex-end", sm: "auto" }, color: alpha(TEXTO, 0.38), fontSize: "0.68rem", letterSpacing: "0.04em" }}>
-            @PYP YP
+          {/* Firma mínima, abajo a la derecha: muy pequeña y casi transparente. */}
+          <Typography
+            sx={{
+              alignSelf: "flex-end", ml: "auto", color: alpha(TEXTO, 0.22), fontSize: "0.6rem",
+              letterSpacing: "0.05em", lineHeight: 1, userSelect: "none",
+            }}
+          >
+            @For YP
           </Typography>
         </Stack>
       </Container>
