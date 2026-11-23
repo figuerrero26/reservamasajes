@@ -1,4 +1,8 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+# La fortaleza de las contraseñas nuevas se valida en el servicio (app/auth/politica_password.py),
+# con el usuario y el nombre de la cuenta: aquí solo se acota el tamaño del campo.
+_MAX_CAMPO_PASSWORD = 256
 
 
 class LoginRequest(BaseModel):
@@ -14,11 +18,21 @@ class TokenResponse(BaseModel):
 
 
 class CambiarPasswordRequest(BaseModel):
-    password_actual: str
-    password_nueva: str = Field(min_length=8, max_length=72)
+    """Cambio de la contraseña PROPIA: exige la actual. `password_confirmacion` es opcional
+    por compatibilidad; si se envía, debe coincidir."""
+    password_actual: str = Field(max_length=_MAX_CAMPO_PASSWORD)
+    password_nueva: str = Field(min_length=1, max_length=_MAX_CAMPO_PASSWORD)
+    password_confirmacion: str | None = Field(default=None, max_length=_MAX_CAMPO_PASSWORD)
+
+    @model_validator(mode="after")
+    def _confirmacion(self):
+        if self.password_confirmacion is not None and self.password_confirmacion != self.password_nueva:
+            raise ValueError("La confirmación no coincide con la nueva contraseña.")
+        return self
 
 
 class ResetPasswordRequest(BaseModel):
-    """Restablecimiento de contraseña ejecutado por otro administrador o por el script de soporte."""
+    """Restablecimiento de la contraseña de OTRO administrador, identificado por su usuario
+    (equivalente a POST /administradores/{id}/password)."""
     usuario: str
-    password_nueva: str = Field(min_length=8, max_length=72)
+    password_nueva: str = Field(min_length=1, max_length=_MAX_CAMPO_PASSWORD)

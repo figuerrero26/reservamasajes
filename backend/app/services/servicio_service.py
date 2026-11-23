@@ -153,33 +153,40 @@ class ServicioService:
             raise Conflict("Ya existe un evento con ese nombre")
 
     def crear(self, data: ServicioCreate, admin_id: int) -> Servicio:
-        """Crea el evento y su primera agenda (área + horario) en una sola transacción: si
-        algo falla, no queda un evento suelto sin área."""
+        """Crea el evento y sus agendas (área + horario de atención + duración de turnos) en
+        una sola transacción: si algo falla, no queda un evento suelto sin área ni una
+        agenda a medias."""
         self._validar_nombre(data.nombre)
         if data.vigencia_fin < today():
             raise DomainError("La fecha de finalización ya pasó: define una vigencia actual o futura.")
-        area = self.areas.get(data.agenda.area_id)
-        if not area or not area.activo:
-            raise DomainError("Selecciona un área activa para el evento.")
+        areas = []
+        for agenda_inicial in data.agendas:
+            area = self.areas.get(agenda_inicial.area_id)
+            if not area or not area.activo:
+                raise DomainError("Selecciona un área activa para cada agenda del evento.")
+            areas.append(area)
         limite, periodo = normalizar_regla_reserva(data.limite_participaciones, data.periodo_limite)
 
-        datos = data.model_dump(exclude={"agenda"})
+        datos = data.model_dump(exclude={"agenda", "agendas", "tipo"})
         datos.update(limite_participaciones=limite, periodo_limite=periodo)
-        # La duración visible del evento es la de su agenda (ya no se pide por separado).
-        datos["duracion_minutos"] = data.agenda.duracion_minutos
+        # La duración visible del evento sale de sus agendas (ya no se pide por separado).
+        datos["duracion_minutos"] = min(a.duracion_minutos for a in data.agendas)
         serv = self.repo.add(Servicio(**datos))
 
-        datos_agenda = data.agenda.model_dump()
-        datos_agenda["nombre"] = (datos_agenda.get("nombre") or f"{serv.nombre} - {area.nombre}")[:140]
-        agenda = self.agendas.add(Agenda(servicio_id=serv.id, activo=True, **datos_agenda))
+        creadas = []
+        for agenda_inicial, area in zip(data.agendas, areas):
+            datos_agenda = agenda_inicial.model_dump()
+            datos_agenda["nombre"] = (datos_agenda.get("nombre") or f"{serv.nombre} - {area.nombre}")[:140]
+            creadas.append(self.agendas.add(Agenda(servicio_id=serv.id, activo=True, **datos_agenda)))
 
         auditoria_service.registrar(
             self.db, admin_id, "crear", "servicio", serv.id,
-            datos_nuevos={**snapshot(serv, CAMPOS), "area_id": area.id},
+            datos_nuevos={**snapshot(serv, CAMPOS), "area_id": areas[0].id, "areas": [a.id for a in areas]},
         )
-        auditoria_service.registrar(
-            self.db, admin_id, "crear", "agenda", agenda.id, datos_nuevos=snapshot(agenda, CAMPOS_AGENDA),
-        )
+        for agenda in creadas:
+            auditoria_service.registrar(
+                self.db, admin_id, "crear", "agenda", agenda.id, datos_nuevos=snapshot(agenda, CAMPOS_AGENDA),
+            )
         self.db.commit()
         return serv
 
@@ -194,7 +201,7 @@ class ServicioService:
         del nuevo periodo se CONSERVAN y se devuelven para que el administrador decida (las
         puede cancelar aparte, con notificación)."""
         serv = self.obtener(servicio_id)
-        cambios = data.model_dump(exclude_unset=True)
+        cambios = data.model_dump(exclude_unset=True, exclude={"tipo"})
         nulos = sorted(k for k, v in cambios.items() if v is None and k in NO_NULOS)
         if nulos:
             raise DomainError(f"Estos campos no pueden quedar vacíos: {', '.join(nulos)}")

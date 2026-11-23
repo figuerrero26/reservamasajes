@@ -1,8 +1,7 @@
-import hashlib
-
 from sqlalchemy.orm import Session
 
 from app.auth.security import create_access_token, decode_token, hash_password, verify_password
+from app.auth.security import huella_password as _huella_password
 from app.config import settings
 from app.models import Usuario
 from app.repositories.usuario_repository import UsuarioRepository
@@ -12,13 +11,10 @@ from app.services.errors import Conflict, DomainError, NotFound
 
 ENLACE_INVALIDO = "El enlace no es válido o ya expiró. Solicita uno nuevo."
 
-
-def _huella_password(password_hash: str) -> str:
-    """Foto corta del hash de contraseña vigente al emitir el token de restablecimiento.
-    Al redimir el token se compara contra la huella actual: si la contraseña ya cambió
-    (porque el token se usó antes, o se cambió por otra vía), la huella no coincide y el
-    token queda invalidado — sin necesidad de guardar estado del token en la base de datos."""
-    return hashlib.sha256(password_hash.encode()).hexdigest()[:16]
+# `_huella_password`: foto corta del hash vigente al emitir el token de restablecimiento. Al
+# redimir el token se compara contra la huella actual: si la contraseña ya cambió (porque el
+# token se usó antes, o se cambió por otra vía), no coincide y el token queda invalidado —
+# sin guardar estado del token en la base de datos.
 
 
 class UsuarioAuthService:

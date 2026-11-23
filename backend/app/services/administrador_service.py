@@ -3,15 +3,18 @@ from sqlalchemy.orm import Session
 from app.auth.security import hash_password
 from app.models import Administrador, Rol
 from app.repositories.administrador_repository import AdministradorRepository
-from app.schemas.administrador import AdministradorCreate, AdministradorOut
+from app.schemas.administrador import AdministradorCreate, AdministradorOut, RestablecerPasswordAdmin
 from app.services import auditoria_service
+from app.services.auth_service import AuthService
 from app.services.errors import Conflict, NotFound
+from app.utils.time import now
 
 
 def _a_schema(admin: Administrador) -> AdministradorOut:
     return AdministradorOut(
         id=admin.id, usuario=admin.usuario, nombre=admin.nombre,
         rol=admin.rol.nombre, activo=admin.activo, created_at=admin.created_at,
+        password_actualizada_en=admin.password_actualizada_en,
     )
 
 
@@ -30,12 +33,24 @@ class AdministradorService:
         admin = self.repo.add(Administrador(
             usuario=data.usuario, nombre=data.nombre,
             hash_password=hash_password(data.password), rol_id=rol.id,
+            password_actualizada_en=now().replace(tzinfo=None),
         ))
         auditoria_service.registrar(
             self.db, actor_admin_id, "crear_administrador", "administrador", admin.id,
             datos_nuevos={"usuario": admin.usuario, "nombre": admin.nombre, "rol": data.rol},
         )
         self.db.commit()
+        return _a_schema(admin)
+
+    def restablecer_password(self, admin_id: int, data: RestablecerPasswordAdmin, actor_admin_id: int,
+                             ip: str | None = None, user_agent: str | None = None) -> AdministradorOut:
+        """Contraseña nueva para otra cuenta administrativa (ver AuthService.restablecer_password)."""
+        admin = self.repo.get(admin_id)
+        if not admin:
+            raise NotFound("Administrador no encontrado")
+        AuthService(self.db).restablecer_password(
+            actor_admin_id, admin, data.password_nueva, ip=ip, user_agent=user_agent,
+        )
         return _a_schema(admin)
 
     def desactivar(self, admin_id: int, actor_admin_id: int) -> AdministradorOut:

@@ -1,16 +1,21 @@
 from datetime import date, datetime, time
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from app.schemas.agenda import DURACION_MAX, DURACION_MIN, normalizar_dias, validar_horario
 from app.schemas.reserva import ReservaAdminOut
+from app.schemas.tipo_evento import EsquemaDeReserva
 from app.schemas.vigencia import ConImagen, EstadoVigencia, PeriodoLimite, VigenciaYReglaCreate, VigenciaYReglaUpdate
 from app.utils.vigencia import describir_regla
 
+MAX_AGENDAS_INICIALES = 20
 
-class AgendaInicial(BaseModel):
-    """Área y horario con los que nace un evento por turnos. El área es obligatoria: un
-    evento siempre queda registrado en al menos un área (a través de su agenda)."""
+
+class AgendaInicial(EsquemaDeReserva):
+    """Área (lugar) y horario de atención con los que nace un evento de reserva. El área es
+    obligatoria: un evento siempre queda registrado en al menos un área (a través de su
+    agenda). `nombre` puede identificar el espacio o el profesional que atiende."""
     area_id: int
     nombre: str | None = Field(default=None, max_length=140)  # por defecto "Evento - Área"
     hora_inicio: time
@@ -31,19 +36,39 @@ class AgendaInicial(BaseModel):
         return self
 
 
-class ServicioCreate(ConImagen, VigenciaYReglaCreate):
-    """Un evento por turnos se crea siempre junto con su área y su primera agenda (en la
-    misma transacción), con su vigencia y su regla de participación. Para ofrecerlo en otra
-    área se le agrega otra agenda."""
+class ServicioCreate(EsquemaDeReserva, ConImagen, VigenciaYReglaCreate):
+    """Un evento de reserva se crea siempre junto con sus agendas (área + horario de atención
+    + duración de los turnos), en la misma transacción, con su vigencia y su regla de
+    reserva. `agendas` admite varias áreas de una vez; `agenda` (una sola) se conserva por
+    compatibilidad. Solo acepta campos de reserva: los de inscripción (sesiones, cupos,
+    formulario…) se rechazan."""
+    tipo: Literal["reserva"] | None = None
     nombre: str = Field(min_length=1, max_length=120)
     descripcion_corta: str | None = Field(default=None, max_length=255)
     descripcion_larga: str | None = None
     informacion_adicional: str | None = None
     activo: bool = True
-    agenda: AgendaInicial
+    agenda: AgendaInicial | None = None
+    agendas: list[AgendaInicial] = Field(default_factory=list, max_length=MAX_AGENDAS_INICIALES)
+
+    @model_validator(mode="after")
+    def _agendas(self):
+        if self.agenda is not None:
+            if self.agendas:
+                raise ValueError("Envía las agendas en «agendas» (o una sola en «agenda»), no en ambos.")
+            self.agendas = [self.agenda]
+        if not self.agendas:
+            raise ValueError("Define al menos una agenda (área y horario de atención) para el evento.")
+        areas = [a.area_id for a in self.agendas]
+        if len(areas) != len(set(areas)):
+            raise ValueError("Cada agenda del evento debe estar en un área distinta.")
+        return self
 
 
-class ServicioUpdate(ConImagen, VigenciaYReglaUpdate):
+class ServicioUpdate(EsquemaDeReserva, ConImagen, VigenciaYReglaUpdate):
+    """Edición de la información, la vigencia y la regla de reserva. Las áreas, horarios y
+    turnos se editan en cada agenda del evento (PUT /agendas/{id})."""
+    tipo: Literal["reserva"] | None = None
     nombre: str | None = Field(default=None, min_length=1, max_length=120)
     descripcion_corta: str | None = Field(default=None, max_length=255)
     descripcion_larga: str | None = None

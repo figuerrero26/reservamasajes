@@ -131,7 +131,15 @@ def test_redaccion_de_las_reglas():
     assert describir_regla_reserva(1, "dia") == "Una reserva por persona por día; puedes repetir en días diferentes."
     assert describir_regla_reserva(1, "evento") == "Una sola reserva por persona durante toda la vigencia del evento."
     assert describir_regla_reserva(3, "semana") == "Hasta 3 reservas por persona por semana, en días distintos."
-    assert describir_regla_inscripcion(None, "evento") == "Sin límite de inscripciones por persona (una por sesión)."
+    # Las inscripciones se describen en fechas (sesiones), nunca en turnos ni días de reserva.
+    assert describir_regla_inscripcion(None, "evento") == (
+        "Sin límite por persona: puedes inscribirte en todas las fechas que quieras (una vez en cada una)."
+    )
+    assert describir_regla_inscripcion(1, "evento") == (
+        "Una sola inscripción por persona: puedes participar en una de las fechas de esta actividad."
+    )
+    assert describir_regla_inscripcion(3, "evento") == "Hasta 3 inscripciones por persona en esta actividad (una por fecha)."
+    assert describir_regla_inscripcion(1, "semana") == "Una inscripción por persona por semana."
     assert describir_regla_inscripcion(2, "mes") == "Hasta 2 inscripciones por persona por mes."
 
 

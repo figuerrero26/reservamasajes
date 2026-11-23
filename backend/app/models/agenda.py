@@ -46,5 +46,9 @@ class Agenda(Base):
         return self.area.nombre
 
     @property
+    def area_descripcion(self) -> str | None:
+        return self.area.descripcion
+
+    @property
     def servicio_nombre(self) -> str:
         return self.servicio.nombre

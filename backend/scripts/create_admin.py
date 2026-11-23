@@ -10,7 +10,7 @@ from app.config import settings
 from app.database.session import SessionLocal
 from app.models import Administrador, Agenda, Area, Rol, Servicio
 from app.models.rol import ROL_ADMINISTRADOR, ROL_VISOR_RESERVAS
-from app.utils.time import today
+from app.utils.time import now, today
 
 
 def run() -> None:
@@ -33,6 +33,7 @@ def run() -> None:
                 usuario=settings.ADMIN_USER,
                 nombre=settings.ADMIN_NOMBRE,
                 hash_password=hash_password(settings.ADMIN_INITIAL_PASSWORD),
+                password_actualizada_en=now().replace(tzinfo=None),
                 rol_id=rol_admin.id,
             ))
             print(f"[seed] Administrador '{settings.ADMIN_USER}' creado.")

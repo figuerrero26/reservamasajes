@@ -3,7 +3,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.auth.security import decode_token
+from app.auth.security import decode_token, huella_password
 from app.database.session import get_db
 from app.models import Administrador, Usuario
 from app.models.rol import ROL_ADMINISTRADOR
@@ -42,6 +42,11 @@ def get_current_admin(
     payload = _decodificar(creds, "admin")
     admin = db.get(Administrador, payload.get("id"))
     if not admin or not admin.activo:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, _TOKEN_INVALIDO)
+    if payload.get("pwd") != huella_password(admin.hash_password):
+        # La contraseña cambió (o fue restablecida por otro administrador) después de emitir
+        # este token: esa sesión ya no es válida. Los tokens anteriores a esta regla no
+        # traen la huella y también se rechazan (basta con volver a iniciar sesión).
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, _TOKEN_INVALIDO)
     return {**payload, "sub": admin.usuario, "rol": admin.rol.nombre}
 

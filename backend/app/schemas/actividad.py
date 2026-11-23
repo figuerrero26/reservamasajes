@@ -4,8 +4,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from app.schemas.sesion import SesionCreate
+from app.schemas.tipo_evento import EsquemaDeInscripcion
 from app.schemas.vigencia import ConImagen, EstadoVigencia, PeriodoLimite, VigenciaYReglaCreate, VigenciaYReglaUpdate
-from app.utils.vigencia import describir_regla
 
 # Estado de inscripción de una actividad, evaluado en el backend (el portal no repite la
 # lógica de fechas):
@@ -49,12 +49,16 @@ def _validar_campos(campos: list[CampoFormulario] | None) -> list[CampoFormulari
     return campos
 
 
-class ActividadCreate(ConImagen, VigenciaYReglaCreate):
-    """El área y la vigencia son obligatorias. Las sesiones iniciales son opcionales y se
+class ActividadCreate(EsquemaDeInscripcion, ConImagen, VigenciaYReglaCreate):
+    """Evento de inscripción. El área y la vigencia (periodo de inscripción) son
+    obligatorias. Las sesiones iniciales (fecha y horario de realización, lugar y cupo) se
     crean en la misma transacción que la actividad (si alguna es inválida, no se crea nada).
+    Solo acepta campos de inscripción: los de reserva (agendas, duración de turnos, días de
+    atención…) se rechazan.
 
     Regla de participación por defecto: sin límite (solo se impide inscribirse dos veces en
     la misma sesión, como hasta ahora)."""
+    tipo: Literal["inscripcion"] | None = None
     area_id: int
     nombre: str = Field(min_length=1, max_length=160)
     descripcion_corta: str | None = Field(default=None, max_length=300)
@@ -72,7 +76,10 @@ class ActividadCreate(ConImagen, VigenciaYReglaCreate):
         return _validar_campos(v)
 
 
-class ActividadUpdate(ConImagen, VigenciaYReglaUpdate):
+class ActividadUpdate(EsquemaDeInscripcion, ConImagen, VigenciaYReglaUpdate):
+    """Edición de la información, el periodo de inscripción y la regla. Las fechas, horarios
+    y cupos se editan en cada sesión."""
+    tipo: Literal["inscripcion"] | None = None
     area_id: int | None = None  # si se envía, no puede ser null
     nombre: str | None = Field(default=None, min_length=1, max_length=160)
     descripcion_corta: str | None = Field(default=None, max_length=300)
@@ -99,11 +106,22 @@ class ResumenSesiones(BaseModel):
     cupos_disponibles: int | None = None  # None = alguna sesión futura sin límite
 
 
+_POR_PERIODO = {"dia": "por día", "semana": "por semana", "mes": "por mes"}
+
+
 def describir_regla_inscripcion(limite: int | None, periodo: str) -> str:
-    texto = describir_regla(limite, periodo, "inscripción")
+    """La restricción de inscripción en palabras, en términos de fechas (sesiones) y no de
+    turnos: el colaborador se inscribe en una fecha y ocupa un cupo."""
     if limite is None:
-        texto = "Sin límite de inscripciones por persona (una por sesión)."
-    return texto
+        return "Sin límite por persona: puedes inscribirte en todas las fechas que quieras (una vez en cada una)."
+    alcance = _POR_PERIODO.get(periodo)
+    if limite == 1:
+        if alcance is None:
+            return "Una sola inscripción por persona: puedes participar en una de las fechas de esta actividad."
+        return f"Una inscripción por persona {alcance}."
+    if alcance is None:
+        return f"Hasta {limite} inscripciones por persona en esta actividad (una por fecha)."
+    return f"Hasta {limite} inscripciones por persona {alcance}."
 
 
 class ActividadOut(BaseModel):

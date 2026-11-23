@@ -286,7 +286,7 @@ class ActividadService:
 
     def actualizar(self, actividad_id: int, data: ActividadUpdate, admin_id: int) -> Actividad:
         actividad = self.obtener(actividad_id)
-        cambios = data.model_dump(exclude_unset=True, exclude={"campos_formulario"})
+        cambios = data.model_dump(exclude_unset=True, exclude={"campos_formulario", "tipo"})
         nulos = sorted(k for k, v in cambios.items() if v is None and k in NO_NULOS)
         if nulos:
             raise DomainError(f"Estos campos no pueden quedar vacíos: {', '.join(nulos)}")

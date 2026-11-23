@@ -1,4 +1,5 @@
 """Cifrado de contraseñas (Bcrypt) y emisión/validación de JWT."""
+import hashlib
 from datetime import timedelta
 
 import jwt
@@ -16,6 +17,14 @@ def hash_password(plain: str) -> str:
 
 def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
+
+
+def huella_password(hashed: str) -> str:
+    """Huella corta (no reversible) del hash de contraseña vigente. Viaja dentro de los
+    tokens que dependen de la contraseña —la sesión del administrador y el enlace de
+    restablecimiento del colaborador—: si la contraseña cambia, la huella deja de coincidir
+    y esos tokens quedan invalidados sin guardar estado en la base de datos."""
+    return hashlib.sha256(hashed.encode()).hexdigest()[:16]
 
 
 def create_access_token(

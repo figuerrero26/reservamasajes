@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.schemas.tipo_evento import EsquemaDeInscripcion
+
 MAX_DIAS_LOTE = 366
 MAX_SESIONES_LOTE = 200
 
@@ -15,7 +17,7 @@ MAX_SESIONES_LOTE = 200
 EstadoSesion = Literal["disponible", "cupo_lleno", "cerrada", "finalizada", "inactiva"]
 
 
-class SesionBase(BaseModel):
+class SesionBase(EsquemaDeInscripcion):
     fecha: date
     hora_inicio: time
     hora_fin: time
@@ -33,7 +35,7 @@ class SesionCreate(SesionBase):
     pass
 
 
-class SesionUpdate(BaseModel):
+class SesionUpdate(EsquemaDeInscripcion):
     """Edición parcial: las reglas (horas coherentes, cupo no menor que los inscritos) se
     validan en el servicio con los valores ya combinados."""
     fecha: date | None = None
@@ -64,7 +66,7 @@ class SesionOut(BaseModel):
     motivo_no_disponible: str | None = None
 
 
-class GenerarSesionesIn(BaseModel):
+class GenerarSesionesIn(EsquemaDeInscripcion):
     """Atajo para crear varias sesiones iguales en un rango de días — útil cuando una
     actividad sí se repite (ej. un taller todos los martes de un mes)."""
     fecha_inicio: date

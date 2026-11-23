@@ -4,6 +4,7 @@ from datetime import time
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.reserva import ReservaAdminOut
+from app.schemas.tipo_evento import EsquemaDeReserva
 from app.utils.time import a_minutos
 
 DURACION_MIN, DURACION_MAX = 5, 480
@@ -37,7 +38,7 @@ def validar_horario(hora_inicio: time, hora_fin: time, almuerzo_inicio: time | N
             raise ValueError("El almuerzo debe quedar dentro del horario de atención")
 
 
-class AgendaBase(BaseModel):
+class AgendaBase(EsquemaDeReserva):
     nombre: str = Field(min_length=1, max_length=140)
     area_id: int
     servicio_id: int
@@ -63,7 +64,7 @@ class AgendaCreate(AgendaBase):
         return self
 
 
-class AgendaUpdate(BaseModel):
+class AgendaUpdate(EsquemaDeReserva):
     """Edición parcial. Las reglas de coherencia se validan en el servicio sobre los valores
     YA combinados con los actuales (un cambio parcial puede ser válido o no según lo que ya
     tenía la agenda), junto con el impacto sobre las reservas existentes."""
@@ -117,3 +118,8 @@ class AgendaPublica(BaseModel):
     area_nombre: str
     servicio_nombre: str
     duracion_minutos: int
+    # Información del lugar y horario de atención, para que el colaborador elija dónde reservar.
+    area_descripcion: str | None = None
+    hora_inicio: time | None = None
+    hora_fin: time | None = None
+    dias_habilitados: str | None = None

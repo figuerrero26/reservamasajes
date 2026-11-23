@@ -14,6 +14,9 @@ class Administrador(Base):
     usuario: Mapped[str] = mapped_column(String(80), unique=True, index=True)
     nombre: Mapped[str] = mapped_column(String(120))
     hash_password: Mapped[str] = mapped_column(String(255))
+    # Cuándo se fijó la contraseña vigente (alta, cambio propio o restablecimiento por otro
+    # administrador). Nunca se guarda la contraseña en sí: solo su hash Bcrypt.
+    password_actualizada_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     rol_id: Mapped[int] = mapped_column(ForeignKey("roles.id"))
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
