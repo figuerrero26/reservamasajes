@@ -482,6 +482,32 @@ rol **vigente**: bloquear o eliminar una cuenta, o cambiarle el rol, tiene efect
 sobre las sesiones abiertas (no hay que esperar a que expire el token). Lo mismo aplica a las
 cuentas de colaboradores.
 
+## Eventos, áreas y agendas en el panel
+
+El catálogo se administra en este orden: **Eventos**, **Áreas**, **Agendas**.
+
+- **Eventos** es el módulo unificado: lista juntos los eventos de *reserva por turnos* y las
+  *actividades con inscripción*, con filtros por área, tipo y nombre. Desde cada evento se
+  gestionan sus agendas (turnos) o sus sesiones, cupos e inscritos (actividades), sin
+  cambiar de sección. Las antiguas rutas `/admin/servicios` y `/admin/actividades`
+  redirigen aquí.
+- **El área es obligatoria.** Un evento por turnos se crea siempre junto con su área y su
+  primera agenda (una sola operación: `POST /servicios` exige `agenda`); para ofrecerlo en
+  otra área se le agrega otra agenda. Una actividad tiene su propio campo `area_id`
+  (obligatorio al crear y al editar; migración 0011). La relación evento–área de los turnos
+  vive en las agendas a propósito, para no duplicar un dato que podría contradecirse.
+- **Áreas** muestra cuántas agendas y actividades tiene cada una y enlaza a sus eventos.
+  Desactivar un área retira sus agendas y sus actividades del portal (las reservas e
+  inscripciones existentes se conservan e informan).
+- **Agendas** es la vista general de todas las agendas, filtrable por área y evento.
+- Cada módulo conserva su lógica: las agendas generan turnos y las actividades controlan
+  inscripciones y cupos; la unificación es solo de la administración.
+
+Las tarjetas del portal muestran la **disponibilidad**: turnos libres y próximo turno (eventos
+por turnos) o cupos disponibles con barra de ocupación (actividades). Los días que se cuentan
+son los mismos que ofrece el calendario, calculados en un solo lugar del backend
+(`GET /semana/dias-reservables`: semana activa desde hoy, o los días hábiles que quedan).
+
 ## Reglas de coherencia del catálogo
 
 Ningún cambio administrativo cancela reservas por su cuenta; todos informan qué reservas
@@ -508,6 +534,8 @@ quedan afectadas y el administrador decide (con confirmación) si las cancela y 
 
 Módulo independiente de las reservas por turnos (no comparten reglas de negocio):
 
+- Cada actividad pertenece a un **área** (obligatoria) y puede crearse con su primera sesión
+  en la misma operación.
 - Cada actividad tiene una o varias **sesiones** con fecha, hora, lugar opcional y **cupo**
   (vacío = sin límite). El cupo se controla bloqueando la fila de la sesión durante la
   inscripción: dos personas nunca pueden ocupar el último cupo a la vez.
@@ -761,6 +789,7 @@ Ley 1581 de 2012 (principio de minimización de datos):
   real del cliente**: uvicorn corre con `--proxy-headers` para leer `X-Forwarded-For` desde
   nginx; antes todas las peticiones parecían venir del contenedor de nginx y compartían un
   único contador).
-- El portal publica una página de **política de privacidad** (`/privacidad`) y de **términos
-  y condiciones** (`/terminos`) cuyo texto se edita en Configuración; si no se define, se
-  muestra un texto base acorde con la Ley 1581 de 2012.
+- El portal publica una página de **términos y condiciones** (`/terminos`) cuyo texto se
+  edita en Configuración. La página de política de privacidad se retiró del portal a pedido
+  de SIGRA (noviembre de 2026); la política de tratamiento de datos personales que exige la
+  Ley 1581 de 2012 debe estar disponible por otro canal oficial de la empresa.

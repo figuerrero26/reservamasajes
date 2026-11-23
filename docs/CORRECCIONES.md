@@ -147,3 +147,23 @@ no se migra. La migración 0010 es 100 % aditiva (dos columnas nulas y dos índi
 - El puerto 3306 sigue publicado con `root@'%'` porque otros equipos de la LAN usan esa base
   compartida. Recomendación: un usuario de aplicación con permisos solo sobre `reservas` y
   restringir el acceso por firewall.
+
+---
+
+# Ajustes de diseño y organización — noviembre 2026 (segunda ronda)
+
+| Pedido | Implementación | Verificación |
+|---|---|---|
+| Menú superior verde con buen contraste | Fondo con el verde de marca (`color_primario`, `#7f9136`). El contraste se calcula: título e íconos grandes en blanco (3,5:1, válido para texto grande) y textos pequeños en negro (6:1); botón principal negro. El color del texto de todos los botones verdes también se elige por contraste. | Compilación y revisión de contraste con la fórmula WCAG (`getContrastRatio`). |
+| Pie de página negro con amarillo, contacto y "@PYP YP" | Fondo negro, acentos en el amarillo de marca (`color_secundario`, `#edcd30`), correo y teléfono desde la configuración, "@PYP YP" pequeño abajo a la derecha. Se eliminó la política de privacidad (enlace, página, mención en el registro y campo de configuración). | `test_politica_de_privacidad_ya_no_es_configurable`. |
+| Título "Vive la Semana Sigra Vive \| Reserva un espacio" | El título vive en la configuración (`sistema_nombre`): la migración 0011 cambia "Reserva tu Masaje" por "Reserva un espacio" en cualquier valor que lo contenga. También `index.html`, `manifest.json` y los valores iniciales del portal. | SQL de la migración revisado en modo offline. |
+| Contacto talentohumano@sigra.com / +57 3152579481 | La migración 0011 los guarda en la configuración solo si no hay valores (nunca pisa uno existente); se ven en el pie de página y en los correos. | SQL offline. |
+| Tarjetas con verdes suaves y disponibilidad destacada | Sin foto: fondo verde suave y opaco derivado de la marca. Bloque de disponibilidad con número grande, barra de ocupación y colores por nivel (alta / pocos cupos / agotado). Botón amarillo con texto negro (antes texto amarillo sobre blanco, contraste 1,5:1). | `test_resumen_de_turnos_disponibles_en_el_catalogo`, `test_duracion_del_evento_sale_de_sus_agendas`. |
+| Unificar Eventos y Agendas; orden Eventos, Áreas, Agendas | Módulo único "Eventos" (turnos + actividades, con sus agendas o sesiones e inscritos); menú en el orden pedido; rutas antiguas redirigidas; componentes compartidos (formulario de agenda, horario, selector de área, sesiones, inscritos) para no duplicar código. | Compilación de TypeScript y de producción. |
+| Área obligatoria y filtrable | Eventos por turnos: se crean con su área y su primera agenda en una sola transacción. Actividades: columna `area_id` obligatoria (migración 0011; las antiguas quedan marcadas "sin área" y no se pueden volver a publicar sin asignarla). Filtros `area_id` en `/servicios`, `/agendas`, `/actividades` y `/actividades/publicas`. Un área inactiva oculta también sus actividades. | `test_areas_eventos.py` (13 pruebas). |
+
+Pruebas unitarias nuevas (sin BD): días reservables, cálculo puro de turnos con bloqueos,
+festivos, solapamiento y horas pasadas, y cierre de inscripciones por área inactiva.
+
+Nota: la Ley 1581 de 2012 exige tener disponible la política de tratamiento de datos
+personales; al retirarla del portal conviene publicarla por otro canal oficial de SIGRA.
