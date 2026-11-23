@@ -86,6 +86,14 @@ TIPOS_IMAGEN_CORREO_PERMITIDOS: dict[str, tuple[str, int]] = {
     "image/gif": (".gif", 5 * _MB),
 }
 
+# El logo solo admite imágenes estáticas (sin GIF ni video) y un tope pequeño: se muestra en
+# el encabezado de cada página, nunca debe pesar.
+TIPOS_LOGO_PERMITIDOS: dict[str, tuple[str, int]] = {
+    "image/jpeg": (".jpg", 2 * _MB),
+    "image/png": (".png", 2 * _MB),
+    "image/webp": (".webp", 2 * _MB),
+}
+
 
 class ConfiguracionService:
     def __init__(self, db: Session):
@@ -159,6 +167,15 @@ class ConfiguracionService:
             archivo, admin_id, clave="email_confirmacion_imagen_url", prefijo_nombre="correo",
             tipos_permitidos=TIPOS_IMAGEN_CORREO_PERMITIDOS,
             mensaje_formato="Formato no soportado. Use una imagen (JPG, PNG, WEBP o GIF).",
+        )
+
+    async def guardar_logo(self, archivo: UploadFile, admin_id: int) -> str:
+        """Sube el logo al propio servidor en vez de depender de una URL externa: un enlace a
+        otro sitio puede caerse o dejar de existir sin que el panel se entere (ya pasó)."""
+        return await self._guardar_archivo(
+            archivo, admin_id, clave="logo_url", prefijo_nombre="logo",
+            tipos_permitidos=TIPOS_LOGO_PERMITIDOS,
+            mensaje_formato="Formato no soportado. Use una imagen JPG, PNG o WEBP.",
         )
 
     def obtener_plantilla_correo(self) -> PlantillaCorreoOut:

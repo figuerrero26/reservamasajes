@@ -50,6 +50,13 @@ async def subir_imagen_correo(archivo: UploadFile = File(...), db: Session = Dep
     return {"email_confirmacion_imagen_url": url}
 
 
+@router.post("/logo")
+async def subir_logo(archivo: UploadFile = File(...), db: Session = Depends(get_db),
+                      admin: dict = Depends(get_current_admin_full)):
+    url = await ConfiguracionService(db).guardar_logo(archivo, admin["id"])
+    return {"logo_url": url}
+
+
 @router.get("/smtp", response_model=SmtpConfigOut)
 def obtener_smtp(db: Session = Depends(get_db), _: dict = Depends(get_current_admin_full)):
     """La contraseña nunca se incluye en la respuesta, solo si hay una guardada."""

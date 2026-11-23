@@ -37,3 +37,9 @@ export const subirImagenCorreo = async (archivo: File) => {
   return (await api.post<{ email_confirmacion_imagen_url: string }>("/configuracion/imagen-correo", form))
     .data.email_confirmacion_imagen_url;
 };
+
+export const subirLogo = async (archivo: File) => {
+  const form = new FormData();
+  form.append("archivo", archivo);
+  return (await api.post<{ logo_url: string }>("/configuracion/logo", form)).data.logo_url;
+};

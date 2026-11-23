@@ -23,6 +23,7 @@ import {
   previsualizarPlantillaCorreo,
   subirImagenBienvenida,
   subirImagenCorreo,
+  subirLogo,
 } from "../../services/configuracion";
 import { mensajeError } from "../../utils/errors";
 import { esVideo } from "../../utils/media";
@@ -102,6 +103,10 @@ export default function ConfiguracionPage() {
   const [errorImagen, setErrorImagen] = useState<string | null>(null);
   const inputImagenRef = useRef<HTMLInputElement>(null);
 
+  const [subiendoLogo, setSubiendoLogo] = useState(false);
+  const [errorLogo, setErrorLogo] = useState<string | null>(null);
+  const inputLogoRef = useRef<HTMLInputElement>(null);
+
   const [smtp, setSmtp] = useState<FormularioSmtp | null>(null);
   const [smtpPasswordConfigurada, setSmtpPasswordConfigurada] = useState(false);
   const [guardandoSmtp, setGuardandoSmtp] = useState(false);
@@ -175,6 +180,21 @@ export default function ConfiguracionPage() {
       setErrorGeneral(mensajeError(e, "No se pudo guardar la configuración."));
     } finally {
       setGuardando(false);
+    }
+  }
+
+  async function subirLogoArchivo(archivo: File) {
+    setSubiendoLogo(true);
+    setErrorLogo(null);
+    try {
+      const url = await subirLogo(archivo);
+      if (form) setForm({ ...form, logo_url: url });
+      if (original) setOriginal({ ...original, logo_url: url });
+    } catch (e) {
+      setErrorLogo(mensajeError(e, "No se pudo subir el logo."));
+    } finally {
+      setSubiendoLogo(false);
+      if (inputLogoRef.current) inputLogoRef.current.value = "";
     }
   }
 
@@ -370,8 +390,37 @@ export default function ConfiguracionPage() {
               />
             </Grid>
             <Grid item xs={12}>
+              <Typography variant="body2" sx={{ mb: 1 }}>Logo</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                Mejor subirlo al servidor: un enlace a otro sitio puede dejar de funcionar si ese sitio cambia o se cae.
+              </Typography>
+              {errorLogo && <Alert severity="error" sx={{ mb: 1 }}>{errorLogo}</Alert>}
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center" sx={{ mb: 1.5 }}>
+                {form.logo_url.trim() && (
+                  <Box
+                    component="img"
+                    src={form.logo_url}
+                    alt="Vista previa del logo"
+                    sx={{ height: 48, maxWidth: 140, objectFit: "contain", border: 1, borderColor: "divider", borderRadius: 1, p: 0.5 }}
+                  />
+                )}
+                <Button variant="outlined" component="label" disabled={subiendoLogo}>
+                  {subiendoLogo ? "Subiendo..." : "Subir logo"}
+                  <input
+                    ref={inputLogoRef}
+                    type="file"
+                    hidden
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(e) => {
+                      const archivo = e.target.files?.[0];
+                      if (archivo) subirLogoArchivo(archivo);
+                    }}
+                  />
+                </Button>
+              </Stack>
               <TextField
                 label="URL del logo"
+                helperText="También puedes pegar la URL de una imagen ya publicada en otro sitio"
                 value={form.logo_url}
                 onChange={(e) => setForm({ ...form, logo_url: e.target.value })}
                 fullWidth

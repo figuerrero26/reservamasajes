@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Box, Button, Chip, Stack, Typography } from "@mui/material";
+import {
+  Alert, Box, Button, Chip, FormControlLabel, Stack, Switch, TextField, Typography,
+} from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import type { EstadoReserva, ReservaAdmin, Servicio } from "../../types";
-import { buscarReservas } from "../../services/reservas";
+import { buscarReservas, cancelarReserva, marcarAsistencia } from "../../services/reservas";
 import { mensajeError } from "../../utils/errors";
 import { descargarCSV, formatearFecha, formatearHora, horaBogota, hoyBogota, nombreDia } from "../../utils/fechas";
+import ConfirmDialog from "../ConfirmDialog";
 import DataTable, { type ColumnaDataTable } from "../DataTable";
 import EstadoChip from "../EstadoChip";
 import Loader from "../Loader";
@@ -22,14 +25,32 @@ function esFutura(r: ReservaAdmin, hoy: string, hora: string): boolean {
 }
 
 /** Historial completo de reservas de un evento de reserva, en cualquier estado — también de
- * un evento finalizado, cuyas reservas se conservan intactas. Cancelar reservas futuras es
- * una acción aparte y explícita (con motivo y aviso por correo opcional). */
-export default function HistorialReservasPanel({ servicio }: { servicio: Servicio }) {
+ * un evento finalizado, cuyas reservas se conservan intactas. Cancelar una reserva puntual o
+ * marcar su asistencia son acciones individuales; cancelar varias reservas futuras a la vez
+ * es una acción aparte y explícita (con motivo y aviso por correo opcional). */
+interface Props {
+  servicio: Servicio;
+  /** El rol "visor de reservas" solo consulta: puede filtrar y exportar, pero no cancelar
+   * reservas ni marcar asistencia. */
+  soloLectura?: boolean;
+}
+
+export default function HistorialReservasPanel({ servicio, soloLectura = false }: Props) {
   const [reservas, setReservas] = useState<ReservaAdmin[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<EstadoReserva | "todas">("todas");
   const [cancelando, setCancelando] = useState(false);
+
+  const [aCancelar, setACancelar] = useState<ReservaAdmin | null>(null);
+  const [cancelandoUna, setCancelandoUna] = useState(false);
+  const [errorCancelarUna, setErrorCancelarUna] = useState<string | null>(null);
+  const [motivoCancelar, setMotivoCancelar] = useState("");
+  const [notificarCancelar, setNotificarCancelar] = useState(true);
+
+  const [aMarcar, setAMarcar] = useState<{ reserva: ReservaAdmin; asistio: boolean } | null>(null);
+  const [marcando, setMarcando] = useState(false);
+  const [errorMarcar, setErrorMarcar] = useState<string | null>(null);
 
   async function cargar(id: number) {
     setCargando(true);
@@ -49,18 +70,48 @@ export default function HistorialReservasPanel({ servicio }: { servicio: Servici
     cargar(servicio.id);
   }, [servicio.id]);
 
+  const ahora = useMemo(() => ({ hoy: hoyBogota(), hora: horaBogota() }), [reservas]);
   const conteo = useMemo(() => {
     const c: Record<string, number> = {};
     reservas.forEach((r) => { c[r.estado] = (c[r.estado] ?? 0) + 1; });
     return c;
   }, [reservas]);
-  // Memorizada: el diálogo de cancelación reinicia su selección si cambia esta lista.
-  const futurasActivas = useMemo(() => {
-    const hoy = hoyBogota();
-    const hora = horaBogota();
-    return reservas.filter((r) => r.estado === "activa" && esFutura(r, hoy, hora));
-  }, [reservas]);
+  // Memorizada: el diálogo de cancelación en lote reinicia su selección si cambia esta lista.
+  const futurasActivas = useMemo(
+    () => reservas.filter((r) => r.estado === "activa" && esFutura(r, ahora.hoy, ahora.hora)),
+    [reservas, ahora],
+  );
   const visibles = filtro === "todas" ? reservas : reservas.filter((r) => r.estado === filtro);
+
+  async function confirmarCancelarUna() {
+    if (!aCancelar) return;
+    setCancelandoUna(true);
+    setErrorCancelarUna(null);
+    try {
+      await cancelarReserva(aCancelar.id, { motivo: motivoCancelar, notificar: notificarCancelar });
+      setACancelar(null);
+      await cargar(servicio.id);
+    } catch (e) {
+      setErrorCancelarUna(mensajeError(e, "No se pudo cancelar la reserva."));
+    } finally {
+      setCancelandoUna(false);
+    }
+  }
+
+  async function confirmarAsistencia() {
+    if (!aMarcar) return;
+    setMarcando(true);
+    setErrorMarcar(null);
+    try {
+      await marcarAsistencia(aMarcar.reserva.id, aMarcar.asistio);
+      setAMarcar(null);
+      await cargar(servicio.id);
+    } catch (e) {
+      setErrorMarcar(mensajeError(e, "No se pudo registrar la asistencia."));
+    } finally {
+      setMarcando(false);
+    }
+  }
 
   const columnas: ColumnaDataTable<ReservaAdmin>[] = [
     {
@@ -78,6 +129,35 @@ export default function HistorialReservasPanel({ servicio }: { servicio: Servici
     },
     { key: "area_nombre", label: "Área" },
     { key: "estado", label: "Estado", render: (r) => <EstadoChip tipo="reserva" estado={r.estado} /> },
+    {
+      key: "acciones", label: "", align: "right",
+      render: (r) => {
+        if (soloLectura || r.estado !== "activa") return null;
+        const yaOcurrio = !esFutura(r, ahora.hoy, ahora.hora);
+        return (
+          <Stack direction="row" spacing={0.5} justifyContent="flex-end" flexWrap="wrap" useFlexGap>
+            {yaOcurrio && (
+              <>
+                <Button size="small" color="success" onClick={() => { setAMarcar({ reserva: r, asistio: true }); setErrorMarcar(null); }}>
+                  Asistió
+                </Button>
+                <Button size="small" color="warning" onClick={() => { setAMarcar({ reserva: r, asistio: false }); setErrorMarcar(null); }}>
+                  No asistió
+                </Button>
+              </>
+            )}
+            <Button
+              size="small" color="error"
+              onClick={() => {
+                setACancelar(r); setErrorCancelarUna(null); setMotivoCancelar(""); setNotificarCancelar(true);
+              }}
+            >
+              Cancelar
+            </Button>
+          </Stack>
+        );
+      },
+    },
   ];
 
   function exportar() {
@@ -109,7 +189,7 @@ export default function HistorialReservasPanel({ servicio }: { servicio: Servici
       </Stack>
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
         <Button size="small" startIcon={<DownloadIcon />} onClick={exportar} disabled={!reservas.length}>Exportar CSV</Button>
-        {futurasActivas.length > 0 && (
+        {!soloLectura && futurasActivas.length > 0 && (
           <Button size="small" color="error" onClick={() => setCancelando(true)}>
             Cancelar reservas futuras ({futurasActivas.length})…
           </Button>
@@ -129,6 +209,56 @@ export default function HistorialReservasPanel({ servicio }: { servicio: Servici
           setCancelando(false);
           if (hubo) cargar(servicio.id);
         }}
+      />
+
+      <ConfirmDialog
+        abierto={!!aCancelar}
+        titulo="Cancelar reserva"
+        contenido={
+          aCancelar && (
+            <Stack spacing={2}>
+              <span>
+                ¿Confirmas cancelar la reserva de {aCancelar.usuario_nombre} {aCancelar.usuario_apellido} el{" "}
+                {formatearFecha(aCancelar.fecha)} a las {aCancelar.hora_inicio.slice(0, 5)}? El horario quedará libre.
+                Esta acción no se puede deshacer.
+              </span>
+              <TextField
+                label="Motivo (opcional, se incluye en el correo)" size="small" fullWidth
+                value={motivoCancelar} onChange={(e) => setMotivoCancelar(e.target.value)} inputProps={{ maxLength: 500 }}
+              />
+              <FormControlLabel
+                control={<Switch checked={notificarCancelar} onChange={(e) => setNotificarCancelar(e.target.checked)} />}
+                label="Avisar al colaborador por correo"
+              />
+            </Stack>
+          )
+        }
+        textoConfirmar="Cancelar reserva"
+        colorConfirmar="error"
+        cargando={cancelandoUna}
+        error={errorCancelarUna}
+        onConfirmar={confirmarCancelarUna}
+        onCancelar={() => setACancelar(null)}
+      />
+
+      <ConfirmDialog
+        abierto={!!aMarcar}
+        titulo={aMarcar?.asistio ? "Marcar asistencia" : "Marcar inasistencia"}
+        contenido={
+          aMarcar && (
+            <span>
+              ¿Confirmas que {aMarcar.reserva.usuario_nombre} {aMarcar.reserva.usuario_apellido}{" "}
+              {aMarcar.asistio ? "sí asistió" : "no asistió"} el {formatearFecha(aMarcar.reserva.fecha)} a las{" "}
+              {aMarcar.reserva.hora_inicio.slice(0, 5)}? Esta acción no se puede deshacer.
+            </span>
+          )
+        }
+        textoConfirmar={aMarcar?.asistio ? "Sí asistió" : "No asistió"}
+        colorConfirmar={aMarcar?.asistio ? "success" : "warning"}
+        cargando={marcando}
+        error={errorMarcar}
+        onConfirmar={confirmarAsistencia}
+        onCancelar={() => setAMarcar(null)}
       />
     </Stack>
   );
