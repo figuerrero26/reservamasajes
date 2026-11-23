@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin_full
 from app.database.session import get_db
-from app.schemas.usuario import UsuarioOut, UsuarioPasswordSet
+from app.schemas.usuario import UsuarioNombreUpdate, UsuarioOut, UsuarioPasswordSet
 from app.services.reserva_service import ReservaService
 from app.services.usuario_service import UsuarioService
 
@@ -28,6 +28,13 @@ def bloquear(usuario_id: int, db: Session = Depends(get_db),
 def desbloquear(usuario_id: int, db: Session = Depends(get_db),
                 admin: dict = Depends(get_current_admin_full)):
     return UsuarioService(db).activar(usuario_id, admin["id"])
+
+
+@router.put("/{usuario_id}", response_model=UsuarioOut)
+def actualizar_nombre(usuario_id: int, data: UsuarioNombreUpdate, db: Session = Depends(get_db),
+                       admin: dict = Depends(get_current_admin_full)):
+    """Corrige el nombre/apellido del colaborador. No permite cambiar el correo."""
+    return UsuarioService(db).actualizar_nombre(usuario_id, data.nombre, data.apellido, admin["id"])
 
 
 @router.post("/{usuario_id}/resetear-password", response_model=UsuarioOut)

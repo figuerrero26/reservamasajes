@@ -18,8 +18,8 @@ import {
 import SearchIcon from "@mui/icons-material/Search";
 import type { Usuario } from "../../types";
 import {
-  activarUsuario, buscarUsuarios, desactivarUsuario, eliminarUsuario, resetearPasswordUsuario,
-  setReservasMultiples,
+  activarUsuario, actualizarNombreUsuario, buscarUsuarios, desactivarUsuario, eliminarUsuario,
+  resetearPasswordUsuario, setReservasMultiples,
 } from "../../services/usuarios";
 import { mensajeError } from "../../utils/errors";
 import Loader from "../../components/Loader";
@@ -44,6 +44,12 @@ export default function UsuariosPage() {
   const [dialogEliminar, setDialogEliminar] = useState<Usuario | null>(null);
   const [eliminando, setEliminando] = useState(false);
   const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
+
+  const [dialogEditar, setDialogEditar] = useState<Usuario | null>(null);
+  const [editNombre, setEditNombre] = useState("");
+  const [editApellido, setEditApellido] = useState("");
+  const [guardandoNombre, setGuardandoNombre] = useState(false);
+  const [errorNombre, setErrorNombre] = useState<string | null>(null);
 
   async function buscar() {
     setCargando(true);
@@ -95,6 +101,28 @@ export default function UsuariosPage() {
     setPasswordNueva("");
     setErrorPassword(null);
     setExitoPassword(false);
+  }
+
+  function abrirEditar(usuario: Usuario) {
+    setDialogEditar(usuario);
+    setEditNombre(usuario.nombre);
+    setEditApellido(usuario.apellido);
+    setErrorNombre(null);
+  }
+
+  async function guardarNombre() {
+    if (!dialogEditar || !editNombre.trim()) return;
+    setGuardandoNombre(true);
+    setErrorNombre(null);
+    try {
+      await actualizarNombreUsuario(dialogEditar.id, editNombre.trim(), editApellido.trim());
+      setDialogEditar(null);
+      await buscar();
+    } catch (e) {
+      setErrorNombre(mensajeError(e, "No se pudo actualizar el nombre."));
+    } finally {
+      setGuardandoNombre(false);
+    }
   }
 
   async function confirmarEliminar() {
@@ -166,6 +194,9 @@ export default function UsuariosPage() {
       align: "right",
       render: (u) => (
         <Stack direction="row" spacing={1} justifyContent="flex-end">
+          <Button size="small" onClick={() => abrirEditar(u)}>
+            Editar
+          </Button>
           {u.tiene_cuenta && (
             <Button size="small" onClick={() => abrirCambiarPassword(u)}>
               Contraseña
@@ -226,6 +257,36 @@ export default function UsuariosPage() {
           mensajeVacio="No se encontraron usuarios."
         />
       )}
+
+      <Dialog open={!!dialogEditar} onClose={() => setDialogEditar(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Editar nombre</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {dialogEditar && (
+              <Typography variant="body2" color="text.secondary">
+                {dialogEditar.correo || "Sin correo"}
+              </Typography>
+            )}
+            {errorNombre && <Alert severity="error">{errorNombre}</Alert>}
+            <TextField
+              label="Nombre" value={editNombre} onChange={(e) => setEditNombre(e.target.value)}
+              fullWidth autoFocus inputProps={{ maxLength: 120 }}
+            />
+            <TextField
+              label="Apellido" value={editApellido} onChange={(e) => setEditApellido(e.target.value)}
+              fullWidth inputProps={{ maxLength: 120 }}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDialogEditar(null)} disabled={guardandoNombre}>
+            Cancelar
+          </Button>
+          <Button variant="contained" onClick={guardarNombre} disabled={guardandoNombre || !editNombre.trim()}>
+            Guardar
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={!!dialogPassword} onClose={() => setDialogPassword(null)} maxWidth="xs" fullWidth>
         <DialogTitle>Restablecer contraseña</DialogTitle>

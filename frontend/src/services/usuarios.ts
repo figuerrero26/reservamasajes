@@ -4,6 +4,9 @@ import type { Usuario } from "../types";
 export const buscarUsuarios = async (params: { nombre?: string; correo?: string }) =>
   (await api.get<Usuario[]>("/usuarios", { params })).data;
 
+export const actualizarNombreUsuario = async (id: number, nombre: string, apellido: string) =>
+  (await api.put<Usuario>(`/usuarios/${id}`, { nombre, apellido })).data;
+
 export const desactivarUsuario = async (id: number) =>
   (await api.post<Usuario>(`/usuarios/${id}/desactivar`)).data;
 

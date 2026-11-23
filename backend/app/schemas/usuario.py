@@ -21,3 +21,10 @@ class UsuarioOut(BaseModel):
 class UsuarioPasswordSet(BaseModel):
     """Restablecimiento de contraseña por un administrador."""
     password_nueva: str = Field(min_length=8, max_length=72)
+
+
+class UsuarioNombreUpdate(BaseModel):
+    """Corrección del nombre de un colaborador por un administrador. No toca el correo ni
+    ninguna otra asociación de la cuenta."""
+    nombre: str = Field(min_length=1, max_length=120)
+    apellido: str = Field(default="", max_length=120)

@@ -94,6 +94,24 @@ class UsuarioService:
         self.db.commit()
         return len(futuras)
 
+    def actualizar_nombre(self, usuario_id: int, nombre: str, apellido: str, admin_id: int) -> Usuario:
+        """Corrige el nombre/apellido de un colaborador (p. ej. un error de tipeo al
+        registrarse). No toca el correo ni ninguna otra asociación de la cuenta; las
+        reservas/inscripciones ya creadas conservan la foto de identidad que tenían
+        (ver Reserva.usuario_nombre) y no se actualizan retroactivamente."""
+        usuario = self.repo.get(usuario_id)
+        if not usuario:
+            raise NotFound("Colaborador no encontrado")
+        anterior = {"nombre": usuario.nombre, "apellido": usuario.apellido}
+        usuario.nombre = nombre.strip()
+        usuario.apellido = apellido.strip()
+        auditoria_service.registrar(
+            self.db, admin_id, "actualizar_nombre_usuario", "usuario", usuario_id,
+            datos_anteriores=anterior, datos_nuevos={"nombre": usuario.nombre, "apellido": usuario.apellido},
+        )
+        self.db.commit()
+        return usuario
+
     def resetear_password(self, usuario_id: int, password_nueva: str, admin_id: int) -> Usuario:
         """Restablece la contraseña de un colaborador (p. ej. si perdió acceso a su correo)."""
         usuario = self.repo.get(usuario_id)
