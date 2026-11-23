@@ -31,7 +31,7 @@ export default function HistorialInscripcionesPanel({ actividad, soloLectura = f
   const [inscripciones, setInscripciones] = useState<InscripcionAdmin[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filtro, setFiltro] = useState<EstadoInscripcion | "todas">("todas");
+  const [filtro, setFiltro] = useState<EstadoInscripcion | "todas">("activa");
 
   const [aCancelar, setACancelar] = useState<InscripcionAdmin | null>(null);
   const [cancelando, setCancelando] = useState(false);
@@ -52,7 +52,7 @@ export default function HistorialInscripcionesPanel({ actividad, soloLectura = f
   }
 
   useEffect(() => {
-    setFiltro("todas");
+    setFiltro("activa");
     setInscripciones([]);
     cargar(actividad.id);
   }, [actividad.id]);

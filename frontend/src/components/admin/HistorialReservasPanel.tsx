@@ -38,7 +38,7 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
   const [reservas, setReservas] = useState<ReservaAdmin[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filtro, setFiltro] = useState<EstadoReserva | "todas">("todas");
+  const [filtro, setFiltro] = useState<EstadoReserva | "todas">("activa");
   // El mismo evento puede tener agendas en varias áreas (p. ej. Masaje de relajación en
   // Oficinas y en Planta); este filtro ayuda a ubicar de un vistazo dónde reservó cada quien.
   const [filtroArea, setFiltroArea] = useState<string | "todas">("todas");
@@ -63,7 +63,7 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
   }
 
   useEffect(() => {
-    setFiltro("todas");
+    setFiltro("activa");
     setFiltroArea("todas");
     setReservas([]);
     cargar(servicio.id);
