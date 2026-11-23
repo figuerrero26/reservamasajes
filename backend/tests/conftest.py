@@ -19,6 +19,7 @@ contenedor (docker compose exec backend pytest) ya vienen configuradas.
 import os
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.engine import URL as SqlAlchemyURL, make_url
 
 if os.environ.get("TEST_DATABASE_URL"):
@@ -103,7 +104,14 @@ def esquema_limpio():
 
 @pytest.fixture
 def db(esquema_limpio):
+    """Bajo REPEATABLE READ (el nivel por defecto de MariaDB), la primera consulta de esta
+    sesión fija una foto de la base: si la prueba crea algo después vía `client` (otra
+    conexión) y luego lo busca aquí con `db.get(...)`, no lo vería y fallaría con `None`,
+    aunque el dato sí exista. READ COMMITTED hace que cada consulta vea los commits más
+    recientes de otras conexiones, que es lo que las pruebas esperan al mezclar `client` y
+    `db` para verificar lo que la API acaba de crear."""
     session = SessionLocal()
+    session.execute(text("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED"))
     try:
         yield session
     finally:

@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import EstadoInscripcion, Inscripcion, Usuario
+from app.models import Actividad, EstadoInscripcion, Inscripcion, Usuario
 from app.repositories.inscripcion_repository import InscripcionRepository
 from app.repositories.sesion_repository import SesionRepository
 from app.repositories.usuario_repository import UsuarioRepository
@@ -232,9 +232,19 @@ class InscripcionService:
         self, nombre: str | None = None, correo: str | None = None,
         actividad_id: int | None = None, sesion_id: int | None = None, estado: str | None = None,
     ) -> list[InscripcionAdminOut]:
+        """Al consultar una actividad puntual (`actividad_id`), se excluyen las inscripciones
+        de sesiones anteriores al inicio de su vigencia actual: si la actividad se
+        reprogramó, las de una vigencia anterior ya no corresponden a la configuración
+        vigente. Sin tope final: una actividad puede tener sesiones posteriores al cierre de
+        inscripciones y sus inscripciones siguen contando y mostrándose (mismo criterio que
+        el límite de participación por "evento", ver `ventana_limite`)."""
         inscripciones = self.inscripciones.buscar(
             nombre=nombre, correo=correo, actividad_id=actividad_id, sesion_id=sesion_id, estado=estado,
         )
+        if actividad_id:
+            actividad = self.db.get(Actividad, actividad_id)
+            if actividad and actividad.vigencia_inicio:
+                inscripciones = [i for i in inscripciones if i.sesion.fecha >= actividad.vigencia_inicio]
         return [
             InscripcionAdminOut(
                 **self.a_out(i).model_dump(),

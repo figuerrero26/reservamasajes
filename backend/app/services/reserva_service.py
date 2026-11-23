@@ -288,11 +288,21 @@ class ReservaService:
                fecha: date | None = None, agenda_id: int | None = None,
                servicio_id: int | None = None, estado: str | None = None) -> list[ReservaAdminOut]:
         """Listado administrativo: quién reservó qué, con nombre/correo del colaborador y
-        nombres legibles de evento/área/agenda (ver ReservaAdminOut)."""
+        nombres legibles de evento/área/agenda (ver ReservaAdminOut). Al consultar un evento
+        puntual (`servicio_id`), se excluyen las reservas anteriores al inicio de su vigencia
+        actual: si el evento se reprogramó, las reservas de una vigencia anterior ya no
+        corresponden a la configuración vigente y solo confunden. Sin tope final: igual que
+        el límite de participación por "evento" (ver `ventana_limite`), una reserva futura que
+        quedó fuera de una vigencia acortada se conserva y se sigue mostrando (el administrador
+        decide si la cancela; no debe desaparecer sola del historial)."""
         reservas = self.reservas.buscar(
             nombre=nombre, correo=correo, fecha=fecha, agenda_id=agenda_id,
             servicio_id=servicio_id, estado=estado,
         )
+        if servicio_id:
+            servicio = self.db.get(Servicio, servicio_id)
+            if servicio and servicio.vigencia_inicio:
+                reservas = [r for r in reservas if r.fecha >= servicio.vigencia_inicio]
         return [a_admin_out(r) for r in reservas]
 
     def dia(self, fecha: date, servicio_id: int | None = None) -> list[AgendaDia]:
