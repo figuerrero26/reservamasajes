@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, LinearProgress, Paper, Stack,
-  Switch, TextField, Typography,
+  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, LinearProgress, Paper,
+  Stack, Switch, TextField, Typography,
 } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import type { Actividad, InscripcionAdmin, Sesion } from "../../types";
@@ -46,6 +46,8 @@ export default function InscritosDialog({ actividad, sesion, onCerrar, onCambio 
   const [notificar, setNotificar] = useState(true);
   const [cancelando, setCancelando] = useState(false);
   const [errorCancelar, setErrorCancelar] = useState<string | null>(null);
+  // Mismo criterio que el historial de Reservas: por defecto solo confirmados.
+  const [mostrarTodos, setMostrarTodos] = useState(false);
 
   async function cargar(id: number) {
     setCargando(true);
@@ -62,6 +64,7 @@ export default function InscritosDialog({ actividad, sesion, onCerrar, onCambio 
     setActual(sesion);
     setCorreo("");
     setError(null);
+    setMostrarTodos(false);
     if (sesion) cargar(sesion.id);
   }, [sesion]);
 
@@ -103,6 +106,8 @@ export default function InscritosDialog({ actividad, sesion, onCerrar, onCambio 
   }
 
   const etiqueta = (clave: string) => actividad.campos_formulario.find((c) => c.clave === clave)?.etiqueta ?? clave;
+  const confirmados = inscritos.filter((i) => i.estado === "activa");
+  const visibles = mostrarTodos ? inscritos : confirmados;
 
   function exportar() {
     if (!actual) return;
@@ -142,13 +147,23 @@ export default function InscritosDialog({ actividad, sesion, onCerrar, onCambio 
                 </Button>
               </Stack>
             )}
+            {inscritos.length > 0 && (
+              <Stack direction="row" spacing={1}>
+                <Chip label={`Confirmados (${confirmados.length})`} size="small" onClick={() => setMostrarTodos(false)}
+                  color={!mostrarTodos ? "primary" : "default"} variant={!mostrarTodos ? "filled" : "outlined"} />
+                <Chip label={`Todos (${inscritos.length})`} size="small" onClick={() => setMostrarTodos(true)}
+                  color={mostrarTodos ? "primary" : "default"} variant={mostrarTodos ? "filled" : "outlined"} />
+              </Stack>
+            )}
             {cargando ? (
               <Loader />
-            ) : inscritos.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">Nadie se ha inscrito todavía.</Typography>
+            ) : visibles.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                {inscritos.length === 0 ? "Nadie se ha inscrito todavía." : "Nadie confirmado con ese filtro."}
+              </Typography>
             ) : (
               <Stack spacing={1}>
-                {inscritos.map((i) => (
+                {visibles.map((i) => (
                   <Paper key={i.id} variant="outlined" sx={{ p: 1.5 }}>
                     <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ sm: "center" }} spacing={1}>
                       <Box sx={{ minWidth: 0 }}>
