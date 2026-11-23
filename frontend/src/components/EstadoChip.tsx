@@ -4,20 +4,15 @@ import type { EstadoActividad, EstadoInscripcion, EstadoReserva, EstadoSesion } 
 type Color = ChipProps["color"];
 
 /** Etiqueta y color de cada estado, en un solo lugar (antes estaba repetido en varias
- * páginas con pequeñas diferencias). Reserva e inscripción comparten valores pero no
- * siempre la misma etiqueta: "completada" es "Asistió" en ambos para el usuario final. */
+ * páginas con pequeñas diferencias). No se valida asistencia: solo existen dos estados. */
 const RESERVA: Record<EstadoReserva, [string, Color]> = {
   activa: ["Confirmada", "primary"],
   cancelada: ["Cancelada", "default"],
-  completada: ["Asistió", "success"],
-  no_asistio: ["No asistió", "warning"],
 };
 
 const INSCRIPCION: Record<EstadoInscripcion, [string, Color]> = {
   activa: ["Inscrito", "primary"],
   cancelada: ["Cancelada", "default"],
-  completada: ["Asistió", "success"],
-  no_asistio: ["No asistió", "warning"],
 };
 
 export const ETIQUETA_ACTIVIDAD: Record<EstadoActividad, [string, Color]> = {

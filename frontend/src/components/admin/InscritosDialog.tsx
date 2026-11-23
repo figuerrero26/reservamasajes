@@ -5,9 +5,7 @@ import {
 } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import type { Actividad, InscripcionAdmin, Sesion } from "../../types";
-import {
-  buscarInscripciones, cancelarInscripcion, crearInscripcionManual, marcarAsistenciaInscripcion,
-} from "../../services/inscripciones";
+import { buscarInscripciones, cancelarInscripcion, crearInscripcionManual } from "../../services/inscripciones";
 import { mensajeError } from "../../utils/errors";
 import { descargarCSV, formatearFechaLarga, formatearHora } from "../../utils/fechas";
 import ConfirmDialog from "../ConfirmDialog";
@@ -30,12 +28,12 @@ interface Props {
   actividad: Actividad;
   sesion: Sesion | null;
   onCerrar: () => void;
-  /** Tras inscribir, cancelar o marcar asistencia (para refrescar cupos). */
+  /** Tras inscribir o cancelar (para refrescar cupos). */
   onCambio: () => Promise<Sesion | undefined>;
 }
 
 /** Personas inscritas en una sesión: consulta, inscripción manual (nunca por encima del
- * cupo), asistencia, cancelación con aviso por correo y exportación a CSV. */
+ * cupo), cancelación con aviso por correo y exportación a CSV. No se valida asistencia. */
 export default function InscritosDialog({ actividad, sesion, onCerrar, onCambio }: Props) {
   const [actual, setActual] = useState<Sesion | null>(sesion);
   const [inscritos, setInscritos] = useState<InscripcionAdmin[]>([]);
@@ -104,15 +102,6 @@ export default function InscritosDialog({ actividad, sesion, onCerrar, onCambio 
     }
   }
 
-  async function asistencia(i: InscripcionAdmin, asistio: boolean) {
-    try {
-      await marcarAsistenciaInscripcion(i.id, asistio);
-      await refrescar();
-    } catch (e) {
-      setError(mensajeError(e, "No se pudo registrar la asistencia."));
-    }
-  }
-
   const etiqueta = (clave: string) => actividad.campos_formulario.find((c) => c.clave === clave)?.etiqueta ?? clave;
 
   function exportar() {
@@ -175,12 +164,6 @@ export default function InscritosDialog({ actividad, sesion, onCerrar, onCambio 
                       </Box>
                       <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" useFlexGap>
                         <EstadoChip tipo="inscripcion" estado={i.estado} />
-                        {i.estado === "activa" && i.puede_marcar_asistencia && (
-                          <>
-                            <Button size="small" color="success" onClick={() => asistencia(i, true)}>Asistió</Button>
-                            <Button size="small" color="warning" onClick={() => asistencia(i, false)}>No asistió</Button>
-                          </>
-                        )}
                         {i.estado === "activa" && (
                           <Button size="small" color="error"
                             onClick={() => { setACancelar(i); setErrorCancelar(null); setMotivo(""); setNotificar(true); }}>

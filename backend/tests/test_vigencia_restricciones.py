@@ -281,9 +281,9 @@ def test_historial_de_eventos_finalizados(client, datos_base, headers_admin, hea
     cancelada = _reservar(client, headers_usuario, aid, _en(2)).json()
     client.post(f"{API}/reservas/{cancelada['id']}/cancelar", headers=headers_usuario)
     activa = _reservar(client, headers_usuario, aid, _en(3)).json()
-    completada = _reservar(client, headers_usuario, aid, _en(4)).json()
-    fila = db.get(Reserva, completada["id"])
-    fila.fecha, fila.estado = _en(-2), EstadoReserva.COMPLETADA.value  # ya ocurrió y asistió
+    pasada = _reservar(client, headers_usuario, aid, _en(4)).json()
+    fila = db.get(Reserva, pasada["id"])
+    fila.fecha = _en(-2)  # ya ocurrió, pero sigue activa: no se valida asistencia
     db.commit()
 
     act = _crear_actividad(client, headers_admin, datos_base["area_id"])
@@ -298,7 +298,7 @@ def test_historial_de_eventos_finalizados(client, datos_base, headers_admin, hea
     assert [s["id"] for s in finalizados] == [sid]
     historial = client.get(f"{API}/reservas", headers=headers_admin, params={"servicio_id": sid}).json()
     assert {r["id"]: r["estado"] for r in historial} == {
-        cancelada["id"]: "cancelada", activa["id"]: "activa", completada["id"]: "completada",
+        cancelada["id"]: "cancelada", activa["id"]: "activa", pasada["id"]: "activa",
     }
     actividades = client.get(f"{API}/actividades", headers=headers_admin, params={"estado": "finalizado"}).json()
     assert [a["id"] for a in actividades] == [act["id"]]
@@ -328,9 +328,9 @@ def test_una_sola_reserva_durante_toda_la_vigencia(client, datos_base, headers_a
     client.post(f"{API}/reservas/{primera.json()['id']}/cancelar", headers=headers_usuario)
     segunda = _reservar(client, headers_usuario, aid, _en(5))
     assert segunda.status_code == 201
-    # …pero lo que ya ocurrió sí (historial de participación).
+    # …pero lo que ya ocurrió sí (historial de participación), aunque siga activa.
     fila = db.get(Reserva, segunda.json()["id"])
-    fila.fecha, fila.estado = _en(-1), EstadoReserva.COMPLETADA.value
+    fila.fecha = _en(-1)
     db.commit()
     assert _reservar(client, headers_usuario, aid, _en(7)).status_code == 409
 

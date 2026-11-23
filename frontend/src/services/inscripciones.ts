@@ -45,7 +45,3 @@ export async function cancelarInscripcion(
   return data;
 }
 
-export async function marcarAsistenciaInscripcion(id: number, asistio: boolean): Promise<Inscripcion> {
-  const { data } = await api.post<Inscripcion>(`/inscripciones/${id}/asistencia`, { asistio });
-  return data;
-}

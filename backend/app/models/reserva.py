@@ -10,8 +10,6 @@ from app.database.base import Base
 class EstadoReserva(str, enum.Enum):
     ACTIVA = "activa"
     CANCELADA = "cancelada"
-    COMPLETADA = "completada"
-    NO_ASISTIO = "no_asistio"
 
 
 class Reserva(Base):

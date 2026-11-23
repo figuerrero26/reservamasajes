@@ -5,7 +5,7 @@ import {
 } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import type { EstadoReserva, ReservaAdmin, Servicio } from "../../types";
-import { buscarReservas, cancelarReserva, marcarAsistencia } from "../../services/reservas";
+import { buscarReservas, cancelarReserva } from "../../services/reservas";
 import { mensajeError } from "../../utils/errors";
 import { descargarCSV, formatearFecha, formatearHora, horaBogota, hoyBogota, nombreDia } from "../../utils/fechas";
 import ConfirmDialog from "../ConfirmDialog";
@@ -16,8 +16,6 @@ import ReservasAfectadasDialog from "../ReservasAfectadasDialog";
 
 const ESTADOS: { valor: EstadoReserva; texto: string }[] = [
   { valor: "activa", texto: "Confirmadas" },
-  { valor: "completada", texto: "Asistieron" },
-  { valor: "no_asistio", texto: "No asistieron" },
   { valor: "cancelada", texto: "Canceladas" },
 ];
 
@@ -26,13 +24,13 @@ function esFutura(r: ReservaAdmin, hoy: string, hora: string): boolean {
 }
 
 /** Historial completo de reservas de un evento de reserva, en cualquier estado — también de
- * un evento finalizado, cuyas reservas se conservan intactas. Cancelar una reserva puntual o
- * marcar su asistencia son acciones individuales; cancelar varias reservas futuras a la vez
- * es una acción aparte y explícita (con motivo y aviso por correo opcional). */
+ * un evento finalizado, cuyas reservas se conservan intactas. Cancelar una reserva puntual es
+ * una acción individual; cancelar varias reservas futuras a la vez es una acción aparte y
+ * explícita (con motivo y aviso por correo opcional). No se valida asistencia. */
 interface Props {
   servicio: Servicio;
   /** El rol "visor de reservas" solo consulta: puede filtrar y exportar, pero no cancelar
-   * reservas ni marcar asistencia. */
+   * reservas. */
   soloLectura?: boolean;
 }
 
@@ -54,10 +52,6 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
   const [errorCancelarUna, setErrorCancelarUna] = useState<string | null>(null);
   const [motivoCancelar, setMotivoCancelar] = useState("");
   const [notificarCancelar, setNotificarCancelar] = useState(true);
-
-  const [aMarcar, setAMarcar] = useState<{ reserva: ReservaAdmin; asistio: boolean } | null>(null);
-  const [marcando, setMarcando] = useState(false);
-  const [errorMarcar, setErrorMarcar] = useState<string | null>(null);
 
   async function cargar(id: number) {
     setCargando(true);
@@ -115,21 +109,6 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
     }
   }
 
-  async function confirmarAsistencia() {
-    if (!aMarcar) return;
-    setMarcando(true);
-    setErrorMarcar(null);
-    try {
-      await marcarAsistencia(aMarcar.reserva.id, aMarcar.asistio);
-      setAMarcar(null);
-      await cargar(servicio.id);
-    } catch (e) {
-      setErrorMarcar(mensajeError(e, "No se pudo registrar la asistencia."));
-    } finally {
-      setMarcando(false);
-    }
-  }
-
   const columnas: ColumnaDataTable<ReservaAdmin>[] = [
     {
       key: "fecha", label: "Fecha", principal: true,
@@ -150,28 +129,15 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
       key: "acciones", label: "", align: "right",
       render: (r) => {
         if (soloLectura || r.estado !== "activa") return null;
-        const yaOcurrio = !esFutura(r, ahora.hoy, ahora.hora);
         return (
-          <Stack direction="row" spacing={0.5} justifyContent="flex-end" flexWrap="wrap" useFlexGap>
-            {yaOcurrio && (
-              <>
-                <Button size="small" color="success" onClick={() => { setAMarcar({ reserva: r, asistio: true }); setErrorMarcar(null); }}>
-                  Asistió
-                </Button>
-                <Button size="small" color="warning" onClick={() => { setAMarcar({ reserva: r, asistio: false }); setErrorMarcar(null); }}>
-                  No asistió
-                </Button>
-              </>
-            )}
-            <Button
-              size="small" color="error"
-              onClick={() => {
-                setACancelar(r); setErrorCancelarUna(null); setMotivoCancelar(""); setNotificarCancelar(true);
-              }}
-            >
-              Cancelar
-            </Button>
-          </Stack>
+          <Button
+            size="small" color="error"
+            onClick={() => {
+              setACancelar(r); setErrorCancelarUna(null); setMotivoCancelar(""); setNotificarCancelar(true);
+            }}
+          >
+            Cancelar
+          </Button>
         );
       },
     },
@@ -184,6 +150,19 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
       reservas.map((r) => [
         r.fecha, formatearHora(r.hora_inicio), formatearHora(r.hora_fin), r.usuario_nombre, r.usuario_apellido,
         r.usuario_correo, r.area_nombre, r.estado, r.cancelled_by,
+      ]),
+    );
+  }
+
+  /** Listado definitivo de participantes: solo reservas activas (quienes conservaron su
+   * cupo), sin cancelados y sin usar la asistencia como criterio (no se valida). */
+  function exportarParticipantes() {
+    descargarCSV(
+      `participantes-${servicio.nombre.replace(/[^\w-]+/g, "_")}.csv`,
+      ["Fecha", "Hora inicio", "Hora fin", "Nombre", "Apellido", "Correo", "Área"],
+      activas.map((r) => [
+        r.fecha, formatearHora(r.hora_inicio), formatearHora(r.hora_fin), r.usuario_nombre, r.usuario_apellido,
+        r.usuario_correo, r.area_nombre,
       ]),
     );
   }
@@ -232,6 +211,9 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
       </Stack>
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
         <Button size="small" startIcon={<DownloadIcon />} onClick={exportar} disabled={!reservas.length}>Exportar CSV</Button>
+        <Button size="small" startIcon={<DownloadIcon />} onClick={exportarParticipantes} disabled={!activas.length}>
+          Descargar participantes
+        </Button>
         {!soloLectura && futurasActivas.length > 0 && (
           <Button size="small" color="error" onClick={() => setCancelando(true)}>
             Cancelar reservas futuras ({futurasActivas.length})…
@@ -282,26 +264,6 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
         error={errorCancelarUna}
         onConfirmar={confirmarCancelarUna}
         onCancelar={() => setACancelar(null)}
-      />
-
-      <ConfirmDialog
-        abierto={!!aMarcar}
-        titulo={aMarcar?.asistio ? "Marcar asistencia" : "Marcar inasistencia"}
-        contenido={
-          aMarcar && (
-            <span>
-              ¿Confirmas que {aMarcar.reserva.usuario_nombre} {aMarcar.reserva.usuario_apellido}{" "}
-              {aMarcar.asistio ? "sí asistió" : "no asistió"} el {formatearFecha(aMarcar.reserva.fecha)} a las{" "}
-              {aMarcar.reserva.hora_inicio.slice(0, 5)}? Esta acción no se puede deshacer.
-            </span>
-          )
-        }
-        textoConfirmar={aMarcar?.asistio ? "Sí asistió" : "No asistió"}
-        colorConfirmar={aMarcar?.asistio ? "success" : "warning"}
-        cargando={marcando}
-        error={errorMarcar}
-        onConfirmar={confirmarAsistencia}
-        onCancelar={() => setAMarcar(null)}
       />
     </Stack>
   );

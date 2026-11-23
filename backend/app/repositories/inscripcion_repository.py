@@ -50,8 +50,8 @@ class InscripcionRepository(BaseRepository[Inscripcion]):
         ).scalars().all())
 
     def fechas_participacion(self, usuario_id: int, actividad_id: int, desde=None) -> list:
-        """Fecha de sesión de cada inscripción NO cancelada (activa, completada o con
-        inasistencia) de una persona en una actividad, desde `desde` (None = todas). Es el
+        """Fecha de sesión de cada inscripción NO cancelada (activa, incluida la ya ocurrida)
+        de una persona en una actividad, desde `desde` (None = todas). Es el
         historial con el que se valida el límite de participación: lo que ya ocurrió cuenta,
         lo cancelado no. Se devuelven fechas (no un conteo) para evaluar varias sesiones con
         una sola consulta."""

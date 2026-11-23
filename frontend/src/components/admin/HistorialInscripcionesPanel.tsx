@@ -4,7 +4,7 @@ import {
 } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import type { Actividad, EstadoInscripcion, InscripcionAdmin } from "../../types";
-import { buscarInscripciones, cancelarInscripcion, marcarAsistenciaInscripcion } from "../../services/inscripciones";
+import { buscarInscripciones, cancelarInscripcion } from "../../services/inscripciones";
 import { mensajeError } from "../../utils/errors";
 import { descargarCSV, formatearFecha, formatearHora, nombreDia } from "../../utils/fechas";
 import ConfirmDialog from "../ConfirmDialog";
@@ -14,18 +14,16 @@ import Loader from "../Loader";
 
 const ESTADOS: { valor: EstadoInscripcion; texto: string }[] = [
   { valor: "activa", texto: "Inscritos" },
-  { valor: "completada", texto: "Asistieron" },
-  { valor: "no_asistio", texto: "No asistieron" },
   { valor: "cancelada", texto: "Canceladas" },
 ];
 
 /** Historial completo de inscripciones de un evento de inscripción, a través de todas sus
  * sesiones (fechas), en cualquier estado — también de un evento finalizado. Es el equivalente
- * de HistorialReservasPanel para eventos de tipo inscripción. */
+ * de HistorialReservasPanel para eventos de tipo inscripción. No se valida asistencia. */
 interface Props {
   actividad: Actividad;
   /** El rol "visor de reservas" solo consulta: puede filtrar y exportar, pero no cancelar
-   * inscripciones ni marcar asistencia. */
+   * inscripciones. */
   soloLectura?: boolean;
 }
 
@@ -40,10 +38,6 @@ export default function HistorialInscripcionesPanel({ actividad, soloLectura = f
   const [errorCancelar, setErrorCancelar] = useState<string | null>(null);
   const [motivoCancelar, setMotivoCancelar] = useState("");
   const [notificarCancelar, setNotificarCancelar] = useState(true);
-
-  const [aMarcar, setAMarcar] = useState<{ inscripcion: InscripcionAdmin; asistio: boolean } | null>(null);
-  const [marcando, setMarcando] = useState(false);
-  const [errorMarcar, setErrorMarcar] = useState<string | null>(null);
 
   async function cargar(id: number) {
     setCargando(true);
@@ -85,21 +79,6 @@ export default function HistorialInscripcionesPanel({ actividad, soloLectura = f
     }
   }
 
-  async function confirmarAsistencia() {
-    if (!aMarcar) return;
-    setMarcando(true);
-    setErrorMarcar(null);
-    try {
-      await marcarAsistenciaInscripcion(aMarcar.inscripcion.id, aMarcar.asistio);
-      setAMarcar(null);
-      await cargar(actividad.id);
-    } catch (e) {
-      setErrorMarcar(mensajeError(e, "No se pudo registrar la asistencia."));
-    } finally {
-      setMarcando(false);
-    }
-  }
-
   const columnas: ColumnaDataTable<InscripcionAdmin>[] = [
     {
       key: "sesion_fecha", label: "Fecha", principal: true,
@@ -120,24 +99,12 @@ export default function HistorialInscripcionesPanel({ actividad, soloLectura = f
       render: (i) => {
         if (soloLectura || i.estado !== "activa") return null;
         return (
-          <Stack direction="row" spacing={0.5} justifyContent="flex-end" flexWrap="wrap" useFlexGap>
-            {i.puede_marcar_asistencia && (
-              <>
-                <Button size="small" color="success" onClick={() => { setAMarcar({ inscripcion: i, asistio: true }); setErrorMarcar(null); }}>
-                  Asistió
-                </Button>
-                <Button size="small" color="warning" onClick={() => { setAMarcar({ inscripcion: i, asistio: false }); setErrorMarcar(null); }}>
-                  No asistió
-                </Button>
-              </>
-            )}
-            <Button
-              size="small" color="error"
-              onClick={() => { setACancelar(i); setErrorCancelar(null); setMotivoCancelar(""); setNotificarCancelar(true); }}
-            >
-              Cancelar
-            </Button>
-          </Stack>
+          <Button
+            size="small" color="error"
+            onClick={() => { setACancelar(i); setErrorCancelar(null); setMotivoCancelar(""); setNotificarCancelar(true); }}
+          >
+            Cancelar
+          </Button>
         );
       },
     },
@@ -151,6 +118,24 @@ export default function HistorialInscripcionesPanel({ actividad, soloLectura = f
       inscripciones.map((i) => [
         i.sesion_fecha, formatearHora(i.sesion_hora_inicio), i.usuario_nombre, i.usuario_apellido,
         i.usuario_correo, i.estado, i.cancelled_by,
+        ...preguntas.map((p) => {
+          const v = i.respuestas_formulario?.[p.clave];
+          return typeof v === "boolean" ? (v ? "Sí" : "No") : (v ?? "");
+        }),
+      ]),
+    );
+  }
+
+  /** Listado definitivo de participantes: solo inscripciones activas (quienes conservaron su
+   * cupo), sin cancelados y sin usar la asistencia como criterio (no se valida). */
+  function exportarParticipantes() {
+    const preguntas = actividad.campos_formulario;
+    const activas = inscripciones.filter((i) => i.estado === "activa");
+    descargarCSV(
+      `participantes-${actividad.nombre.replace(/[^\w-]+/g, "_")}.csv`,
+      ["Fecha", "Hora", "Nombre", "Apellido", "Correo", ...preguntas.map((p) => p.etiqueta)],
+      activas.map((i) => [
+        i.sesion_fecha, formatearHora(i.sesion_hora_inicio), i.usuario_nombre, i.usuario_apellido, i.usuario_correo,
         ...preguntas.map((p) => {
           const v = i.respuestas_formulario?.[p.clave];
           return typeof v === "boolean" ? (v ? "Sí" : "No") : (v ?? "");
@@ -177,6 +162,12 @@ export default function HistorialInscripcionesPanel({ actividad, soloLectura = f
       </Stack>
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
         <Button size="small" startIcon={<DownloadIcon />} onClick={exportar} disabled={!inscripciones.length}>Exportar CSV</Button>
+        <Button
+          size="small" startIcon={<DownloadIcon />} onClick={exportarParticipantes}
+          disabled={!inscripciones.some((i) => i.estado === "activa")}
+        >
+          Descargar participantes
+        </Button>
       </Stack>
       {cargando ? <Loader /> : (
         <DataTable columnas={columnas} filas={visibles} obtenerId={(i) => i.id}
@@ -211,26 +202,6 @@ export default function HistorialInscripcionesPanel({ actividad, soloLectura = f
         error={errorCancelar}
         onConfirmar={confirmarCancelar}
         onCancelar={() => setACancelar(null)}
-      />
-
-      <ConfirmDialog
-        abierto={!!aMarcar}
-        titulo={aMarcar?.asistio ? "Marcar asistencia" : "Marcar inasistencia"}
-        contenido={
-          aMarcar && (
-            <span>
-              ¿Confirmas que {aMarcar.inscripcion.usuario_nombre} {aMarcar.inscripcion.usuario_apellido}{" "}
-              {aMarcar.asistio ? "sí asistió" : "no asistió"} el {formatearFecha(aMarcar.inscripcion.sesion_fecha)} a las{" "}
-              {aMarcar.inscripcion.sesion_hora_inicio.slice(0, 5)}? Esta acción no se puede deshacer.
-            </span>
-          )
-        }
-        textoConfirmar={aMarcar?.asistio ? "Sí asistió" : "No asistió"}
-        colorConfirmar={aMarcar?.asistio ? "success" : "warning"}
-        cargando={marcando}
-        error={errorMarcar}
-        onConfirmar={confirmarAsistencia}
-        onCancelar={() => setAMarcar(null)}
       />
     </Stack>
   );

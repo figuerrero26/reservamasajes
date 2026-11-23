@@ -43,7 +43,7 @@ class ReservaRepository(BaseRepository[Reserva]):
         )
 
     def fechas_participacion(self, usuario_id: int, servicio_id: int, desde: date | None = None) -> list[date]:
-        """Fecha de cada reserva NO cancelada (activa, completada o con inasistencia) de una
+        """Fecha de cada reserva NO cancelada (activa, incluida la ya ocurrida) de una
         persona en un evento, desde `desde` (None = todas). Es el historial con el que se
         valida el límite de participación del evento: lo que ya ocurrió también cuenta, lo
         cancelado no."""
@@ -88,7 +88,7 @@ class ReservaRepository(BaseRepository[Reserva]):
         ).scalars().all())
 
     def no_canceladas_por_fecha(self, fecha: date) -> list[Reserva]:
-        """Reservas activas o ya cerradas (completada/no_asistio) de un día, de TODAS las
+        """Reservas activas (incluidas las ya ocurridas) de un día, de TODAS las
         agendas en una sola consulta — para la vista "por día" del panel. Las canceladas se
         excluyen: su turno vuelve a quedar libre."""
         return list(

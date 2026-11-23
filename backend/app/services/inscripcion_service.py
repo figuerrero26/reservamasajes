@@ -177,7 +177,7 @@ class InscripcionService:
 
     def cancelar_propia(self, inscripcion_id: int, usuario_id: int) -> Inscripcion:
         """El colaborador puede cancelar su inscripción hasta que la sesión empiece; después
-        eso es asistencia/inasistencia y la registra el administrador."""
+        ya ocurrió, así que no tiene sentido liberar el cupo."""
         inscripcion = self.inscripciones.get(inscripcion_id)
         if not inscripcion:
             raise NotFound("Inscripción no encontrada")
@@ -193,23 +193,6 @@ class InscripcionService:
         auditoria_service.registrar(
             self.db, None, "cancelar_propia", "inscripcion", inscripcion.id,
             datos_nuevos={"usuario_id": usuario_id},
-        )
-        self.db.commit()
-        return inscripcion
-
-    def marcar_asistencia(self, inscripcion_id: int, asistio: bool, admin_id: int) -> Inscripcion:
-        inscripcion = self.inscripciones.get(inscripcion_id)
-        if not inscripcion:
-            raise NotFound("Inscripción no encontrada")
-        if inscripcion.estado != EstadoInscripcion.ACTIVA.value:
-            raise DomainError("La inscripción no está activa")
-        sesion = inscripcion.sesion
-        if not ya_empezo(sesion.fecha, sesion.hora_inicio):
-            raise DomainError("No se puede marcar asistencia de una sesión que aún no ha ocurrido")
-        inscripcion.estado = EstadoInscripcion.COMPLETADA.value if asistio else EstadoInscripcion.NO_ASISTIO.value
-        auditoria_service.registrar(
-            self.db, admin_id, "marcar_asistencia", "inscripcion", inscripcion.id,
-            datos_nuevos={"estado": inscripcion.estado},
         )
         self.db.commit()
         return inscripcion
@@ -262,10 +245,6 @@ class InscripcionService:
                 actividad_nombre=i.sesion.actividad.nombre,
                 sesion_fecha=i.sesion.fecha.isoformat(),
                 sesion_hora_inicio=i.sesion.hora_inicio.strftime("%H:%M"),
-                puede_marcar_asistencia=(
-                    i.estado == EstadoInscripcion.ACTIVA.value
-                    and ya_empezo(i.sesion.fecha, i.sesion.hora_inicio)
-                ),
             )
             for i in inscripciones
         ]

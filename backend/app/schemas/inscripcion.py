@@ -45,8 +45,7 @@ class MiInscripcionOut(InscripcionOut):
 
 class InscripcionAdminOut(InscripcionOut):
     """Vista administrativa: agrega identidad del colaborador y nombres legibles de la
-    actividad/sesión. `puede_marcar_asistencia`: solo inscripciones activas cuya sesión ya
-    empezó."""
+    actividad/sesión."""
     usuario_nombre: str
     usuario_apellido: str
     usuario_correo: str | None = None
@@ -54,11 +53,6 @@ class InscripcionAdminOut(InscripcionOut):
     actividad_nombre: str
     sesion_fecha: str
     sesion_hora_inicio: str
-    puede_marcar_asistencia: bool = False
-
-
-class MarcarAsistenciaInscripcionIn(BaseModel):
-    asistio: bool
 
 
 class CancelarInscripcionIn(BaseModel):

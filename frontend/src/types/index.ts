@@ -125,16 +125,13 @@ export interface HorariosResponse {
 }
 
 /** Un turno del día para una agenda, vista administrativa: si está ocupado, trae quién lo
- * reservó (ver GET /reservas/dia). `reserva_estado` distingue si la reserva sigue activa o
- * ya se cerró (completada/no_asistio); `puede_marcar_asistencia` indica si el panel debe
- * ofrecer esa acción (solo reservas activas cuyo horario ya pasó). */
+ * reservó (ver GET /reservas/dia). */
 export interface SlotDia {
   hora_inicio: string;
   hora_fin: string;
   estado: EstadoSlot;
   reserva_id: number | null;
-  reserva_estado?: "activa" | "completada" | "no_asistio" | null;
-  puede_marcar_asistencia?: boolean;
+  reserva_estado?: EstadoReserva | null;
   usuario_nombre?: string | null;
   usuario_apellido?: string | null;
   usuario_correo?: string | null;
@@ -154,7 +151,7 @@ export interface AgendaDia {
   slots: SlotDia[];
 }
 
-export type EstadoReserva = "activa" | "cancelada" | "completada" | "no_asistio";
+export type EstadoReserva = "activa" | "cancelada";
 
 export interface Reserva {
   id: number;
@@ -449,7 +446,7 @@ export interface Sesion {
   motivo_no_disponible?: string | null;
 }
 
-export type EstadoInscripcion = "activa" | "cancelada" | "completada" | "no_asistio";
+export type EstadoInscripcion = "activa" | "cancelada";
 
 export interface Inscripcion {
   id: number;
@@ -483,5 +480,4 @@ export interface InscripcionAdmin extends Inscripcion {
   actividad_nombre: string;
   sesion_fecha: string;
   sesion_hora_inicio: string;
-  puede_marcar_asistencia: boolean;
 }

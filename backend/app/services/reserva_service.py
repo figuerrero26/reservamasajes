@@ -229,8 +229,8 @@ class ReservaService:
 
     def cancelar_propia(self, reserva_id: int, usuario_id: int) -> Reserva:
         """Cancelación por el propio dueño de la reserva, sujeta a la política configurada.
-        Nunca se puede cancelar una reserva cuyo horario ya empezó: eso es asistencia o
-        inasistencia, y la registra el administrador."""
+        Nunca se puede cancelar una reserva cuyo horario ya empezó: ya ocurrió, así que no
+        tiene sentido liberar el turno."""
         reserva = self.reservas.get(reserva_id)
         if not reserva:
             raise NotFound("Reserva no encontrada")
@@ -317,7 +317,6 @@ class ReservaService:
                 if agenda:
                     agendas[agenda_id] = agenda
 
-        ahora = now()
         resultado = []
         for agenda in sorted(agendas.values(), key=lambda a: (a.servicio.nombre, a.area.nombre, a.nombre)):
             slots = self.horarios.generar(agenda.id, fecha, incluir_pasado=True) if agenda.activo else []
@@ -325,13 +324,10 @@ class ReservaService:
             slots_dia = []
             for s in slots:
                 r = pendientes.pop(s.hora_inicio, None)
-                # HorarioService solo conoce reservas `activa` al calcular disponibilidad; si
-                # esta ya se marcó completada/no_asistio, forzamos el turno a "ocupado" para
-                # que el panel nunca lo muestre como libre (el detalle va en reserva_estado).
                 estado = s.estado if not r or s.estado == EstadoSlot.BLOQUEADO else EstadoSlot.OCUPADO
-                slots_dia.append(self._slot_dia(s.hora_inicio, s.hora_fin, estado, r, ahora))
+                slots_dia.append(self._slot_dia(s.hora_inicio, s.hora_fin, estado, r))
             for r in pendientes.values():
-                slots_dia.append(self._slot_dia(r.hora_inicio, r.hora_fin, EstadoSlot.OCUPADO, r, ahora, True))
+                slots_dia.append(self._slot_dia(r.hora_inicio, r.hora_fin, EstadoSlot.OCUPADO, r, True))
             slots_dia.sort(key=lambda s: s.hora_inicio)
             resultado.append(AgendaDia(
                 agenda_id=agenda.id, agenda_nombre=agenda.nombre,
@@ -342,39 +338,17 @@ class ReservaService:
 
     @staticmethod
     def _slot_dia(hora_inicio: time, hora_fin: time, estado: EstadoSlot, r: Reserva | None,
-                  ahora, fuera_de_grilla: bool = False) -> SlotDia:
+                  fuera_de_grilla: bool = False) -> SlotDia:
         return SlotDia(
             hora_inicio=hora_inicio, hora_fin=hora_fin, estado=estado,
             reserva_id=r.id if r else None,
             reserva_estado=r.estado if r else None,
-            puede_marcar_asistencia=bool(
-                r and r.estado == EstadoReserva.ACTIVA.value and inicio_de(r.fecha, r.hora_inicio) <= ahora
-            ),
             usuario_nombre=r.usuario_nombre if r else None,
             usuario_apellido=r.usuario_apellido if r else None,
             usuario_correo=r.usuario_correo if r else None,
             notes=r.notes if r else None,
             fuera_de_grilla=fuera_de_grilla,
         )
-
-    def marcar_asistencia(self, reserva_id: int, asistio: bool, admin_id: int) -> Reserva:
-        """Cierra el ciclo de una reserva cuyo horario ya pasó: registra si el colaborador
-        asistió o no. A diferencia de `cancelar()`, el turno NO vuelve a quedar disponible."""
-        reserva = self.reservas.get(reserva_id)
-        if not reserva:
-            raise NotFound("Reserva no encontrada")
-        if reserva.estado != EstadoReserva.ACTIVA.value:
-            raise DomainError("La reserva no está activa")
-        if not ya_empezo(reserva.fecha, reserva.hora_inicio):
-            raise DomainError("No se puede marcar asistencia de una reserva que aún no ha ocurrido")
-
-        reserva.estado = EstadoReserva.COMPLETADA.value if asistio else EstadoReserva.NO_ASISTIO.value
-        auditoria_service.registrar(
-            self.db, admin_id, "marcar_asistencia", "reserva", reserva.id,
-            datos_nuevos={"estado": reserva.estado},
-        )
-        self.db.commit()
-        return reserva
 
     def habilitar_reserva_extra(self, usuario_id: int, admin_id: int, permitir: bool = True) -> None:
         """Habilita o revoca la excepción a los límites de participación de los eventos

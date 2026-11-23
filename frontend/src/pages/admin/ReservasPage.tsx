@@ -250,7 +250,7 @@ export default function ReservasPage() {
         titulo="Reservas"
         descripcion={
           puedeGestionar
-            ? "Elige un evento para ver quién reservó o se inscribió: su historial completo, filtrable por estado, con asistencia y cancelaciones."
+            ? "Elige un evento para ver quién reservó o se inscribió: su historial completo, filtrable por estado y con cancelaciones."
             : "Consulta el historial de cualquier evento creado, pasado, actual o futuro: quién reservó o se inscribió y su estado."
         }
         acciones={accionNueva}

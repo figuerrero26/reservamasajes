@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_admin, get_current_admin_full, get_current_usuario
 from app.database.session import get_db
 from app.schemas.reserva import (
-    AgendaDia, CancelacionIn, CancelarLoteIn, CancelarLoteOut, HorariosResponse, MarcarAsistenciaIn,
+    AgendaDia, CancelacionIn, CancelarLoteIn, CancelarLoteOut, HorariosResponse,
     MiReservaOut, ReservaAdminOut, ReservaCreadaOut, ReservaCreate, ReservaCreateManual, ReservaOut,
     VerificacionReservaOut,
 )
@@ -116,9 +116,3 @@ def cancelar_admin(reserva_id: int, data: CancelacionIn, background_tasks: Backg
     if data.notificar:
         background_tasks.add_task(enviar_cancelacion_reserva, reserva.id, data.motivo)
     return reserva
-
-
-@router.post("/reservas/{reserva_id}/asistencia", response_model=ReservaOut)
-def marcar_asistencia(reserva_id: int, data: MarcarAsistenciaIn, db: Session = Depends(get_db),
-                       admin: dict = Depends(get_current_admin_full)):
-    return ReservaService(db).marcar_asistencia(reserva_id, data.asistio, admin["id"])

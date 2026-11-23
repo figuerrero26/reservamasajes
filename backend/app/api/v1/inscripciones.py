@@ -5,7 +5,7 @@ from app.api.deps import get_current_admin, get_current_admin_full, get_current_
 from app.database.session import get_db
 from app.schemas.inscripcion import (
     CancelarInscripcionIn, InscripcionAdminOut, InscripcionCreate, InscripcionCreateManual, InscripcionOut,
-    MarcarAsistenciaInscripcionIn, MiInscripcionOut,
+    MiInscripcionOut,
 )
 from app.services.email_service import enviar_cancelacion_inscripcion, enviar_confirmacion_inscripcion
 from app.services.inscripcion_service import InscripcionService
@@ -77,12 +77,4 @@ def cancelar_admin(inscripcion_id: int, data: CancelarInscripcionIn, background_
     inscripcion = servicio.cancelar(inscripcion_id, admin["id"], admin["sub"], data.motivo)
     if data.notificar:
         background_tasks.add_task(enviar_cancelacion_inscripcion, inscripcion.id, data.motivo)
-    return servicio.a_out(inscripcion)
-
-
-@router.post("/{inscripcion_id}/asistencia", response_model=InscripcionOut)
-def marcar_asistencia(inscripcion_id: int, data: MarcarAsistenciaInscripcionIn, db: Session = Depends(get_db),
-                       admin: dict = Depends(get_current_admin_full)):
-    servicio = InscripcionService(db)
-    inscripcion = servicio.marcar_asistencia(inscripcion_id, data.asistio, admin["id"])
     return servicio.a_out(inscripcion)

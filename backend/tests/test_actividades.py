@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from app.config import settings
 from app.database.session import SessionLocal
-from app.models import EstadoInscripcion, Inscripcion, Notificacion, Usuario
+from app.models import Inscripcion, Notificacion, Usuario
 from app.auth.security import hash_password
 from app.services.email_service import enviar_confirmacion_inscripcion
 from app.services.errors import Conflict
@@ -246,9 +246,6 @@ def test_no_se_cancela_inscripcion_de_sesion_ya_ocurrida(client, datos_base, hea
     fila.sesion.fecha = date.today() - timedelta(days=1)
     db.commit()
     assert client.post(f"{API}/inscripciones/{insc['id']}/cancelar", headers=headers_usuario).status_code == 400
-    # El admin sí marca la asistencia.
-    r = client.post(f"{API}/inscripciones/{insc['id']}/asistencia", headers=headers_admin, json={"asistio": True})
-    assert r.status_code == 200 and r.json()["estado"] == EstadoInscripcion.COMPLETADA.value
 
 
 def test_correo_de_confirmacion_de_inscripcion(client, datos_base, headers_admin, headers_usuario, monkeypatch):
