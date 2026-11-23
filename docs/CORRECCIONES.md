@@ -213,3 +213,75 @@ personales; al retirarla del portal conviene publicarla por otro canal oficial d
 - La suite tiene 177 pruebas (65 unitarias y 112 de integración), todas recolectadas sin
   errores. Las 112 de integración necesitan MariaDB y se corren en el servidor con
   `docker compose exec backend pytest`.
+
+---
+
+# Separación de tipos de evento, contraseñas y firma — noviembre 2026 (cuarta ronda)
+
+| Pedido | Implementación | Verificación |
+|---|---|---|
+| "@For YP" en el extremo inferior derecho | Fuera del flujo del pie de página (`position: absolute`), a 6–10 px del borde derecho y 4–6 px del inferior del sitio, 0,56 rem y 20 % de opacidad, sin capturar clics (`pointer-events: none`). Queda dentro del margen inferior del pie: no tapa enlaces ni textos. | Navegador real en 6 tamaños: misma distancia al borde en todos y sin superposición con ningún elemento del pie. |
+| Detalle de cada evento según su tipo | Reserva: lugar (área, descripción del área y espacio o profesional si lo hay), fechas en lenguaje natural, duración de cada sesión, regla de reserva, cómo reservar y recomendaciones; después, el calendario. Se quitó el conteo técnico de turnos ("99 turnos disponibles"); si no queda ninguno se muestra un aviso. Inscripción: área, fecha y horario de realización, periodo de inscripción, cupos, regla de participación y cómo inscribirse; cada fecha muestra sus cupos (sin contar inscritos cuando no hay límite). Tarjetas del inicio también por tipo. | Capturas de ambos detalles en móvil, tableta y escritorio. |
+| Agendas dentro del evento | Se eliminó la sección «Agendas» del panel (su ruta redirige a Eventos). «Gestionar» abre una sola ventana por evento: reserva → *Información y reglas*, *Agendas y horarios* (agregar, editar, activar o desactivar) e *Historial de reservas*; inscripción → *Información y reglas* y *Fechas, cupos e inscritos*. Al crear un evento de reserva se definen de una vez una o varias agendas (`POST /servicios` acepta `agendas`). La lógica de agendas no cambió. | `test_crear_evento_de_reserva_con_varias_agendas`, `test_editar_evento_no_pierde_agendas_ni_reglas`, capturas del panel. |
+| Elegir el tipo al crear y ocultar lo que no corresponde | «Nuevo evento» pregunta primero: *Evento de reserva* o *Evento de inscripción*. Cada formulario muestra solo lo suyo: reserva (agendas, horario de atención, duración de turnos, días, restricciones de reserva) e inscripción (fechas de realización, límite de participantes, periodo de inscripción, restricciones de inscripción, preguntas). Las restricciones de inscripción se expresan en fechas («solo una fecha por persona», «hasta N fechas…»), no en reservas por día. | Capturas de los dos formularios en todos los tamaños. |
+| Validación del tipo en el backend | Los esquemas de cada tipo (servicios y agendas = reserva; actividades y sesiones = inscripción) rechazan con 422 cualquier campo que no les pertenece, explicando a qué tipo corresponde, al crear y al editar. El panel envía `tipo` y el backend exige que coincida con el endpoint. Nada se guarda ni se ignora en silencio. | `test_api_rechaza_configuraciones_incompatibles_sin_guardar_nada`, `test_esquema_de_reserva_rechaza_configuracion_de_inscripcion`, `test_esquema_de_inscripcion_rechaza_configuracion_de_reserva`. |
+| Contraseñas de los administradores | En Administradores: lista de cuentas con la fecha de su contraseña vigente; «Contraseña» (otra cuenta) pide nueva contraseña y confirmación, muestra los requisitos en vivo, permite generar una segura y confirma el resultado; «Mi contraseña» exige la actual. `POST /administradores/{id}/password` solo para el rol con acceso total. | `test_restablecer_contrasena_de_otro_administrador`, `test_la_contrasena_propia_solo_se_cambia_con_la_actual`, `test_sin_permisos_no_se_cambian_contrasenas_por_la_api`. |
+| Seguridad de las contraseñas | Solo hash Bcrypt (nunca se devuelven ni se registran). Política: 10+ caracteres con mayúscula, minúscula, número y símbolo; sin el usuario ni el nombre; sin contraseñas comunes; máximo 72 bytes; distinta de la actual (también al crear administradores). Cambiar o restablecer una contraseña cierra de inmediato las sesiones abiertas con la anterior (huella del hash en el token); quien cambia la suya recibe un token nuevo. Auditoría de cada cambio e intento fallido. Límite de intentos en el cambio propio. | `test_politica_rechaza_contrasenas_debiles`, `test_token_sin_huella_de_contrasena_no_sirve`, `test_listado_de_administradores_no_expone_contrasenas`. |
+| Firma InfraestructurEF | La migración 0013 cambia `empresa_nombre` de "SIGRA S.A.S" (o vacía) a "InfraestructurEF" y respeta cualquier otro valor; también los valores iniciales del portal. Se muestra sin pasar a mayúsculas, con un acento sutil en «EF», en la portada, el pie de página (descripción y derechos) y los correos. Contacto, título del portal y logo sin cambios. | `test_migracion_cambia_solo_la_firma_sigra` (6 casos), `test_migracion_crea_la_firma_si_no_existe`. |
+| Pruebas responsive reales | Microsoft Edge automatizado (Playwright) contra el backend real con datos de ejemplo, en 360, 390, 768, 1024, 1366 y 1920 px: portal sin y con sesión, detalles, formularios de reserva e inscripción, panel completo, creación y gestión de eventos, agendas, usuarios, contraseñas y pie de página. Mide desborde horizontal, elementos fuera de pantalla, desplazamiento lateral interno, objetivos táctiles menores de 24 px, textos cortados con «…» y superposición con la firma; guarda capturas. | Ver resultados abajo. |
+
+### Errores encontrados y corregidos en esta ronda
+
+| Problema | Causa | Solución |
+|---|---|---|
+| Los esquemas de eventos ignoraban en silencio los campos desconocidos: un evento de reserva podía "aceptar" `cupo_maximo` o `sesiones` sin decir nada | Pydantic descarta campos extra por defecto | Esquemas estrictos por tipo con mensaje que explica el campo incompatible |
+| El restablecimiento de contraseña de otro administrador existía en la API pero sin interfaz, sin confirmación, sin política de fortaleza y permitía restablecer la propia sin la contraseña actual | Funcionalidad a medio hacer | Pantalla completa, política única y restablecimiento propio solo con la actual |
+| Una sesión abierta seguía valiendo hasta 8 h después de cambiar o restablecer la contraseña | El token no dependía de la contraseña | Huella del hash en el token del panel |
+| En el móvil, el diálogo de confirmación de reserva cortaba los correos largos (se salía 18 px) | Fila etiqueta–valor sin permitir saltos de línea | El valor se parte cuando no cabe |
+| La tabla de turnos del día (Reservas) obligaba a desplazarse de lado en móvil y tableta vertical (566 px de contenido en 326 px) | Tabla de 6 columnas en cualquier ancho | Por debajo de 900 px cada turno se muestra como fila apilada, con sus acciones |
+| El nombre del sistema se cortaba con «…» en el menú lateral del panel | Una sola línea | Solo el título (antes de «\|»), en hasta dos líneas |
+| Dos etiquetas de colores se cortaban en Configuración en el móvil | Campos a media columna | Ancho completo en móvil |
+| Enlaces del pie de página y «¿Olvidaste tu contraseña?» con zona táctil de 15–22 px | Enlaces de texto sin relleno | Relleno vertical para llegar a ~32 px |
+| El texto por defecto de los términos decía que la regla era "una reserva por evento al día" | Quedó de antes de las reglas por evento | Redacción acorde a las reglas propias de cada evento |
+| La sección de Configuración en el menú seguía describiendo la "semana activa" | Texto desactualizado | Descripción actual |
+| Edge mostraba su propio botón de «ver contraseña» junto al del formulario (dos ojos) | Control nativo del navegador en los campos de contraseña | Se oculta el nativo; queda el del formulario |
+| En tableta, tablas de 5–6 columnas (Eventos, Usuarios) obligaban a desplazarse de lado o partían palabras | La vista de tarjetas solo se activaba por debajo de 600 px | La tabla pasa sola a tarjetas cuando no cabe en su espacio (ancho mínimo cómodo por columna) |
+
+### Qué cambia al desplegar
+
+- El backend respalda la base completa en `data/backups/` antes de aplicar la migración 0013.
+- La firma pasa a "InfraestructurEF" si era "SIGRA S.A.S" (o estaba vacía). Contacto, título
+  del portal y logo no cambian: el logo se puede reemplazar en Configuración.
+- Todas las sesiones abiertas del panel se cierran una vez: los administradores (y el visor)
+  deben volver a iniciar sesión. A partir de ahí, cambiar o restablecer una contraseña cierra
+  solo las sesiones de esa cuenta.
+- La política de contraseñas aplica a las contraseñas nuevas: las actuales siguen
+  funcionando. Conviene cambiar cuanto antes la del administrador inicial si todavía es la de
+  instalación (no cumple la política).
+- La sección «Agendas» desaparece del menú: las agendas se gestionan dentro de cada evento de
+  reserva (Gestionar → Agendas y horarios). Los enlaces antiguos llevan a Eventos.
+
+### Pruebas
+
+- **Backend** (suite completa, 207 pruebas: 177 anteriores + 30 nuevas), ejecutada en el
+  equipo de desarrollo sobre SQLite con las mismas columnas generadas: 205 pasan. Las 2 que
+  no pasan son las de traslado de datos de la migración 0012, que usan SQL propio de MariaDB
+  (`CAST … AS DATE`) y ya fallaban igual en SQLite antes de esta ronda. Deben correrse en el
+  servidor contra MariaDB con `docker compose exec backend pytest`.
+- `pyflakes` sin hallazgos; TypeScript (`tsc --noEmit`, también con `--noUnusedLocals`) y
+  compilación de producción (`vite build`) sin errores; SQL de la migración 0013 generado en
+  modo offline (subida y bajada) y cadena completa 0001 → 0013.
+- **Funcionales en navegador** (Edge real contra el backend con datos de ejemplo), 10 de 10:
+  reservar un turno y inscribirse desde el móvil; la restricción «solo una fecha» bloquea las
+  demás; crear un evento de reserva con dos agendas y uno de inscripción desde el panel (sin
+  ver campos del otro tipo); editar una agenda desde el evento; editar un evento sin perder
+  sus agendas; restablecer la contraseña de otra cuenta e iniciar sesión con la nueva; el visor
+  recibe 403 y un colaborador 401 al intentar cambiar contraseñas por la API; la API rechaza
+  una configuración incompatible con un mensaje claro.
+- **Responsive** (360, 390, 768, 1024, 1366 y 1920 px; 40 pantallas y estados por tamaño:
+  portal sin y con sesión, detalles, formularios de reserva e inscripción, menús móviles, todo
+  el panel, creación y gestión de eventos, agendas, usuarios, contraseñas y pie de página):
+  240 capturas sin observaciones al cierre (sin desborde horizontal, sin elementos fuera de
+  pantalla, sin desplazamiento lateral interno, sin textos cortados, sin objetivos táctiles
+  menores de 24 px, sin errores de JavaScript). La firma «@For YP» queda a 6–10 px del borde
+  derecho y 4–7 px del inferior en todos los tamaños, sin tocar ningún otro elemento.

@@ -521,6 +521,11 @@ pasa por una migración de Alembic versionada en `backend/alembic/versions/`:
   turnos (así ninguno se reabre solo), la restricción "evento único por semana" a la regla de
   cada evento, y la ventana de inscripción de cada actividad a su vigencia. Solo agrega
   columnas: no modifica reservas ni inscripciones.
+- `0013_firma_y_passwords_admin`: agrega `administradores.password_actualizada_en` (fecha de
+  la contraseña vigente; las cuentas existentes quedan "sin registro" hasta su próximo
+  cambio) y cambia la firma `empresa_nombre` de "SIGRA S.A.S" (o vacía) a "InfraestructurEF".
+  Cualquier otro valor escrito por el administrador se respeta; el contacto, el título y el
+  logo no se tocan.
 
 Antes de aplicar cualquier migración pendiente el backend genera un respaldo completo en
 `data/backups/` (ver [Backup](#backup-y-restauración-de-mariadb)).
@@ -530,7 +535,31 @@ Antes de aplicar cualquier migración pendiente el backend genera un respaldo co
 Se crea automáticamente al levantar el backend, a partir de `ADMIN_USER` /
 `ADMIN_INITIAL_PASSWORD`, **solo si todavía no existe** (cambiar esas variables después no
 modifica una cuenta ya creada). Cambie la contraseña desde el panel (`/admin`, menú lateral →
-Cambiar contraseña) o por API (`POST /api/v1/auth/cambiar-password`) apenas despliegue.
+Cambiar mi contraseña) o por API (`POST /api/v1/auth/cambiar-password`) apenas despliegue.
+
+### Contraseñas de los administradores
+
+- **Consultar y restablecer**: en Sistema → Administradores se ven todas las cuentas (usuario,
+  nombre, rol, estado y fecha de la contraseña vigente). «Contraseña» fija una nueva para otra
+  cuenta con confirmación (`POST /api/v1/administradores/{id}/password`); la propia se cambia
+  con «Mi contraseña», que exige la contraseña actual (`POST /api/v1/auth/cambiar-password`).
+- **Permisos**: solo el rol `administrador` puede consultar cuentas o cambiar contraseñas de
+  otros; un `visor_reservas` recibe 403 y un colaborador o una solicitud sin sesión, 401, también
+  por API directa. Nadie puede restablecer su propia contraseña sin la actual.
+- **Fortaleza** (`app/auth/politica_password.py`, la misma regla se muestra en el panel): al
+  menos 10 caracteres con mayúscula, minúscula, número y símbolo; sin espacios al inicio o al
+  final; sin el usuario ni el nombre de la cuenta; sin contraseñas comunes; máximo 72 bytes
+  (límite de Bcrypt) y distinta de la actual. Aplica al crear administradores, al restablecer
+  y al cambiar la propia.
+- **Almacenamiento**: solo el hash Bcrypt; las contraseñas nunca se devuelven, se muestran ni
+  se registran.
+- **Sesiones**: el token del panel lleva una huella del hash vigente. Al cambiar o restablecer
+  una contraseña, las sesiones abiertas con la anterior se cierran de inmediato; quien cambia
+  la suya recibe un token nuevo y sigue trabajando. (Tras desplegar esta versión, los
+  administradores deben iniciar sesión otra vez una única vez.)
+- **Auditoría**: `restablecer_password_administrador`, `cambiar_password` y
+  `cambiar_password_fallido` (contraseña actual incorrecta), con quién, a quién, IP y fecha.
+  El cambio de contraseña propia tiene límite de intentos por IP (`RATE_LIMIT_AUTH`).
 
 Roles del panel:
 
@@ -546,13 +575,28 @@ cuentas de colaboradores.
 
 ## Eventos, áreas y agendas en el panel
 
-El catálogo se administra en este orden: **Eventos**, **Áreas**, **Agendas**.
+Todo lo de un evento se administra dentro de **Eventos**; ya no existe una sección de agendas
+aparte (la ruta `/admin/agendas`, como `/admin/servicios` y `/admin/actividades`, redirige a
+Eventos).
 
-- **Eventos** es el módulo unificado: lista juntos los eventos de *reserva por turnos* y las
-  *actividades con inscripción*, con filtros por área, tipo, vigencia (vigentes, próximos,
-  finalizados) y nombre. Desde cada evento se gestionan sus agendas (turnos) o sus sesiones,
-  cupos e inscritos (actividades), y se consulta su historial, sin cambiar de sección. Las
-  antiguas rutas `/admin/servicios` y `/admin/actividades` redirigen aquí.
+- **Dos tipos de evento, elegidos al inicio.** «Nuevo evento» pregunta primero el tipo y abre
+  un formulario que solo muestra lo que le corresponde:
+  - *Evento de reserva* (cada persona elige un turno individual): información, fechas del
+    evento, una o varias **agendas** (área, espacio o profesional opcional, horario de
+    atención, almuerzo, duración de los turnos y días) y restricciones de reserva.
+  - *Evento de inscripción* (las personas ocupan un cupo): área e información, **fechas de
+    realización** (día, horario, lugar y límite de participantes), periodo de inscripción,
+    restricciones de inscripción y preguntas opcionales del formulario.
+- **El backend valida el tipo**: los esquemas de cada tipo rechazan (422) cualquier campo del
+  otro —por ejemplo `cupo_maximo` o `sesiones` en `/servicios`, o `agenda` o
+  `duracion_minutos` en `/actividades`— con un mensaje que explica a qué tipo pertenece; nada
+  se ignora en silencio. Si el panel envía `tipo` ("reserva" o "inscripcion"), debe coincidir
+  con el endpoint (`app/schemas/tipo_evento.py`). `POST /servicios` acepta `agendas` (varias
+  áreas a la vez) o `agenda` (una, por compatibilidad).
+- **Gestionar un evento** abre una sola ventana con pestañas: en los de reserva, *Información
+  y reglas*, *Agendas y horarios* (agregar, editar o desactivar agendas) e *Historial de
+  reservas*; en los de inscripción, *Información y reglas* y *Fechas, cupos e inscritos*.
+- La lista filtra por área, tipo, vigencia (vigentes, próximos, finalizados) y nombre.
 - Al crear o editar un evento se definen su **vigencia**, su **regla de participación** y su
   **imagen**: subir un archivo (JPG, PNG, WEBP o GIF hasta 5 MB; el backend verifica el
   contenido real, `POST /uploads/imagenes`) o pegar una URL (http/https). Hay vista previa,
@@ -564,17 +608,22 @@ El catálogo se administra en este orden: **Eventos**, **Áreas**, **Agendas**.
   otra área se le agrega otra agenda. Una actividad tiene su propio campo `area_id`
   (obligatorio al crear y al editar; migración 0011). La relación evento–área de los turnos
   vive en las agendas a propósito, para no duplicar un dato que podría contradecirse.
-- **Áreas** muestra cuántas agendas y actividades tiene cada una y enlaza a sus eventos.
-  Desactivar un área retira sus agendas y sus actividades del portal (las reservas e
-  inscripciones existentes se conservan e informan).
-- **Agendas** es la vista general de todas las agendas, filtrable por área y evento.
-- Cada módulo conserva su lógica: las agendas generan turnos y las actividades controlan
-  inscripciones y cupos; la unificación es solo de la administración.
+- **Áreas** muestra cuántas agendas de reserva y eventos de inscripción tiene cada una y
+  enlaza a sus eventos. Desactivar un área retira sus agendas y sus eventos de inscripción del
+  portal (las reservas e inscripciones existentes se conservan e informan).
+- **Bloqueos** y **Festivos** siguen siendo secciones propias porque suelen aplicar a varias
+  agendas o a todas a la vez.
+- Cada tipo conserva su lógica: las agendas generan turnos y las sesiones controlan
+  inscripciones y cupos; lo unificado es la administración.
 
-Las tarjetas del portal muestran solo **información general e identificativa** (tipo, nombre,
-descripción, área, duración y vigencia). La disponibilidad —turnos o cupos— se consulta
-únicamente en el detalle de cada evento (`GET /eventos/{id}` trae `dias_reservables` y el
-resumen de turnos; las sesiones de una actividad traen sus cupos).
+El portal muestra a cada tipo solo su información. Tarjetas: los de reserva, lugar, fechas y
+duración de las sesiones; los de inscripción, área y fecha de realización. Detalle de un
+evento de reserva: lugar (con la descripción del área y el espacio o profesional, si lo hay),
+fechas, duración de cada sesión, regla de reserva, cómo reservar y las recomendaciones; luego
+el calendario de turnos. Detalle de un evento de inscripción: área, fecha y horario de
+realización, periodo de inscripción, cupos, regla de participación y cómo inscribirse. La
+disponibilidad se consulta solo en el detalle (`GET /eventos/{id}` y las sesiones de cada
+actividad).
 
 ## Reglas de coherencia del catálogo
 
@@ -772,6 +821,12 @@ Cobertura incluida en `backend/tests/`:
   festivos con reservas afectadas, cancelación en lote con notificación, desactivación y
   reactivación de eventos/áreas, revocación inmediata de sesiones, cancelaciones
   retroactivas y validaciones por API.
+- `test_tipos_y_passwords.py`: cada tipo de evento rechaza la configuración del otro (al crear
+  y al editar, también en agendas y sesiones) sin guardar nada; eventos de reserva con varias
+  agendas; editar sin perder agendas; política de contraseñas; restablecer la contraseña de
+  otro administrador (confirmación, fortaleza, distinta de la actual, cierre de sesiones y
+  auditoría sin la contraseña); la propia solo con la actual; permisos (visor 403,
+  colaborador y sin sesión 401); tokens sin huella rechazados; migración de la firma 0013.
 - `test_actividades.py`: flujo completo de inscripción, cierre automático por cupo,
   concurrencia sobre el último cupo, vigencia y pausa de inscripciones, estados, validaciones
   de sesiones, generación por lotes y correos de confirmación/cancelación.
@@ -870,5 +925,5 @@ Ley 1581 de 2012 (principio de minimización de datos):
   único contador).
 - El portal publica una página de **términos y condiciones** (`/terminos`) cuyo texto se
   edita en Configuración. La página de política de privacidad se retiró del portal a pedido
-  de SIGRA (noviembre de 2026); la política de tratamiento de datos personales que exige la
+  de la organización (noviembre de 2026); la política de tratamiento de datos personales que exige la
   Ley 1581 de 2012 debe estar disponible por otro canal oficial de la empresa.
