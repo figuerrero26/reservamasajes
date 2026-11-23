@@ -6,10 +6,7 @@ import {
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
-import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
-import LoginOutlinedIcon from "@mui/icons-material/LoginOutlined";
 import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
-import RuleOutlinedIcon from "@mui/icons-material/RuleOutlined";
 import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 import Loader from "../components/Loader";
 import { PortadaEvento } from "../components/EventCard";
@@ -163,37 +160,15 @@ export default function DisponibilidadPage() {
         )}
       </Grid>
 
-      {/* Solo lo que corresponde a un evento de reserva: dónde, cuándo, cuánto dura cada
-          sesión y qué necesita el colaborador para reservar. */}
+      {/* Solo lo que corresponde a un evento de reserva: dónde, cuándo y cuánto dura cada
+          sesión. */}
       <Grid container spacing={2} sx={{ mb: { xs: 4, md: 5 } }}>
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12} md={7}>
           <DetalleEvento
             filas={[
               { icono: <PlaceOutlinedIcon />, titulo: agendas.length > 1 ? "Lugares" : "Lugar", contenido: lugar },
               { icono: <EventOutlinedIcon />, titulo: "Fechas", contenido: textoFechasLargas(evento.vigencia_inicio, evento.vigencia_fin) },
               { icono: <ScheduleOutlinedIcon />, titulo: "Duración de cada sesión", contenido: duracion },
-            ]}
-          />
-        </Grid>
-        <Grid item xs={12} md={6}>
-          <DetalleEvento
-            titulo="Para reservar"
-            filas={[
-              { icono: <RuleOutlinedIcon />, titulo: "Regla de reserva", contenido: evento.regla_participacion },
-              {
-                icono: <LoginOutlinedIcon />,
-                titulo: "Cómo reservar",
-                contenido: token
-                  ? "Elige el lugar, el día y el horario; confirmas tu turno en el siguiente paso."
-                  : "Puedes ver los horarios sin cuenta. Para confirmar un turno, inicia sesión o crea tu cuenta.",
-              },
-              {
-                icono: <InfoOutlinedIcon />,
-                titulo: "Ten en cuenta",
-                contenido: evento.informacion_adicional
-                  ? <Box component="span" sx={{ whiteSpace: "pre-line" }}>{evento.informacion_adicional}</Box>
-                  : null,
-              },
             ]}
           />
         </Grid>

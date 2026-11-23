@@ -42,8 +42,7 @@ export default function Footer() {
             </Typography>
             {lema && <Typography sx={{ color: amarillo, fontWeight: 600, fontSize: "0.9rem", mt: 0.5 }}>{lema}</Typography>}
             <Typography sx={{ color: TEXTO_SUAVE, fontSize: "0.9rem", mt: 1.5, lineHeight: 1.6 }}>
-              Espacios de bienestar y actividades para todo el equipo de{" "}
-              <Marca nombre={config.empresa_nombre} acento={amarillo} sx={{ color: TEXTO, fontWeight: 600 }} />.
+              Espacios de bienestar y actividades para SIGRA
             </Typography>
           </Box>
 
@@ -102,7 +101,7 @@ export default function Footer() {
           userSelect: "none", pointerEvents: "none", whiteSpace: "nowrap",
         }}
       >
-        @For YP
+        @YP
       </Typography>
     </Box>
   );
