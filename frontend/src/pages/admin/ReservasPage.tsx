@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel,
-  ListSubheader, MenuItem, Select, Stack, TextField,
+  Alert, Box, Button, Card, CardActionArea, CardContent, Chip, Dialog, DialogActions, DialogContent,
+  DialogTitle, FormControl, Grid, InputLabel, ListSubheader, MenuItem, Select, Stack, TextField, Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import type { Actividad, Agenda, Servicio, Sesion } from "../../types";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
+import HowToRegOutlinedIcon from "@mui/icons-material/HowToRegOutlined";
+import type { Actividad, Agenda, EstadoVigencia, Servicio, Sesion } from "../../types";
 import { listarAgendas } from "../../services/agendas";
 import { listarServicios } from "../../services/servicios";
 import { crearReservaManual } from "../../services/reservas";
 import { listarActividades, listarSesiones } from "../../services/actividades";
 import { crearInscripcionManual } from "../../services/inscripciones";
 import { mensajeError } from "../../utils/errors";
-import { hoyBogota } from "../../utils/fechas";
+import { formatearHora, hoyBogota, resumenDiasSemana, textoVigencia } from "../../utils/fechas";
 import { useAuth } from "../../hooks/useAuth";
 import { ROL_ADMINISTRADOR } from "../../constants/roles";
 import PageHeader from "../../components/PageHeader";
@@ -24,6 +27,69 @@ type Seleccion = { tipo: "reserva"; id: number } | { tipo: "inscripcion"; id: nu
 
 function claveDe(s: Seleccion): string {
   return `${s.tipo}-${s.id}`;
+}
+
+const VIGENCIA: Record<EstadoVigencia, { texto: string; color: "success" | "info" | "default" | "warning" }> = {
+  vigente: { texto: "Vigente", color: "success" },
+  proximo: { texto: "Próximo", color: "info" },
+  finalizado: { texto: "Finalizado", color: "default" },
+  sin_vigencia: { texto: "Sin vigencia", color: "warning" },
+};
+
+/** Fecha representativa de un evento, para ordenar el historial cronológicamente: la próxima
+ * sesión si la hay (actividades), si no el fin o el inicio de su vigencia. */
+function fechaOrden(ev: { actividad?: Actividad; servicio?: Servicio }): string {
+  return ev.actividad?.resumen.proxima_fecha || ev.servicio?.vigencia_fin || ev.servicio?.vigencia_inicio
+    || ev.actividad?.vigencia_fin || ev.actividad?.vigencia_inicio || "0000-01-01";
+}
+
+/** Tarjeta de un evento en la vista de solo consulta (rol Visualización): nombre, tipo, fecha
+ * y horario, cupos (si aplica) y estado de vigencia — para elegir cuál consultar. */
+function TarjetaEvento({ ev, onClick }: { ev: { tipo: "reserva" | "inscripcion"; servicio?: Servicio; actividad?: Actividad; agendas: Agenda[] }; onClick: () => void }) {
+  const estado = (ev.servicio ?? ev.actividad)!.estado_vigencia;
+  const { texto, color } = VIGENCIA[estado];
+  const nombre = (ev.servicio ?? ev.actividad)!.nombre;
+
+  let lineaFecha: string;
+  let lineaCupos: string | null = null;
+  if (ev.actividad) {
+    const r = ev.actividad.resumen;
+    lineaFecha = r.proxima_fecha
+      ? `${r.proxima_fecha} · ${formatearHora(r.proxima_hora_inicio!)}–${formatearHora(r.proxima_hora_fin!)}`
+      : textoVigencia(ev.actividad.vigencia_inicio, ev.actividad.vigencia_fin) ?? "Sin fechas programadas";
+    lineaCupos = r.cupos_disponibles != null ? `${r.cupos_disponibles} cupo(s) disponible(s)` : "Sin límite de cupo";
+  } else {
+    const activas = ev.agendas.filter((a) => a.activo);
+    lineaFecha = activas.length === 1
+      ? `${resumenDiasSemana(activas[0].dias_habilitados)} · ${formatearHora(activas[0].hora_inicio)}–${formatearHora(activas[0].hora_fin)}`
+      : activas.length > 1
+        ? `${activas.length} agendas activas`
+        : "Sin agendas activas";
+    lineaCupos = textoVigencia(ev.servicio!.vigencia_inicio, ev.servicio!.vigencia_fin);
+  }
+
+  return (
+    <Grid item xs={12} sm={6} md={4}>
+      <Card variant="outlined" sx={{ height: "100%" }}>
+        <CardActionArea onClick={onClick} sx={{ height: "100%", p: 0.5 }}>
+          <CardContent>
+            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} sx={{ mb: 1 }}>
+              <Chip
+                size="small"
+                icon={ev.tipo === "reserva" ? <EventAvailableOutlinedIcon /> : <HowToRegOutlinedIcon />}
+                label={ev.tipo === "reserva" ? "Reserva" : "Inscripción"}
+                variant="outlined"
+              />
+              <Chip size="small" label={texto} color={color} variant={color === "default" ? "outlined" : "filled"} />
+            </Stack>
+            <Typography variant="subtitle1" fontWeight={600} sx={{ wordBreak: "break-word" }}>{nombre}</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{lineaFecha}</Typography>
+            {lineaCupos && <Typography variant="body2" color="text.secondary">{lineaCupos}</Typography>}
+          </CardContent>
+        </CardActionArea>
+      </Card>
+    </Grid>
+  );
 }
 
 export default function ReservasPage() {
@@ -65,7 +131,7 @@ export default function ReservasPage() {
         setActividades(ac);
         setAgendas(ag);
         setSeleccion((actual) => {
-          if (actual) return actual;
+          if (actual || !puedeGestionar) return actual;
           if (sv.length > 0) return { tipo: "reserva", id: sv[0].id };
           if (ac.length > 0) return { tipo: "inscripcion", id: ac[0].id };
           return null;
@@ -73,11 +139,22 @@ export default function ReservasPage() {
       })
       .catch((e) => setError(mensajeError(e, "No se pudieron cargar los eventos.")))
       .finally(() => setCargando(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const servicioSeleccionado = seleccion?.tipo === "reserva" ? servicios.find((s) => s.id === seleccion.id) ?? null : null;
   const actividadSeleccionada = seleccion?.tipo === "inscripcion" ? actividades.find((a) => a.id === seleccion.id) ?? null : null;
   const agendasDelEvento = agendas.filter((a) => a.servicio_id === servicioSeleccionado?.id && a.activo);
+
+  // Lista combinada para la vista de solo consulta (rol Visualización), ordenada
+  // cronológicamente (próxima fecha o fin de vigencia primero), sin excluir finalizados.
+  const eventosOrdenados = useMemo(() => {
+    const todos = [
+      ...servicios.map((s) => ({ tipo: "reserva" as const, servicio: s, actividad: undefined, agendas: agendas.filter((a) => a.servicio_id === s.id) })),
+      ...actividades.map((a) => ({ tipo: "inscripcion" as const, servicio: undefined, actividad: a, agendas: [] as Agenda[] })),
+    ];
+    return todos.sort((a, b) => fechaOrden(b).localeCompare(fechaOrden(a)));
+  }, [servicios, actividades, agendas]);
 
   function abrirNuevaReserva() {
     if (!servicioSeleccionado) return;
@@ -171,7 +248,11 @@ export default function ReservasPage() {
     <Box>
       <PageHeader
         titulo="Reservas"
-        descripcion="Elige un evento para ver quién reservó o se inscribió: su historial completo, filtrable por estado, con asistencia y cancelaciones."
+        descripcion={
+          puedeGestionar
+            ? "Elige un evento para ver quién reservó o se inscribió: su historial completo, filtrable por estado, con asistencia y cancelaciones."
+            : "Consulta el historial de cualquier evento creado, pasado, actual o futuro: quién reservó o se inscribió y su estado."
+        }
         acciones={accionNueva}
       />
 
@@ -181,7 +262,29 @@ export default function ReservasPage() {
         <Loader />
       ) : sinEventos ? (
         <EmptyState titulo="Todavía no hay eventos" descripcion="Crea uno desde la sección Eventos." />
+      ) : !puedeGestionar ? (
+        // --- Vista de solo consulta (rol Visualización): listado de tarjetas → detalle ---
+        !seleccion ? (
+          <Grid container spacing={2}>
+            {eventosOrdenados.map((ev) => (
+              <TarjetaEvento
+                key={`${ev.tipo}-${(ev.servicio ?? ev.actividad)!.id}`}
+                ev={ev}
+                onClick={() => setSeleccion({ tipo: ev.tipo, id: (ev.servicio ?? ev.actividad)!.id })}
+              />
+            ))}
+          </Grid>
+        ) : (
+          <Stack spacing={2}>
+            <Button startIcon={<ArrowBackIcon />} onClick={() => setSeleccion(null)} sx={{ alignSelf: "flex-start" }}>
+              Volver al listado de eventos
+            </Button>
+            {servicioSeleccionado && <HistorialReservasPanel servicio={servicioSeleccionado} soloLectura />}
+            {actividadSeleccionada && <HistorialInscripcionesPanel actividad={actividadSeleccionada} soloLectura />}
+          </Stack>
+        )
       ) : (
+        // --- Vista de gestión (administrador): selector rápido + historial con acciones ---
         <>
           <FormControl size="small" sx={{ mb: 3, minWidth: 280 }}>
             <InputLabel id="reservas-evento-label">Evento</InputLabel>
@@ -213,14 +316,12 @@ export default function ReservasPage() {
             <HistorialReservasPanel
               key={`reserva-${servicioSeleccionado.id}-${refrescarEn}`}
               servicio={servicioSeleccionado}
-              soloLectura={!puedeGestionar}
             />
           )}
           {actividadSeleccionada && (
             <HistorialInscripcionesPanel
               key={`inscripcion-${actividadSeleccionada.id}-${refrescarEn}`}
               actividad={actividadSeleccionada}
-              soloLectura={!puedeGestionar}
             />
           )}
         </>
