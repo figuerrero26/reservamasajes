@@ -117,11 +117,11 @@ docker compose exec backend pytest
 | Admin bloqueado/eliminado o con rol cambiado conservaba acceso hasta 8 h | Solo se validaba la firma del JWT | `get_current_admin`/`get_current_usuario` verifican la cuenta en BD y usan el rol vigente | `test_admin_bloqueado_pierde_acceso_de_inmediato`, `test_cambio_de_rol_aplica_sin_esperar…`, `test_usuario_bloqueado_pierde_acceso…` |
 | Límite de intentos compartido por todos los usuarios e IP de auditoría siempre igual | uvicorn sin `--proxy-headers` detrás de nginx | `--proxy-headers --forwarded-allow-ips` en `entrypoint.sh`; límite también en el login del panel | — (configuración) |
 | Un colaborador podía cancelar una reserva que ya ocurrió | Sin chequeo de hora cuando `cancelacion_horas_minimas = 0` | Rechazo si el turno ya empezó; `puede_cancelar` en "Mis reservas" | `test_no_se_puede_cancelar_una_reserva_que_ya_ocurrio` |
-| Reinicio semanal cancelaba reservas ya ocurridas y aceptaba cualquier día | Sin validaciones | Exige lunes, cancela solo futuras y notifica | `test_reinicio_semanal_exige_lunes` |
+| Reinicio semanal cancelaba reservas ya ocurridas y aceptaba cualquier día | Sin validaciones | Exige lunes, cancela solo futuras y notifica (el reinicio semanal se retiró en la tercera ronda) | `test_reinicio_semanal_exige_lunes` (reemplazada) |
 | Valores de configuración inválidos rompían el portal | Texto libre sin validar | Validación por clave (colores, horas, URL, correo, longitudes) | `test_configuracion_rechaza_valores_invalidos`, `test_configuracion_invalida_se_rechaza_por_api` |
 | Nombres duplicados al editar daban error 500 | Solo se validaba al crear | Validación en edición + manejador global de `IntegrityError` → 409 | `test_editar_servicio_con_nombre_duplicado_da_409` |
 | Campos obligatorios enviados como `null` daban 500 | `exclude_unset` deja pasar `None` explícito | Rechazo explícito por campo | — |
-| Semana activa con fin antes del inicio | Sin validación | Validación de orden y longitud máxima | unitaria |
+| Semana activa con fin antes del inicio | Sin validación | Validación de orden y longitud máxima (hoy la valida la vigencia de cada evento) | unitaria |
 | Bloqueo con agenda inexistente → 500 | Sin validación | 400 legible | — |
 | Migración 0009 no creaba el índice `inscripciones.estado` | Diferencia modelo/migración | Migración 0010 | SQL offline revisado |
 | "Mis reservas" mostraba "—" si el evento se desactivaba | El nombre se buscaba en el catálogo público | La API devuelve `evento_nombre`/`area_nombre` | `test_mis_reservas_trae_nombre…` |
@@ -167,3 +167,49 @@ festivos, solapamiento y horas pasadas, y cierre de inscripciones por área inac
 
 Nota: la Ley 1581 de 2012 exige tener disponible la política de tratamiento de datos
 personales; al retirarla del portal conviene publicarla por otro canal oficial de SIGRA.
+
+---
+
+# Ajustes funcionales y visuales — noviembre 2026 (tercera ronda)
+
+| Pedido | Implementación | Verificación |
+|---|---|---|
+| Tarjetas del home sin cupos ni turnos | Las tarjetas muestran solo tipo, nombre, descripción, área, duración (turnos) y vigencia. La disponibilidad se calcula y se muestra únicamente en el detalle: `GET /eventos` ya no calcula turnos (más liviano) y `GET /eventos/{id}` trae `dias_reservables` y el resumen. | `test_disponibilidad_solo_en_el_detalle_del_evento`, compilación. |
+| Bordes amarillos en el menú superior | Todos los botones del menú (y el de menú en móvil) llevan un borde amarillo de 1,5 px. El amarillo de marca da 2,2:1 sobre el verde; se usa el mismo matiz con la luminosidad justa para 3:1 (mínimo WCAG para bordes), calculado en `theme.tonoConContraste`. | Fórmula de contraste WCAG. |
+| Quitar el filtro por área del home | Eliminado del portal; el filtro por tipo se conserva. La relación evento–área no cambia (y el panel la sigue filtrando). | Compilación. |
+| Vigencia por evento con cierre automático | Columnas `vigencia_inicio`/`vigencia_fin`/`finalizado_en` (migración 0012). Estados próximo, vigente y finalizado calculados en cada solicitud con la fecha de Bogotá: el cierre no depende de que alguien entre al panel. Tarea programada del backend que registra el cierre (`finalizado_en` + auditoría) sin tocar reservas, inscripciones ni el flag `activo`. Filtros de vigencia e historial en el panel. | `test_vigencia_restricciones.py`, `test_vigencia_unitarias.py`. |
+| "@For YP" | Reemplaza "@PYP YP": abajo a la derecha, más pequeño (0,6 rem) y más transparente. | Compilación. |
+| Quitar configuraciones globales que ya no aplican | Retirados: semana activa, restricción "evento único por semana" y reinicio semanal (endpoints `/semana/*`, campos de configuración y secciones del panel). Se adaptó todo lo que dependía de ellos: disponibilidad, días del calendario, validación de reservas y aviso previo del portal. Revisadas las demás opciones: siguen en uso (el "color del botón" se renombró a "color de los botones de las tarjetas"). Las filas antiguas de configuración se conservan sin uso. | `test_semana_activa_global_ya_no_existe`. |
+| Restricción de participación por evento | `limite_participaciones` + `periodo_limite` (toda la vigencia, día, semana o mes), con opciones adaptadas a cada tipo de evento. Validada en el backend sobre el historial no cancelado; excepción por colaborador; bloqueo de la fila del usuario también en las inscripciones. Aviso previo en el portal con la misma regla (`GET /reservas/verificar`, `puede_inscribirse` por sesión). | `test_una_sola_reserva_durante_toda_la_vigencia`, `test_limite_semanal_en_dias_distintos`, `test_una_sola_inscripcion_por_actividad`, `test_una_inscripcion_por_dia_y_actividades_sin_limite`. |
+| Imágenes por archivo o URL | `POST /uploads/imagenes` (JPG, PNG, WEBP, GIF ≤ 5 MB, firma del archivo verificada); URL validada (http/https o archivo subido) en el backend; vista previa, reemplazar y quitar en el panel; aviso si la URL no carga; respaldo verde en tarjetas y detalle. Limpieza automática de archivos sin uso (más de un día). | `test_subir_imagen_de_evento`, `test_limpieza_de_imagenes_huerfanas`, unitarias de imágenes. |
+
+### Errores encontrados y corregidos en esta ronda
+
+| Problema | Causa | Solución |
+|---|---|---|
+| La semana activa global ya había vencido (17–21 ago.): el portal mostraba eventos sin ningún día reservable | Un único periodo para todos los eventos | Vigencia por evento; la migración la traslada a cada evento para que ninguno se reabra solo |
+| El aviso previo del portal repetía en el navegador la regla de reservas y podía no coincidir con la del backend | Lógica duplicada | `GET /reservas/verificar` usa la misma función que crea la reserva |
+| Una imagen con URL rota dejaba el ícono de imagen rota en la tarjeta | Sin manejo de error de carga | Respaldo verde (`onError`) en tarjetas y detalle |
+| La URL de imagen aceptaba cualquier texto (p. ej. `javascript:`) | Sin validación | Validación en los esquemas del backend y en el formulario |
+| Dos inscripciones simultáneas de la misma persona en sesiones distintas podían superar un límite por persona | Solo se bloqueaba la fila de la sesión | Se bloquea primero el usuario y después la sesión |
+| La inscripción manual del administrador ignoraba la ventana de fechas, así que podía inscribir en una actividad ya cerrada | La ventana se omitía por completo para el admin | La vigencia aplica a todos; el admin solo omite la pausa manual del portal |
+
+### Qué cambia al desplegar
+
+- El backend respalda la base completa en `data/backups/` antes de aplicar la migración 0012.
+- Los eventos por turnos existentes reciben como vigencia la antigua semana activa (17 al 21
+  de agosto de 2026), así que aparecen como **finalizados** y fuera del portal hasta que se les
+  defina una vigencia nueva desde Catálogo → Eventos → Editar. Sus reservas no se tocan.
+- La restricción global "evento único por semana" estaba activa: esos eventos quedan con la
+  regla "una sola reserva por persona durante toda la vigencia" (editable por evento).
+- Las actividades toman como vigencia su ventana de inscripción o, si no tenían, desde su
+  creación hasta su última sesión.
+
+### Pruebas
+
+- Ejecutadas en el equipo de desarrollo: 65 pruebas unitarias (todas pasan), `pyflakes` sin
+  hallazgos, TypeScript (`tsc --noEmit`) y compilación de producción (`vite build`) sin
+  errores, y el SQL de la migración 0012 generado en modo offline (subida y bajada).
+- La suite tiene 177 pruebas (65 unitarias y 112 de integración), todas recolectadas sin
+  errores. Las 112 de integración necesitan MariaDB y se corren en el servidor con
+  `docker compose exec backend pytest`.

@@ -17,7 +17,7 @@ Toda la operación usa la zona horaria única **America/Bogota**.
 - [Arquitectura](#arquitectura)
 - [Modelo de datos](#modelo-de-datos)
 - [Flujo de reserva](#flujo-de-reserva)
-- [Regla de reservas: una por evento y por día](#regla-de-reservas-una-por-evento-y-por-día)
+- [Vigencia y reglas de participación por evento](#vigencia-y-reglas-de-participación-por-evento)
 - [Cuentas de usuario](#cuentas-de-usuario)
 - [Restablecer contraseña](#restablecer-contraseña)
 - [Zona horaria: estrategia](#zona-horaria-estrategia)
@@ -208,7 +208,7 @@ erDiagram
 **Los slots no se almacenan.** El backend los calcula dinámicamente (`HorarioService`) a
 partir de `hora_inicio`, `hora_fin`, `duracion_minutos` y `almuerzo_*` de la agenda,
 descartando la franja final incompleta, el almuerzo (solape total o parcial), los bloqueos,
-los festivos, los horarios ya pasados (hora de Bogotá) y la semana activa configurada. Cada
+los festivos, los horarios ya pasados (hora de Bogotá) y los días fuera de la vigencia del evento. Cada
 slot que sí se devuelve trae un `estado`: `disponible`, `ocupado`, `bloqueado` o `pasado`, para
 que el frontend los distinga visualmente sin depender solo del color.
 
@@ -257,31 +257,76 @@ sequenceDiagram
     end
 ```
 
-## Regla de reservas: una por evento y por día
+## Vigencia y reglas de participación por evento
 
-Cada usuario puede tener **como máximo una reserva activa por evento, por día** — sin importar
-la hora. Reemplaza una regla anterior más estricta ("una sola reserva activa en todo el
-sistema"): ahora el control es por combinación `usuario + evento + fecha`, no global.
+Cada evento —de reserva por turnos o actividad con inscripción— tiene **su propia vigencia** y
+**su propia regla de participación**. Reemplazan a la antigua "semana activa" global y a la
+restricción global "evento único por semana" (migración 0012).
 
-- Un mismo colaborador **sí puede** reservar eventos distintos el mismo día (p. ej. "Masaje de
-  relajación" a las 09:00 y "Silla de masajes" a las 15:00, ambos el lunes).
-- Un mismo colaborador **no puede** reservar el mismo evento dos veces el mismo día, sin
-  importar la hora (si ya tiene "Masaje de relajación" el lunes a las 09:00, un intento de
-  reservarlo también a las 15:00 el mismo lunes se rechaza).
-- Cancelar una reserva libera esa combinación evento+día de inmediato, permitiendo volver a
-  reservar el mismo evento ese mismo día.
-- El administrador puede seguir habilitando la excepción por usuario
-  (`usuarios.permite_reservas_multiples`, `POST /api/v1/usuarios/{id}/reservas-multiples`) para
-  que a alguien en particular no le aplique este límite.
+### Vigencia
 
-La validación ocurre en tres capas, de la más temprana (mejor UX) a la más autoritativa
-(protección real):
+- Al crear un evento se definen la **fecha de inicio** y la de **finalización** (ambos días
+  incluidos; obligatorias). Al editarlo se pueden cambiar, pero no dejar vacías.
+- Estados, calculados por el backend con la fecha de Bogotá (`app/utils/vigencia.py`):
+  `proximo` (todavía no empieza: no se publica ni recibe participaciones), `vigente` (se
+  publica y recibe reservas o inscripciones) y `finalizado` (desde la medianoche siguiente al
+  fin). Los eventos antiguos que nunca tuvieron fechas quedan como `sin_vigencia` y el panel
+  pide definirlas.
+- **El cierre es automático y no depende de nadie:** cada solicitud compara la fecha actual
+  con la vigencia, así que el evento deja de recibir participaciones aunque ningún
+  administrador entre al panel. Además, una tarea programada del backend
+  (`app/services/tareas_programadas.py`, al arrancar y cada 15 minutos) registra el cierre:
+  marca `finalizado_en` y deja en la auditoría la acción `finalizar_por_vigencia` con cuántas
+  reservas o inscripciones conserva el evento.
+- **Finalizar no borra, cancela ni modifica nada**: las reservas, inscripciones, sus estados y
+  sus notificaciones quedan intactos; los colaboradores las siguen viendo (y pueden cancelar
+  las suyas si todavía no ocurrieron) y el administrador consulta los participantes. Cancelar
+  es siempre una operación aparte y explícita (`POST /reservas/cancelar-lote`, cancelación de
+  inscripciones).
+- Reservas: solo se aceptan fechas dentro de la vigencia; el detalle público del evento trae
+  los días reservables (`dias_reservables`, desde hoy hasta el fin, máximo 31 a la vista).
+  Si al editar se acorta la vigencia, la respuesta trae `reservas_afectadas` (las futuras que
+  quedaron fuera); se conservan y el administrador decide.
+- Actividades: las sesiones no pueden ser anteriores al inicio de la vigencia; si una es
+  posterior al fin, las inscripciones cierran igual al terminar la vigencia y la sesión se
+  realiza con quienes ya estaban inscritos. El switch "Inscripciones habilitadas" sigue
+  existiendo como pausa manual dentro de la vigencia (el administrador sí puede inscribir).
+- Ni el administrador puede crear reservas o inscripciones manuales fuera de la vigencia:
+  para eso se extiende la vigencia.
+- El panel filtra los eventos por vigencia (vigentes, próximos, finalizados) y muestra el
+  historial completo: reservas de un evento por turnos (con filtro por estado, exportación a
+  CSV y cancelación explícita de las futuras) y sesiones e inscritos de una actividad.
+  `GET /servicios?estado=…` y `GET /actividades?estado=…` filtran igual por API.
 
-1. **Frontend:** antes de confirmar, `ReservationDialog` consulta `GET /reservas/mias` y avisa
-   si el usuario ya tiene una reserva activa para ese evento en esa fecha, deshabilitando el
-   botón de confirmar.
-2. **Backend:** `ReservaService.crear` vuelve a verificar la misma condición dentro de la
-   transacción antes de insertar.
+### Regla de participación
+
+Cada evento define cuántas veces puede participar una misma persona
+(`limite_participaciones`, vacío = sin límite) y en qué periodo se cuenta (`periodo_limite`:
+`evento` = toda la vigencia, `dia`, `semana` o `mes`):
+
+- **Eventos por turnos:** siempre rige, como hasta ahora, **una reserva por persona por día**
+  en cada evento (la respalda el índice único `uq_reserva_activa_evento_dia`). La regla del
+  evento se suma a eso: "una por día, puede repetir en días diferentes" (por defecto), "una
+  sola vez durante toda la vigencia" o un límite personalizado ("hasta 3 por semana", siempre
+  en días distintos).
+- **Actividades:** por defecto sin límite (solo se impide inscribirse dos veces en la misma
+  sesión, como hasta ahora); se puede pedir "una sola vez", "una por día" o un límite
+  personalizado. El periodo se mide con la fecha de cada sesión.
+- **Se cuenta el historial no cancelado:** activas, completadas (asistió) y no asistió. Lo
+  cancelado no cuenta. El periodo `evento` cuenta desde el inicio de la vigencia actual, así
+  que reprogramar el evento con fechas nuevas no arrastra el historial anterior.
+- La excepción por colaborador (`usuarios.permite_reservas_multiples`, "Excepción a límites"
+  en el panel) le permite superar el límite de cualquier evento.
+
+La validación ocurre en tres capas, de la más temprana (mejor UX) a la más autoritativa:
+
+1. **Frontend:** antes de confirmar, `ReservationDialog` consulta `GET /reservas/verificar`
+   (misma función del backend) y el detalle de una actividad recibe `puede_inscribirse` y el
+   motivo por sesión.
+2. **Backend:** `ReservaService` e `InscripcionService` vuelven a evaluar vigencia y límite
+   dentro de la transacción, con la fila del usuario bloqueada (`SELECT … FOR UPDATE`; en las
+   inscripciones, primero el usuario y después la sesión) para que dos intentos simultáneos de
+   la misma persona no lo superen.
 3. **Base de datos (barrera definitiva):** ver [Concurrencia](#concurrencia-y-control-de-duplicados).
 
 ## Cuentas de usuario
@@ -372,7 +417,8 @@ reglas están protegidas por índices únicos de MariaDB, no solo por la validac
      está desnormalizado en `reservas` (copiado de `agenda.servicio_id` al crear la fila)
      porque un índice solo puede referenciar columnas de su propia tabla.
 2. **Revalidación en el backend:** `ReservaService.crear` vuelve a calcular la disponibilidad
-   del slot (vía `HorarioService`) y a verificar la regla evento+día, ambas inmediatamente
+   del slot (vía `HorarioService`) y a verificar las reglas del evento (vigencia y límite de
+   participación, que incluye la de una por día), inmediatamente
    antes de insertar, dentro de la misma transacción. Si de todas formas dos solicitudes
    llegan a la vez, un `SELECT ... FOR UPDATE` sobre la fila del usuario serializa los intentos
    concurrentes de la misma persona.
@@ -438,6 +484,8 @@ Ver `.env.example` en la raíz (backend) y `frontend/.env.example` (build del fr
 | `BACKEND_PORT` | Puerto del host publicado hacia el backend (por defecto `8001`; cámbielo si ya está en uso) |
 | `ADMIN_USER`, `ADMIN_INITIAL_PASSWORD` | Credenciales del administrador inicial (cámbielas tras el primer login) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_TLS`, `SMTP_FROM`, `SMTP_FROM_NAME` | Configuración SMTP por defecto (fallback si no hay una guardada desde el panel — ver [Configuración SMTP](#configuración-smtp-y-notificaciones)) |
+| `TAREAS_PROGRAMADAS` | `true` (por defecto) para que el backend registre el fin de vigencia de los eventos y limpie imágenes sin uso. La disponibilidad no depende de esto: se calcula con la fecha en cada solicitud |
+| `INTERVALO_TAREAS_SEGUNDOS` | Cada cuánto corren las tareas programadas (por defecto `900`, mínimo 60) |
 | `VITE_API_URL` | Base de la API que usa el frontend (en Docker, ruta relativa `/api/v1`) |
 
 Ninguna credencial ni secreto está escrito en el código fuente; todo se lee de variables de
@@ -462,6 +510,20 @@ pasa por una migración de Alembic versionada en `backend/alembic/versions/`:
 - `0005_regla_evento_dia`: agrega `reservas.servicio_id` (desnormalizado) y el índice único
   `uq_reserva_activa_evento_dia`, reemplazando la regla global de una reserva por usuario por
   la regla de una reserva por usuario+evento+día.
+- `0006`–`0008`: excepción de reservas múltiples por usuario y eliminación de cuentas de
+  colaboradores y administradores conservando el historial.
+- `0009_modulo_actividades`: actividades, sesiones e inscripciones.
+- `0010_notificaciones_inscripciones`: correos de inscripciones y lugar de la sesión.
+- `0011_area_actividades_y_datos_portal`: área de las actividades, título y contacto.
+- `0012_vigencia_y_regla_por_evento`: vigencia (`vigencia_inicio`, `vigencia_fin`,
+  `finalizado_en`) y regla de participación (`limite_participaciones`, `periodo_limite`) en
+  eventos y actividades. Traslada la semana activa global a la vigencia de cada evento por
+  turnos (así ninguno se reabre solo), la restricción "evento único por semana" a la regla de
+  cada evento, y la ventana de inscripción de cada actividad a su vigencia. Solo agrega
+  columnas: no modifica reservas ni inscripciones.
+
+Antes de aplicar cualquier migración pendiente el backend genera un respaldo completo en
+`data/backups/` (ver [Backup](#backup-y-restauración-de-mariadb)).
 
 ## Administrador inicial
 
@@ -487,10 +549,16 @@ cuentas de colaboradores.
 El catálogo se administra en este orden: **Eventos**, **Áreas**, **Agendas**.
 
 - **Eventos** es el módulo unificado: lista juntos los eventos de *reserva por turnos* y las
-  *actividades con inscripción*, con filtros por área, tipo y nombre. Desde cada evento se
-  gestionan sus agendas (turnos) o sus sesiones, cupos e inscritos (actividades), sin
-  cambiar de sección. Las antiguas rutas `/admin/servicios` y `/admin/actividades`
-  redirigen aquí.
+  *actividades con inscripción*, con filtros por área, tipo, vigencia (vigentes, próximos,
+  finalizados) y nombre. Desde cada evento se gestionan sus agendas (turnos) o sus sesiones,
+  cupos e inscritos (actividades), y se consulta su historial, sin cambiar de sección. Las
+  antiguas rutas `/admin/servicios` y `/admin/actividades` redirigen aquí.
+- Al crear o editar un evento se definen su **vigencia**, su **regla de participación** y su
+  **imagen**: subir un archivo (JPG, PNG, WEBP o GIF hasta 5 MB; el backend verifica el
+  contenido real, `POST /uploads/imagenes`) o pegar una URL (http/https). Hay vista previa,
+  se puede reemplazar o quitar, y si la URL no carga se avisa; sin imagen —o si no carga— el
+  portal usa un fondo verde suave. Las imágenes subidas que ningún evento usa se borran solas
+  después de un día.
 - **El área es obligatoria.** Un evento por turnos se crea siempre junto con su área y su
   primera agenda (una sola operación: `POST /servicios` exige `agenda`); para ofrecerlo en
   otra área se le agrega otra agenda. Una actividad tiene su propio campo `area_id`
@@ -503,10 +571,10 @@ El catálogo se administra en este orden: **Eventos**, **Áreas**, **Agendas**.
 - Cada módulo conserva su lógica: las agendas generan turnos y las actividades controlan
   inscripciones y cupos; la unificación es solo de la administración.
 
-Las tarjetas del portal muestran la **disponibilidad**: turnos libres y próximo turno (eventos
-por turnos) o cupos disponibles con barra de ocupación (actividades). Los días que se cuentan
-son los mismos que ofrece el calendario, calculados en un solo lugar del backend
-(`GET /semana/dias-reservables`: semana activa desde hoy, o los días hábiles que quedan).
+Las tarjetas del portal muestran solo **información general e identificativa** (tipo, nombre,
+descripción, área, duración y vigencia). La disponibilidad —turnos o cupos— se consulta
+únicamente en el detalle de cada evento (`GET /eventos/{id}` trae `dias_reservables` y el
+resumen de turnos; las sesiones de una actividad traen sus cupos).
 
 ## Reglas de coherencia del catálogo
 
@@ -540,14 +608,17 @@ Módulo independiente de las reservas por turnos (no comparten reglas de negocio
   (vacío = sin límite). El cupo se controla bloqueando la fila de la sesión durante la
   inscripción: dos personas nunca pueden ocupar el último cupo a la vez.
 - **Estados de la actividad** (calculados en el backend): `abierta`, `agotada` (todas las
-  sesiones futuras llenas), `proximamente` (antes de la fecha de apertura), `cerrada` (switch
-  manual o pasó el cierre) y `finalizada` (sin sesiones futuras; no se anuncia en el portal).
+  sesiones futuras llenas), `proximamente` (antes del inicio de su vigencia), `cerrada`
+  (actividad o área desactivada, o inscripciones pausadas con el switch) y `finalizada`
+  (terminó su vigencia o no quedan sesiones futuras; no se anuncia en el portal).
 - **Estados de la sesión**: `disponible`, `cupo_lleno`, `cerrada`, `finalizada`, `inactiva`.
 - **Estados de la inscripción**: `activa`, `cancelada`, `completada` (asistió), `no_asistio`.
 - El colaborador puede cancelar su inscripción hasta que la sesión empiece; el cupo se libera
-  de inmediato. El administrador puede inscribir manualmente (ignora la ventana de
-  inscripción, nunca el cupo), cancelar con aviso por correo, marcar asistencia y exportar
-  los inscritos a CSV.
+  de inmediato. El administrador puede inscribir manualmente (ignora la pausa del portal,
+  nunca la vigencia, el cupo ni el límite de participación), cancelar con aviso por correo,
+  marcar asistencia y exportar los inscritos a CSV.
+- Vigencia y límite de participación por persona: ver
+  [Vigencia y reglas de participación](#vigencia-y-reglas-de-participación-por-evento).
 - Cada inscripción envía un **correo de confirmación** (actividad, fecha, hora, lugar, estado
   e información adicional). Un fallo del correo nunca duplica ni revierte la inscripción.
 
@@ -680,22 +751,30 @@ generada + índice único) que no tendría sentido validar contra un motor disti
 pruebas unitarias puras no necesitan base de datos y corren en cualquier equipo:
 
 ```bash
-cd backend && pytest tests/test_unitarias_logica.py
+cd backend && pytest tests/test_unitarias_logica.py tests/test_vigencia_unitarias.py
 ```
 
 Cobertura incluida en `backend/tests/`:
 
 - `test_unitarias_logica.py` (sin BD): grilla de turnos cerca de la medianoche y con
   duraciones inválidas (con tope de tiempo para detectar bucles), validaciones de agenda,
-  bloqueos, sesiones, lotes, semana activa y configuración, y la evaluación de estados de
-  actividades y sesiones.
+  bloqueos, sesiones, lotes, vigencia y configuración, días reservables y la evaluación de
+  estados de actividades y sesiones.
+- `test_vigencia_unitarias.py` (sin BD): estados de vigencia con sus días límite, ventanas de
+  cada periodo, límites de participación (una vez, por día, semana y mes), redacción de las
+  reglas, validación de URLs y archivos de imagen (firma del archivo, tamaño, formatos).
+- `test_vigencia_restricciones.py`: evento próximo, vigente y finalizado; reservas futuras e
+  inscripciones al finalizar (se conservan); reserva e inscripción nuevas después del fin
+  (rechazadas, también las manuales); historial de eventos finalizados; límites de
+  participación contados sobre el historial y la excepción por usuario; tarea programada;
+  carga de imágenes y limpieza de huérfanas; traslado de datos de la migración 0012.
 - `test_correcciones_reservas.py`: protección de reservas al editar agendas, bloqueos y
   festivos con reservas afectadas, cancelación en lote con notificación, desactivación y
   reactivación de eventos/áreas, revocación inmediata de sesiones, cancelaciones
   retroactivas y validaciones por API.
 - `test_actividades.py`: flujo completo de inscripción, cierre automático por cupo,
-  concurrencia sobre el último cupo, ventana de inscripción, estados, validaciones de
-  sesiones, generación por lotes y correos de confirmación/cancelación.
+  concurrencia sobre el último cupo, vigencia y pausa de inscripciones, estados, validaciones
+  de sesiones, generación por lotes y correos de confirmación/cancelación.
 
 - `test_horario_service.py`: generación de slots — horario completo, franja final incompleta,
   almuerzo total/parcial, bloqueos (rango y día completo), festivos, hora pasada, fecha
@@ -713,8 +792,8 @@ Cobertura incluida en `backend/tests/`:
 - `test_api_flujo.py`: flujo público completo por HTTP (requiere sesión de usuario, incluye
   reservar un segundo evento distinto el mismo día), un usuario nunca puede cancelar la reserva
   de otro, conflicto 409 por slot ocupado, reserva manual por admin identificando por correo
-  (incluido correo inexistente → 404), reinicio de semana (verifica que no borra filas),
-  auditoría, búsqueda administrativa de reservas por nombre/correo.
+  (incluido correo inexistente → 404), auditoría, búsqueda administrativa de reservas por
+  nombre/correo.
 - `test_concurrencia.py`: **pruebas obligatorias** — dos colaboradores distintos compitiendo
   por el mismo slot, y el mismo colaborador compitiendo consigo mismo por dos horarios del
   mismo evento el mismo día; en ambos casos, contra MariaDB real, exactamente un intento tiene
