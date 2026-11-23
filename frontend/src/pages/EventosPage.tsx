@@ -193,16 +193,6 @@ export default function EventosPage() {
           )}
         </Stack>
 
-        {!token && !cargando && tarjetas.length > 0 && (
-          <Alert
-            severity="info"
-            sx={{ mb: 3 }}
-            action={<Button color="inherit" size="small" component={RouterLink} to="/registro">Registrarme</Button>}
-          >
-            Puedes consultar horarios y cupos sin cuenta; para reservar o inscribirte necesitas iniciar sesión.
-          </Alert>
-        )}
-
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
         {cargando ? (

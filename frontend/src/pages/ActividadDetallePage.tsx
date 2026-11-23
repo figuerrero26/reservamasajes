@@ -8,12 +8,8 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CategoryOutlinedIcon from "@mui/icons-material/CategoryOutlined";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
-import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
-import HowToRegOutlinedIcon from "@mui/icons-material/HowToRegOutlined";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
-import LoginOutlinedIcon from "@mui/icons-material/LoginOutlined";
 import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
-import RuleOutlinedIcon from "@mui/icons-material/RuleOutlined";
 import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 import Loader from "../components/Loader";
 import { PortadaEvento } from "../components/EventCard";
@@ -143,18 +139,6 @@ export default function ActividadDetallePage() {
     : sesiones.length > 1
       ? `${sesiones.length} fechas programadas, ${textoFechasLargas(sesiones[0].fecha, sesiones[sesiones.length - 1].fecha)?.toLowerCase()}. Elige la tuya en «Elige una fecha».`
       : null;
-  const periodo = actividad.estado_inscripcion === "proximamente" && actividad.vigencia_inicio
-    ? `Abre el ${formatearFechaLarga(actividad.vigencia_inicio).toLowerCase()}`
-    : actividad.vigencia_fin && actividad.estado_inscripcion !== "finalizada"
-      ? `Hasta el ${formatearFechaLarga(actividad.vigencia_fin).toLowerCase()}, inclusive`
-      : textoFechasLargas(actividad.vigencia_inicio, actividad.vigencia_fin);
-  const conCupo = sesiones.filter((s) => s.cupo_maximo != null);
-  const cupos = sesiones.length === 0 ? null
-    : conCupo.length === 0 ? "Sin límite de participantes"
-      : conCupo.length === sesiones.length && new Set(conCupo.map((s) => s.cupo_maximo)).size === 1
-        ? `Hasta ${conCupo[0].cupo_maximo} participantes por fecha`
-        : "Cupos limitados: revisa la disponibilidad de cada fecha";
-
   return (
     <Box>
       <Button component={RouterLink} to="/" startIcon={<ArrowBackIcon />} color="inherit" sx={{ mb: 2, ml: -1 }}>
@@ -182,24 +166,13 @@ export default function ActividadDetallePage() {
             {actividad.descripcion_larga && (
               <Typography variant="body1" sx={{ whiteSpace: "pre-line" }}>{actividad.descripcion_larga}</Typography>
             )}
-            {/* Solo lo que corresponde a un evento de inscripción: área, cuándo se realiza,
-                hasta cuándo hay inscripciones y qué hace falta para participar — todo en un
-                solo panel, sin separar "Detalles" de "Para participar". */}
+            {/* Solo lo esencial: área, cuándo se realiza e información importante — sin
+                detalles del proceso de inscripción (eso ya lo resuelve el panel de la
+                derecha). */}
             <DetalleEvento
               filas={[
                 { icono: <CategoryOutlinedIcon />, titulo: "Área", contenido: actividad.area_nombre },
                 { icono: <EventOutlinedIcon />, titulo: sesiones.length === 1 ? "Fecha y horario" : "Fechas", contenido: realizacion },
-                { icono: <HowToRegOutlinedIcon />, titulo: "Periodo de inscripción", contenido: periodo },
-                { icono: <GroupsOutlinedIcon />, titulo: "Cupos", contenido: cupos },
-                { icono: <RuleOutlinedIcon />, titulo: "Regla de participación", contenido: actividad.regla_participacion },
-                {
-                  icono: <LoginOutlinedIcon />,
-                  titulo: "Cómo inscribirte",
-                  contenido: (token
-                    ? "Elige una fecha con cupo y confirma tu inscripción"
-                    : "Inicia sesión o crea tu cuenta y elige una fecha con cupo")
-                    + (actividad.campos_formulario.length > 0 ? "; te pediremos algunos datos adicionales." : "."),
-                },
                 {
                   icono: <InfoOutlinedIcon />,
                   titulo: "Información importante",
