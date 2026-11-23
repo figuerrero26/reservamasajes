@@ -67,19 +67,6 @@ export async function listarSesiones(actividadId: number): Promise<Sesion[]> {
   return data;
 }
 
-export async function crearSesion(actividadId: number, payload: SesionPayload): Promise<Sesion> {
-  const { data } = await api.post<Sesion>(`/actividades/${actividadId}/sesiones`, payload);
-  return data;
-}
-
-export async function generarSesiones(actividadId: number, payload: {
-  fecha_inicio: string; fecha_fin: string; dias_semana: number[];
-  hora_inicio: string; hora_fin: string; cupo_maximo?: number | null; lugar?: string | null;
-}): Promise<Sesion[]> {
-  const { data } = await api.post<Sesion[]>(`/actividades/${actividadId}/sesiones/generar`, payload);
-  return data;
-}
-
 export async function actualizarSesion(sesionId: number, payload: Partial<SesionPayload> & { activa?: boolean }): Promise<Sesion> {
   const { data } = await api.put<Sesion>(`/actividades/sesiones/${sesionId}`, payload);
   return data;

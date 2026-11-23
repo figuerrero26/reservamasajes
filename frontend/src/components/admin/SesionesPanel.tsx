@@ -1,17 +1,15 @@
 import { useEffect, useState } from "react";
 import {
-  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, Grid, Paper,
+  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Paper,
   Stack, TextField, Typography, useMediaQuery, useTheme,
 } from "@mui/material";
 import type { Actividad, Sesion } from "../../types";
-import { actualizarSesion, crearSesion, desactivarSesion, generarSesiones, listarSesiones } from "../../services/actividades";
+import { actualizarSesion, desactivarSesion, listarSesiones } from "../../services/actividades";
 import { mensajeError } from "../../utils/errors";
 import { formatearFechaLarga, formatearHora, textoVigencia } from "../../utils/fechas";
 import EstadoChip from "../EstadoChip";
 import Loader from "../Loader";
 import InscritosDialog, { OcupacionSesion } from "./InscritosDialog";
-
-const DIAS_SEMANA = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
 interface FormSesion {
   fecha: string;
@@ -22,7 +20,6 @@ interface FormSesion {
 }
 
 const SESION_VACIA: FormSesion = { fecha: "", hora_inicio: "", hora_fin: "", cupo_maximo: "", lugar: "" };
-const LOTE_VACIO = { fecha_inicio: "", fecha_fin: "", dias: [] as number[], hora_inicio: "", hora_fin: "", cupo_maximo: "", lugar: "" };
 
 const cupo = (v: string) => (v.trim() ? Number(v) : null);
 const sesionValida = (s: FormSesion) =>
@@ -43,12 +40,6 @@ export default function SesionesPanel({ actividad, onCambio }: Props) {
   const [sesiones, setSesiones] = useState<Sesion[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [nueva, setNueva] = useState<FormSesion>(SESION_VACIA);
-  const [creando, setCreando] = useState(false);
-  const [lote, setLote] = useState(LOTE_VACIO);
-  const [generando, setGenerando] = useState(false);
-  const [errorLote, setErrorLote] = useState<string | null>(null);
-  const [aviso, setAviso] = useState<string | null>(null);
   const [editando, setEditando] = useState<Sesion | null>(null);
   const [formEdicion, setFormEdicion] = useState<FormSesion>(SESION_VACIA);
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
@@ -70,55 +61,13 @@ export default function SesionesPanel({ actividad, onCambio }: Props) {
   }
 
   useEffect(() => {
-    setNueva(SESION_VACIA);
-    setLote(LOTE_VACIO);
     setError(null);
-    setErrorLote(null);
-    setAviso(null);
     cargar(actividad.id);
   }, [actividad.id]);
 
   async function refrescar() {
     await cargar(actividad.id);
     onCambio();
-  }
-
-  async function crear() {
-    if (!sesionValida(nueva)) return;
-    setCreando(true);
-    setError(null);
-    try {
-      await crearSesion(actividad.id, {
-        fecha: nueva.fecha, hora_inicio: nueva.hora_inicio, hora_fin: nueva.hora_fin,
-        cupo_maximo: cupo(nueva.cupo_maximo), lugar: nueva.lugar.trim() || null,
-      });
-      setNueva({ ...SESION_VACIA, lugar: nueva.lugar, cupo_maximo: nueva.cupo_maximo });
-      setAviso("Fecha agregada.");
-      await refrescar();
-    } catch (e) {
-      setError(mensajeError(e, "No se pudo agregar la fecha."));
-    } finally {
-      setCreando(false);
-    }
-  }
-
-  async function generar() {
-    if (!lote.fecha_inicio || !lote.fecha_fin || lote.dias.length === 0 || !lote.hora_inicio || !lote.hora_fin) return;
-    setGenerando(true);
-    setErrorLote(null);
-    try {
-      const creadas = await generarSesiones(actividad.id, {
-        fecha_inicio: lote.fecha_inicio, fecha_fin: lote.fecha_fin, dias_semana: lote.dias,
-        hora_inicio: lote.hora_inicio, hora_fin: lote.hora_fin, cupo_maximo: cupo(lote.cupo_maximo), lugar: lote.lugar.trim() || null,
-      });
-      setLote(LOTE_VACIO);
-      setAviso(`${creadas.length} fecha(s) creada(s).`);
-      await refrescar();
-    } catch (e) {
-      setErrorLote(mensajeError(e, "No se pudieron generar las fechas."));
-    } finally {
-      setGenerando(false);
-    }
   }
 
   async function alternarEstado(s: Sesion) {
@@ -166,14 +115,13 @@ export default function SesionesPanel({ actividad, onCambio }: Props) {
           : `Periodo de inscripción: ${textoVigencia(actividad.vigencia_inicio, actividad.vigencia_fin)?.toLowerCase() ?? "sin definir"}. `
             + "Las fechas no pueden ser anteriores al inicio de ese periodo; si una es posterior a su fin, las inscripciones cierran igual al terminar."}
       </Alert>
-      {aviso && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setAviso(null)}>{aviso}</Alert>}
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {cargando ? (
         <Loader />
       ) : (
         <Stack spacing={1} sx={{ mb: 3 }}>
           {sesiones.length === 0 && (
-            <Alert severity="info">Este evento todavía no tiene fechas: no se muestra en el portal hasta que agregues una.</Alert>
+            <Alert severity="info">Este evento no tiene fechas.</Alert>
           )}
           {sesiones.map((s) => (
             <Paper key={s.id} variant="outlined" sx={{ p: 1.75 }}>
@@ -202,86 +150,6 @@ export default function SesionesPanel({ actividad, onCambio }: Props) {
           ))}
         </Stack>
       )}
-
-      <Divider sx={{ mb: 2 }} />
-      <Typography variant="subtitle2" sx={{ mb: 1.5 }}>Agregar una fecha</Typography>
-      <Grid container spacing={1.5} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={4}>
-          <TextField label="Fecha" type="date" size="small" fullWidth InputLabelProps={{ shrink: true }}
-            inputProps={{ min: actividad.vigencia_inicio ?? undefined }}
-            value={nueva.fecha} onChange={(e) => setNueva({ ...nueva, fecha: e.target.value })} />
-        </Grid>
-        <Grid item xs={6} sm={4}>
-          <TextField label="Hora inicio" type="time" size="small" fullWidth InputLabelProps={{ shrink: true }}
-            value={nueva.hora_inicio} onChange={(e) => setNueva({ ...nueva, hora_inicio: e.target.value })} />
-        </Grid>
-        <Grid item xs={6} sm={4}>
-          <TextField label="Hora fin" type="time" size="small" fullWidth InputLabelProps={{ shrink: true }}
-            value={nueva.hora_fin} onChange={(e) => setNueva({ ...nueva, hora_fin: e.target.value })}
-            error={!!nueva.hora_fin && !!nueva.hora_inicio && nueva.hora_fin <= nueva.hora_inicio} />
-        </Grid>
-        <Grid item xs={12} sm={5}>
-          <TextField label="Lugar o punto de encuentro" size="small" fullWidth inputProps={{ maxLength: 200 }}
-            value={nueva.lugar} onChange={(e) => setNueva({ ...nueva, lugar: e.target.value })} />
-        </Grid>
-        <Grid item xs={12} sm={4}>
-          <TextField label="Límite de participantes" helperText="Vacío = sin límite" type="number" size="small" fullWidth
-            inputProps={{ min: 1 }} value={nueva.cupo_maximo} onChange={(e) => setNueva({ ...nueva, cupo_maximo: e.target.value })} />
-        </Grid>
-        <Grid item xs={12} sm={3}>
-          <Button fullWidth variant="contained" disabled={creando || !sesionValida(nueva)} onClick={crear}>Agregar</Button>
-        </Grid>
-      </Grid>
-
-      <Typography variant="subtitle2" sx={{ mb: 1 }}>Generar varias fechas (actividades que se repiten)</Typography>
-      {errorLote && <Alert severity="error" sx={{ mb: 2 }}>{errorLote}</Alert>}
-      <Grid container spacing={1.5} alignItems="center">
-        <Grid item xs={6} sm={3}>
-          <TextField label="Desde" type="date" size="small" fullWidth InputLabelProps={{ shrink: true }}
-            inputProps={{ min: actividad.vigencia_inicio ?? undefined }}
-            value={lote.fecha_inicio} onChange={(e) => setLote({ ...lote, fecha_inicio: e.target.value })} />
-        </Grid>
-        <Grid item xs={6} sm={3}>
-          <TextField label="Hasta" type="date" size="small" fullWidth InputLabelProps={{ shrink: true }}
-            value={lote.fecha_fin} onChange={(e) => setLote({ ...lote, fecha_fin: e.target.value })} />
-        </Grid>
-        <Grid item xs={6} sm={3}>
-          <TextField label="Hora inicio" type="time" size="small" fullWidth InputLabelProps={{ shrink: true }}
-            value={lote.hora_inicio} onChange={(e) => setLote({ ...lote, hora_inicio: e.target.value })} />
-        </Grid>
-        <Grid item xs={6} sm={3}>
-          <TextField label="Hora fin" type="time" size="small" fullWidth InputLabelProps={{ shrink: true }}
-            value={lote.hora_fin} onChange={(e) => setLote({ ...lote, hora_fin: e.target.value })} />
-        </Grid>
-        <Grid item xs={12}>
-          <Stack direction="row" flexWrap="wrap">
-            {DIAS_SEMANA.map((dia, idx) => (
-              <FormControlLabel
-                key={dia}
-                label={dia}
-                control={
-                  <Checkbox size="small" checked={lote.dias.includes(idx)}
-                    onChange={(e) => setLote({ ...lote, dias: e.target.checked ? [...lote.dias, idx] : lote.dias.filter((d) => d !== idx) })} />
-                }
-              />
-            ))}
-          </Stack>
-        </Grid>
-        <Grid item xs={12} sm={5}>
-          <TextField label="Lugar" size="small" fullWidth inputProps={{ maxLength: 200 }}
-            value={lote.lugar} onChange={(e) => setLote({ ...lote, lugar: e.target.value })} />
-        </Grid>
-        <Grid item xs={12} sm={4}>
-          <TextField label="Límite por fecha" helperText="Vacío = sin límite" type="number" size="small" fullWidth inputProps={{ min: 1 }}
-            value={lote.cupo_maximo} onChange={(e) => setLote({ ...lote, cupo_maximo: e.target.value })} />
-        </Grid>
-        <Grid item xs={12} sm={3}>
-          <Button fullWidth variant="outlined" onClick={generar}
-            disabled={generando || !lote.fecha_inicio || !lote.fecha_fin || lote.dias.length === 0 || !lote.hora_inicio || !lote.hora_fin}>
-            Generar
-          </Button>
-        </Grid>
-      </Grid>
 
       <Dialog open={!!editando} onClose={() => !guardandoEdicion && setEditando(null)} maxWidth="xs" fullWidth fullScreen={pantallaChica}>
         <DialogTitle>Editar fecha</DialogTitle>
