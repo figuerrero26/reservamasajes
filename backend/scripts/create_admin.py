@@ -3,13 +3,14 @@
 Uso: python -m scripts.create_admin
 Las credenciales se toman de las variables de entorno ADMIN_USER / ADMIN_INITIAL_PASSWORD.
 """
-from datetime import time
+from datetime import time, timedelta
 
 from app.auth.security import hash_password
 from app.config import settings
 from app.database.session import SessionLocal
 from app.models import Administrador, Agenda, Area, Rol, Servicio
 from app.models.rol import ROL_ADMINISTRADOR, ROL_VISOR_RESERVAS
+from app.utils.time import today
 
 
 def run() -> None:
@@ -42,6 +43,8 @@ def run() -> None:
         # codificado en la lógica de negocio: son únicamente filas de datos de ejemplo,
         # editables/eliminables desde el panel sin tocar el código.
         if db.query(Area).count() == 0:
+            # Vigencia de ejemplo: desde hoy y durante 30 días (editable en el panel).
+            vigencia = {"vigencia_inicio": today(), "vigencia_fin": today() + timedelta(days=30)}
             oficinas = Area(nombre="Oficinas")
             planta = Area(nombre="Planta")
             masajes = Servicio(
@@ -49,13 +52,13 @@ def run() -> None:
                 descripcion_corta="Sesión individual de bienestar y relajación para colaboradores",
                 descripcion_larga="Sesión de bienestar guiada por un terapeuta certificado, enfocada "
                                   "en aliviar tensión muscular y estrés laboral.",
-                duracion_minutos=30,
+                duracion_minutos=30, **vigencia,
             )
             silla = Servicio(
                 nombre="Silla de masajes",
                 descripcion_corta="Sesión rápida de masaje en silla ergonómica",
                 descripcion_larga="Sesión corta pensada para pausas activas durante la jornada laboral.",
-                duracion_minutos=15,
+                duracion_minutos=15, **vigencia,
             )
             db.add_all([oficinas, planta, masajes, silla])
             db.flush()

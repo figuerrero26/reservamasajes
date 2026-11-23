@@ -1,6 +1,5 @@
 import re
 import uuid
-from datetime import date
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -8,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.repositories.configuracion_repository import ConfiguracionRepository
-from app.schemas.configuracion import ConfiguracionGeneralOut, PlantillaCorreoOut, SemanaActivaSet
+from app.schemas.configuracion import ConfiguracionGeneralOut, PlantillaCorreoOut
 from app.services import auditoria_service
 from app.services.email_service import (
     ASUNTO_CONFIRMACION_DEFAULT, CUERPO_CONFIRMACION_DEFAULT, PLACEHOLDERS_CONFIRMACION,
@@ -17,11 +16,13 @@ from app.services.email_service import (
 from app.services.errors import DomainError
 from app.utils.uploads import PUBLIC_PREFIX, UPLOAD_DIR
 
+# La semana activa global y la restricción `evento_unico_por_semana` se retiraron en la
+# migración 0012: cada evento tiene ahora su propia vigencia y su regla de participación.
+# Sus filas antiguas se conservan en la tabla, pero ya no se leen ni se pueden editar.
 CLAVES_PUBLICAS = [
     "empresa_nombre", "sistema_nombre", "logo_url", "color_primario", "color_secundario",
     "mensaje_bienvenida", "imagen_bienvenida_url", "color_boton_disponibilidad", "color_fondo_bienvenida",
-    "evento_unico_por_semana", "contacto_correo", "contacto_telefono", "contacto_direccion",
-    "terminos_condiciones",
+    "contacto_correo", "contacto_telefono", "contacto_direccion", "terminos_condiciones",
 ]
 CLAVES_ADMIN = CLAVES_PUBLICAS + [
     "cancelacion_horas_minimas", "email_confirmacion_asunto", "email_confirmacion_cuerpo",
@@ -55,9 +56,6 @@ def validar_valor_configuracion(clave: str, valor: str | None) -> str | None:
         raise DomainError("El color debe tener formato hexadecimal, por ejemplo #1F3A5F.")
     if clave in _CLAVES_URL and not (valor.startswith(("http://", "https://")) or valor.startswith(f"{PUBLIC_PREFIX}/")):
         raise DomainError("La URL debe empezar por http:// o https://.")
-    if clave == "evento_unico_por_semana":
-        if valor not in ("true", "false"):
-            raise DomainError("El valor debe ser 'true' o 'false'.")
     if clave == "cancelacion_horas_minimas":
         if not valor.isdigit() or int(valor) > 720:
             raise DomainError("Las horas mínimas de cancelación deben ser un número entero entre 0 y 720.")
@@ -96,8 +94,6 @@ class ConfiguracionService:
 
     def obtener_publica(self) -> ConfiguracionGeneralOut:
         valores = self.repo.get_all()
-        inicio = valores.get("semana_activa_inicio")
-        fin = valores.get("semana_activa_fin")
         return ConfiguracionGeneralOut(
             empresa_nombre=valores.get("empresa_nombre"),
             sistema_nombre=valores.get("sistema_nombre"),
@@ -108,14 +104,11 @@ class ConfiguracionService:
             imagen_bienvenida_url=valores.get("imagen_bienvenida_url"),
             color_boton_disponibilidad=valores.get("color_boton_disponibilidad"),
             color_fondo_bienvenida=valores.get("color_fondo_bienvenida"),
-            evento_unico_por_semana=valores.get("evento_unico_por_semana") == "true",
             contacto_correo=valores.get("contacto_correo"),
             contacto_telefono=valores.get("contacto_telefono"),
             contacto_direccion=valores.get("contacto_direccion"),
             terminos_condiciones=valores.get("terminos_condiciones"),
             zona_horaria=settings.APP_TIMEZONE,
-            semana_activa_inicio=date.fromisoformat(inicio) if inicio else None,
-            semana_activa_fin=date.fromisoformat(fin) if fin else None,
         )
 
     def actualizar(self, clave: str, valor: str | None, admin_id: int) -> None:
@@ -179,26 +172,3 @@ class ConfiguracionService:
     def previsualizar_plantilla_correo(self, cuerpo: str) -> str:
         config_general = self.repo.get_all()
         return generar_vista_previa(cuerpo, config_general, config_general.get("email_confirmacion_imagen_url"))
-
-    def semana_activa(self) -> tuple[date | None, date | None]:
-        inicio = self.repo.get("semana_activa_inicio")
-        fin = self.repo.get("semana_activa_fin")
-        return (
-            date.fromisoformat(inicio) if inicio else None,
-            date.fromisoformat(fin) if fin else None,
-        )
-
-    def definir_semana_activa(self, data: SemanaActivaSet, admin_id: int) -> None:
-        anteriores = {
-            "semana_activa_inicio": self.repo.get("semana_activa_inicio"),
-            "semana_activa_fin": self.repo.get("semana_activa_fin"),
-        }
-        self.repo.set("semana_activa_inicio", data.inicio.isoformat())
-        self.repo.set("semana_activa_fin", data.fin.isoformat())
-        auditoria_service.registrar(
-            self.db, admin_id, "definir_semana_activa", "configuracion_general", None,
-            datos_anteriores=anteriores,
-            datos_nuevos={"semana_activa_inicio": data.inicio.isoformat(),
-                         "semana_activa_fin": data.fin.isoformat()},
-        )
-        self.db.commit()

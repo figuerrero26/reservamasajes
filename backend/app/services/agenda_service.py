@@ -11,6 +11,7 @@ from app.services.auditoria_service import snapshot
 from app.services.errors import Conflict, DomainError, NotFound
 from app.services.horario_service import grilla_agenda
 from app.services.reserva_service import a_admin_out
+from app.utils.time import today
 
 CAMPOS = [
     "id", "nombre", "area_id", "servicio_id", "hora_inicio", "hora_fin",
@@ -38,8 +39,9 @@ class AgendaService:
         return self.repo.listar_ordenadas(area_id=area_id, servicio_id=servicio_id)
 
     def listar_publicas(self, servicio_id: int | None = None) -> list[Agenda]:
-        """Agendas que el portal puede ofrecer: activas, con evento y área activos."""
-        return self.repo.list_reservables(servicio_id=servicio_id)
+        """Agendas que el portal puede ofrecer hoy: activas, con evento y área activos y el
+        evento dentro de su vigencia."""
+        return self.repo.list_reservables(today(), servicio_id=servicio_id)
 
     def obtener(self, agenda_id: int) -> Agenda:
         agenda = self.repo.get(agenda_id)

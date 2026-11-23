@@ -56,8 +56,12 @@ class SesionOut(BaseModel):
     inscritos: int
     cupos_disponibles: int | None = None  # None = sin límite
     estado: EstadoSesion = "disponible"
-    # Solo en el endpoint público con sesión iniciada: si el colaborador ya está inscrito.
+    # Solo en el endpoint público con sesión iniciada: si el colaborador ya está inscrito y si
+    # puede inscribirse (estado de la sesión + límite de participación del evento), con el
+    # motivo cuando no puede. La validación definitiva ocurre al inscribirse.
     inscrito: bool | None = None
+    puede_inscribirse: bool | None = None
+    motivo_no_disponible: str | None = None
 
 
 class GenerarSesionesIn(BaseModel):

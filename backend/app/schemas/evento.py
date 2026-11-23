@@ -11,13 +11,15 @@ class AgendaResumen(BaseModel):
 
 
 class EventoPublico(BaseModel):
-    """Tarjeta pública: no expone nada administrativo, solo lo necesario para mostrarla
-    y navegar a la disponibilidad.
+    """Evento por turnos en el portal: no expone nada administrativo.
 
-    La duración y la disponibilidad se calculan desde las agendas reservables (no desde el
-    servicio): `duracion_minutos`/`duracion_maxima` son la menor y la mayor duración de
-    turno entre sus áreas, y `turnos_disponibles`/`proximo_turno_*` resumen los días que el
-    portal ofrece para reservar (ver HorarioService.fechas_reservables)."""
+    En el CATÁLOGO (tarjetas) solo viaja la información general e identificativa del evento;
+    la disponibilidad se muestra únicamente en el DETALLE, que además trae
+    `dias_reservables` (días que el portal ofrece para reservar, dentro de la vigencia, ver
+    HorarioService.fechas_reservables) y el resumen `turnos_disponibles`/`proximo_turno_*`.
+
+    La duración se calcula desde las agendas reservables: `duracion_minutos`/
+    `duracion_maxima` son la menor y la mayor duración de turno entre sus áreas."""
     id: int
     nombre: str
     descripcion_corta: str | None = None
@@ -29,6 +31,11 @@ class EventoPublico(BaseModel):
     areas: list[str]
     area_ids: list[int] = []
     agendas: list[AgendaResumen]
-    turnos_disponibles: int = 0
+    vigencia_inicio: date | None = None
+    vigencia_fin: date | None = None
+    regla_participacion: str
+    # Solo en el detalle (GET /eventos/{id}); en el catálogo quedan en null.
+    dias_reservables: list[date] | None = None
+    turnos_disponibles: int | None = None
     proximo_turno_fecha: date | None = None
     proximo_turno_hora: time | None = None

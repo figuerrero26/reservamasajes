@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
@@ -30,8 +32,12 @@ def listar_sesiones_publicas(actividad_id: int, db: Session = Depends(get_db),
 
 # ---- Administración ----
 @router.get("", response_model=list[ActividadOut])
-def listar(area_id: int | None = None, db: Session = Depends(get_db), _: dict = Depends(get_current_admin)):
-    return ActividadService(db).listar_admin(area_id=area_id)
+def listar(area_id: int | None = None,
+           estado: Literal["vigente", "proximo", "finalizado", "sin_vigencia"] | None = None,
+           db: Session = Depends(get_db), _: dict = Depends(get_current_admin)):
+    """Con `estado`: solo las actividades en ese estado de vigencia (las finalizadas
+    conservan sus sesiones e inscripciones, consultables en GET /inscripciones?actividad_id=…)."""
+    return ActividadService(db).listar_admin(area_id=area_id, estado=estado)
 
 
 @router.get("/{actividad_id}", response_model=ActividadOut)

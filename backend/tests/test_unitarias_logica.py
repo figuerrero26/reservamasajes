@@ -1,8 +1,9 @@
 """Pruebas unitarias PURAS (sin base de datos): corren en cualquier equipo con `pytest`.
 
 Reproducen los problemas encontrados en el diagnóstico y verifican su corrección a nivel de
-lógica: grilla de turnos cerca de la medianoche, validaciones de agenda/sesiones/semana
-activa/configuración y la evaluación de estados de actividades y sesiones.
+lógica: grilla de turnos cerca de la medianoche, validaciones de agenda/sesiones/
+configuración, la evaluación de estados de actividades y sesiones, y la vigencia de los
+eventos (ver también test_vigencia_unitarias.py).
 """
 import threading
 from datetime import date, datetime, time, timedelta
@@ -14,7 +15,6 @@ from pydantic import ValidationError
 from app.schemas.actividad import ActividadCreate, CampoFormulario
 from app.schemas.agenda import AgendaCreate, AgendaUpdate, normalizar_dias, validar_horario
 from app.schemas.bloqueo import BloqueoCreate
-from app.schemas.configuracion import SemanaActivaSet
 from app.schemas.sesion import GenerarSesionesIn, SesionCreate
 from app.services import actividad_service
 from app.services.configuracion_service import validar_valor_configuracion
@@ -118,7 +118,7 @@ def test_validar_horario_acepta_agenda_nocturna():
 
 
 # ---------------------------------------------------------------------------------------
-# Bloqueos, sesiones, semana activa, configuración
+# Bloqueos, sesiones, configuración
 # ---------------------------------------------------------------------------------------
 
 def test_bloqueo_de_dia_descarta_horas_y_rango_las_exige():
@@ -149,21 +149,12 @@ def test_generar_lote_limita_rango_y_dias():
     assert ok.dias_semana == [1, 3]
 
 
-def test_semana_activa_valida_orden_y_longitud():
-    with pytest.raises(ValidationError):
-        SemanaActivaSet(inicio=date(2030, 1, 10), fin=date(2030, 1, 1))
-    with pytest.raises(ValidationError):
-        SemanaActivaSet(inicio=date(2030, 1, 1), fin=date(2030, 6, 1))
-    SemanaActivaSet(inicio=date(2030, 1, 6), fin=date(2030, 1, 12))
-
-
 @pytest.mark.parametrize("clave,valor", [
     ("color_primario", "rojo"),
     ("color_primario", "#12345"),
     ("cancelacion_horas_minimas", "dos"),
     ("cancelacion_horas_minimas", "-1"),
     ("cancelacion_horas_minimas", "9999"),
-    ("evento_unico_por_semana", "si"),
     ("logo_url", "javascript:alert(1)"),
     ("contacto_correo", "no-es-correo"),
 ])
@@ -183,20 +174,30 @@ def test_configuracion_normaliza_valores_validos():
 # Actividades: formulario, ventana y estados
 # ---------------------------------------------------------------------------------------
 
+VIGENCIA = dict(vigencia_inicio=date(2030, 1, 1), vigencia_fin=date(2030, 1, 31))
+
+
 def test_formulario_de_seleccion_exige_opciones_y_claves_unicas():
     with pytest.raises(ValidationError):
         CampoFormulario(clave="talla", etiqueta="Talla", tipo="seleccion", opciones=[])
+    ActividadCreate(nombre="X", area_id=1, **VIGENCIA)  # válida
     with pytest.raises(ValidationError):
-        ActividadCreate(nombre="X", campos_formulario=[
+        ActividadCreate(nombre="X", area_id=1, **VIGENCIA, campos_formulario=[
             CampoFormulario(clave="a", etiqueta="A", tipo="texto"),
             CampoFormulario(clave="a", etiqueta="B", tipo="texto"),
         ])
 
 
-def test_ventana_de_inscripcion_cierre_posterior_a_apertura():
+def test_actividad_exige_vigencia_coherente():
     with pytest.raises(ValidationError):
-        ActividadCreate(nombre="X", fecha_apertura_inscripciones=datetime(2030, 1, 2),
-                        fecha_cierre_inscripciones=datetime(2030, 1, 1))
+        ActividadCreate(nombre="X", area_id=1)  # sin vigencia
+    with pytest.raises(ValidationError):
+        ActividadCreate(nombre="X", area_id=1, vigencia_inicio=date(2030, 1, 2), vigencia_fin=date(2030, 1, 1))
+    with pytest.raises(ValidationError):
+        ActividadCreate(nombre="X", area_id=1, vigencia_inicio=date(2030, 1, 1), vigencia_fin=date(2033, 1, 1))
+    # Por defecto una actividad no tiene límite de participación.
+    act = ActividadCreate(nombre="X", area_id=1, **VIGENCIA)
+    assert act.limite_participaciones is None and act.periodo_limite == "evento"
 
 
 def test_formulario_guardado_ilegible_se_omite_pregunta_por_pregunta():
@@ -209,8 +210,8 @@ def test_formulario_guardado_ilegible_se_omite_pregunta_por_pregunta():
 
 
 def _actividad(**cambios):
-    base = dict(activo=True, inscripcion_abierta=True, fecha_apertura_inscripciones=None,
-                fecha_cierre_inscripciones=None, area=SimpleNamespace(activo=True))
+    base = dict(activo=True, inscripcion_abierta=True, vigencia_inicio=None, vigencia_fin=None,
+                area=SimpleNamespace(activo=True))
     return SimpleNamespace(**{**base, **cambios})
 
 
@@ -238,10 +239,16 @@ def test_estado_actividad(ahora_fijo):
     # Cupo alcanzado en todas las sesiones futuras: las inscripciones se cierran solas.
     assert evaluar(_actividad(), [s1, s2], {1: 2, 2: 1})[0] == "agotada"
     assert evaluar(_actividad(inscripcion_abierta=False), [s1], {})[0] == "cerrada"
-    futuro = ahora_fijo.replace(tzinfo=None) + timedelta(days=1)
-    pasado = ahora_fijo.replace(tzinfo=None) - timedelta(days=1)
-    assert evaluar(_actividad(fecha_apertura_inscripciones=futuro), [s1], {})[0] == "proximamente"
-    assert evaluar(_actividad(fecha_cierre_inscripciones=pasado), [s1], {})[0] == "cerrada"
+    hoy = ahora_fijo.date()
+    # Vigencia: antes del inicio "próximamente"; después del fin "finalizada", aunque queden
+    # sesiones futuras (se realizan con quienes ya estaban inscritos).
+    proxima = _actividad(vigencia_inicio=hoy + timedelta(days=1), vigencia_fin=hoy + timedelta(days=9))
+    assert evaluar(proxima, [s1], {})[0] == "proximamente"
+    terminada = _actividad(vigencia_inicio=hoy - timedelta(days=9), vigencia_fin=hoy - timedelta(days=1))
+    estado, resumen = evaluar(terminada, [s1], {1: 1})
+    assert estado == "finalizada" and resumen.inscritos_futuros == 1
+    # El último día de la vigencia todavía recibe inscripciones.
+    assert evaluar(_actividad(vigencia_inicio=hoy - timedelta(days=3), vigencia_fin=hoy), [s1], {})[0] == "abierta"
     # Sesión sin límite: nunca se agota y el total de cupos es "sin límite".
     estado, resumen = evaluar(_actividad(), [_sesion(3)], {3: 500})
     assert estado == "abierta" and resumen.cupos_disponibles is None
@@ -266,31 +273,35 @@ def test_area_inactiva_cierra_inscripciones(ahora_fijo):
 
 
 # ---------------------------------------------------------------------------------------
-# Días reservables (fuente única del calendario del portal y del resumen del catálogo)
+# Días reservables de un evento (fuente única del calendario de su detalle)
 # ---------------------------------------------------------------------------------------
 
-def test_fechas_reservables_con_semana_activa():
+def test_fechas_reservables_dentro_de_la_vigencia():
     from app.services.horario_service import calcular_fechas_reservables
     lunes = date(2030, 1, 7)
     viernes = date(2030, 1, 11)
-    # Antes de la semana activa: toda la semana.
+    # Antes de la vigencia: todo el periodo (el evento igual no se publica hasta el inicio).
     assert calcular_fechas_reservables(date(2030, 1, 1), lunes, viernes) == [lunes + timedelta(days=i) for i in range(5)]
-    # A mitad de semana: desde hoy.
+    # A mitad de la vigencia: desde hoy.
     assert calcular_fechas_reservables(date(2030, 1, 9), lunes, viernes) == [date(2030, 1, 9), date(2030, 1, 10), viernes]
-    # Ya terminó: ninguno.
+    # El último día de la vigencia todavía se ofrece; al día siguiente ya no.
+    assert calcular_fechas_reservables(viernes, lunes, viernes) == [viernes]
     assert calcular_fechas_reservables(date(2030, 1, 12), lunes, viernes) == []
-    # Tope de 31 días aunque el periodo sea más largo.
+    # Tope de 31 días a la vista aunque la vigencia sea más larga.
     assert len(calcular_fechas_reservables(lunes, lunes, lunes + timedelta(days=60))) == 31
 
 
-def test_fechas_reservables_sin_semana_activa():
+def test_fechas_reservables_sin_vigencia_o_con_una_sola_fecha():
     from app.services.horario_service import calcular_fechas_reservables
     miercoles = date(2030, 1, 9)
+    # Eventos antiguos sin vigencia: días hábiles que quedan de la semana (o la siguiente).
     assert calcular_fechas_reservables(miercoles, None, None) == [miercoles, date(2030, 1, 10), date(2030, 1, 11)]
     sabado = date(2030, 1, 12)
     assert calcular_fechas_reservables(sabado, None, None) == [date(2030, 1, 14) + timedelta(days=i) for i in range(5)]
-    # Solo una de las dos fechas configurada: se ignora (igual que antes en el portal).
-    assert calcular_fechas_reservables(miercoles, date(2030, 1, 1), None)[0] == miercoles
+    # Solo inicio: desde hoy, 31 días. Solo fin: desde hoy hasta el fin.
+    solo_inicio = calcular_fechas_reservables(miercoles, date(2030, 1, 1), None)
+    assert solo_inicio[0] == miercoles and len(solo_inicio) == 31
+    assert calcular_fechas_reservables(miercoles, None, date(2030, 1, 10)) == [miercoles, date(2030, 1, 10)]
 
 
 # ---------------------------------------------------------------------------------------

@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     # Puede sobreescribirse en configuracion_general (clave "cancelacion_horas_minimas").
     CANCELACION_HORAS_MINIMAS_DEFAULT: int = 0
 
+    # Tareas programadas del backend: registran el fin de vigencia de los eventos (auditoría)
+    # y limpian imágenes subidas que ya ningún evento usa. La disponibilidad de los eventos NO
+    # depende de ellas: se calcula con la fecha actual en cada solicitud, así que un evento
+    # deja de recibir participaciones al terminar su vigencia aunque nadie entre al panel.
+    TAREAS_PROGRAMADAS: bool = True
+    INTERVALO_TAREAS_SEGUNDOS: int = 900
+
     @property
     def cors_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]

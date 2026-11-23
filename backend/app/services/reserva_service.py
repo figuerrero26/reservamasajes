@@ -1,5 +1,6 @@
-"""Servicio de reservas: aplica la regla de una reserva por usuario+evento+día, genera el
-slot solicitado y crea la reserva bajo control de concurrencia.
+"""Servicio de reservas: aplica las reglas del evento (disponibilidad, vigencia y límite de
+participación por persona), genera el slot solicitado y crea la reserva bajo control de
+concurrencia.
 """
 from collections import defaultdict
 from datetime import date, time
@@ -8,18 +9,39 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import Agenda, Reserva, EstadoReserva, Usuario
+from app.models import Agenda, Reserva, EstadoReserva, Servicio, Usuario
 from app.repositories.agenda_repository import AgendaRepository
 from app.repositories.configuracion_repository import ConfiguracionRepository
 from app.repositories.reserva_repository import ReservaRepository
 from app.repositories.usuario_repository import UsuarioRepository
 from app.schemas.reserva import (
     AgendaDia, EstadoSlot, MiReservaOut, ReservaAdminOut, ReservaCreateManual, ReservaOut, SlotDia,
+    VerificacionReservaOut,
 )
 from app.services import auditoria_service
 from app.services.errors import Conflict, DomainError, Forbidden, NotFound
-from app.services.horario_service import HorarioService, agenda_reservable
+from app.services.horario_service import HorarioService, agenda_reservable, motivo_no_reservable
 from app.utils.time import add_minutes, inicio_de, now, ya_empezo
+from app.utils.vigencia import (
+    desde_para_limite, fecha_en_vigencia, motivo_limite, para_administrador, rango_vigencia_texto,
+)
+
+MENSAJE_UNA_POR_DIA = "Ya tienes una reserva para este evento en esta fecha."
+
+
+def motivo_limite_reserva(servicio: Servicio, fechas_previas: list[date], fecha: date) -> str | None:
+    """Límite de participación de un evento por turnos para una reserva nueva en `fecha`.
+
+    Siempre rige, como hasta ahora, una reserva por persona por día en cada evento (la
+    respalda además el índice único de la tabla); el límite del evento se suma a esa regla
+    (p. ej. "una sola vez en toda la vigencia" o "hasta 3 por semana", siempre en días
+    distintos). `fechas_previas`: reservas NO canceladas de la persona en el evento."""
+    if fecha in fechas_previas:
+        return MENSAJE_UNA_POR_DIA
+    return motivo_limite(
+        fechas_previas, fecha, servicio.limite_participaciones, servicio.periodo_limite,
+        servicio.vigencia_inicio, "reserva",
+    )
 
 
 def a_admin_out(r: Reserva) -> ReservaAdminOut:
@@ -60,30 +82,17 @@ class ReservaService:
             raise NotFound("Usuario no encontrado o inactivo")
 
         agenda = self.agendas.get(agenda_id)
-        # La agenda, su evento y su área deben estar activos: desactivar un evento corta la
-        # creación de reservas también por API, no solo ocultándolo en el portal. Aplica
-        # igual a la reserva manual del administrador.
-        if not agenda or not agenda_reservable(agenda):
-            raise DomainError("Este evento no está disponible para reservas en este momento.")
-
-        # Regla: máximo una reserva activa por usuario+evento+día — o, si el admin activó
-        # la restricción opcional `evento_unico_por_semana`, por usuario+evento+semana
-        # activa completa. No exime a la reserva manual del admin; para casos puntuales
-        # existe la excepción por usuario `permite_reservas_multiples`.
-        existente = self.reservas.activa_por_usuario_evento_fecha(usuario.id, agenda.servicio_id, fecha)
-        mensaje_conflicto = "Ya tienes una reserva para este evento en esta fecha."
-        if not existente and self.configuracion.get("evento_unico_por_semana") == "true":
-            inicio_str = self.configuracion.get("semana_activa_inicio")
-            fin_str = self.configuracion.get("semana_activa_fin")
-            if inicio_str and fin_str:
-                inicio_semana, fin_semana = date.fromisoformat(inicio_str), date.fromisoformat(fin_str)
-                if inicio_semana <= fecha <= fin_semana:
-                    existente = self.reservas.activa_por_usuario_evento_rango(
-                        usuario.id, agenda.servicio_id, inicio_semana, fin_semana,
-                    )
-                    mensaje_conflicto = "Ya tienes una reserva para este evento esta semana."
-        if existente and not usuario.permite_reservas_multiples:
-            raise Conflict(mensaje_conflicto)
+        # Reglas del evento (aplican igual a la reserva manual del administrador): agenda,
+        # evento y área activos; evento dentro de su vigencia; fecha dentro de la vigencia.
+        motivo = self._motivo_evento(agenda, fecha)
+        if motivo:
+            raise DomainError(motivo)
+        # Límite de participación del evento, contado sobre el historial no cancelado de la
+        # persona. Para casos puntuales existe la excepción por usuario
+        # `permite_reservas_multiples`.
+        motivo = self._motivo_limite(usuario, agenda.servicio, fecha)
+        if motivo:
+            raise Conflict(para_administrador(motivo) if admin_id else motivo)
 
         # El slot solicitado debe existir y estar disponible según la generación dinámica.
         slots = self.horarios.generar(agenda_id, fecha)
@@ -118,7 +127,7 @@ class ReservaService:
         except IntegrityError as exc:
             self.db.rollback()
             if "uq_reserva_activa_evento_dia" in str(getattr(exc, "orig", exc)):
-                raise Conflict("Ya tienes una reserva para este evento en esta fecha.")
+                raise Conflict(MENSAJE_UNA_POR_DIA)
             raise Conflict("El horario seleccionado acaba de ser reservado. Por favor seleccione otro horario")
 
         accion = "crear_reserva_admin" if admin_id else "crear_reserva"
@@ -130,6 +139,38 @@ class ReservaService:
         self.db.commit()
         self.db.refresh(reserva)
         return reserva
+
+    @staticmethod
+    def _motivo_evento(agenda: Agenda | None, fecha: date) -> str | None:
+        if agenda is None:
+            return "Este evento no está disponible para reservas en este momento."
+        motivo = motivo_no_reservable(agenda)
+        if motivo:
+            return motivo
+        servicio = agenda.servicio
+        if not fecha_en_vigencia(servicio.vigencia_inicio, servicio.vigencia_fin, fecha):
+            return (f"Este evento solo recibe reservas "
+                    f"{rango_vigencia_texto(servicio.vigencia_inicio, servicio.vigencia_fin)}.")
+        return None
+
+    def _motivo_limite(self, usuario: Usuario, servicio: Servicio, fecha: date) -> str | None:
+        if usuario.permite_reservas_multiples:
+            return None
+        desde = desde_para_limite(fecha, servicio.periodo_limite, servicio.vigencia_inicio)
+        return motivo_limite_reserva(servicio, self.reservas.fechas_participacion(usuario.id, servicio.id, desde), fecha)
+
+    def verificar(self, usuario_id: int, agenda_id: int, fecha: date) -> VerificacionReservaOut:
+        """¿Puede esta persona reservar en este evento ese día? Mismas reglas que la creación
+        (sin el turno concreto), para que el portal avise antes de elegir un horario. La
+        validación definitiva sigue ocurriendo al crear la reserva."""
+        usuario = self.usuarios.get(usuario_id)
+        if not usuario or not usuario.activo:
+            raise NotFound("Usuario no encontrado o inactivo")
+        if fecha < now().date():
+            return VerificacionReservaOut(permitido=False, motivo="La fecha ya pasó.")
+        agenda = self.agendas.get(agenda_id)
+        motivo = self._motivo_evento(agenda, fecha) or self._motivo_limite(usuario, agenda.servicio, fecha)
+        return VerificacionReservaOut(permitido=motivo is None, motivo=motivo)
 
     def crear(self, agenda_id: int, fecha: date, hora_inicio: time, usuario_id: int) -> Reserva:
         """Reserva creada por el propio usuario autenticado (portal público)."""
@@ -335,28 +376,9 @@ class ReservaService:
         self.db.commit()
         return reserva
 
-    def reiniciar_semana(self, fecha_lunes: date, admin_id: int) -> list[int]:
-        """Reinicio semanal por cambio de estado: conserva la trazabilidad, nunca borra filas.
-
-        Solo cancela reservas que todavía no han ocurrido: las que ya pasaron quedan activas
-        para que el administrador registre la asistencia. Devuelve los ids cancelados (la
-        capa API notifica a cada colaborador)."""
-        from datetime import timedelta
-        if fecha_lunes.weekday() != 0:
-            raise DomainError("La fecha indicada debe ser un lunes.")
-        fin = fecha_lunes + timedelta(days=6)
-        activas = self.reservas.activas_desde(fecha_lunes, fin)
-        for r in activas:
-            self._marcar_cancelada(r, "reinicio_semana")
-        auditoria_service.registrar(
-            self.db, admin_id, "reiniciar_semana", "reserva", None,
-            datos_nuevos={"semana": fecha_lunes.isoformat(), "reservas_afectadas": len(activas)},
-        )
-        self.db.commit()
-        return [r.id for r in activas]
-
     def habilitar_reserva_extra(self, usuario_id: int, admin_id: int, permitir: bool = True) -> None:
-        """Habilita o revoca la excepción a la regla de una reserva por evento por día."""
+        """Habilita o revoca la excepción a los límites de participación de los eventos
+        (incluida la regla de una reserva por evento por día)."""
         usuario = self.usuarios.get(usuario_id)
         if not usuario:
             raise NotFound("Colaborador no encontrado")

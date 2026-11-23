@@ -76,6 +76,13 @@ class ReservaAdminOut(ReservaOut):
     agenda_nombre: str
 
 
+class VerificacionReservaOut(BaseModel):
+    """Si el colaborador autenticado puede reservar en un evento un día dado (reglas del
+    evento: vigencia y límite de participación). `motivo` explica por qué no."""
+    permitido: bool
+    motivo: str | None = None
+
+
 class ReservaCreadaOut(ReservaOut):
     """Respuesta de los endpoints de creación. El correo de confirmación se envía en segundo
     plano (no bloquea ni revierte la reserva), por eso aquí siempre es "pendiente"; el

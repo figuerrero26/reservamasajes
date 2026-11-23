@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     actividades, administradores, agendas, areas, auditoria, auth, bloqueos, configuracion, cuenta,
-    eventos, festivos, inscripciones, reservas, semana, servicios, usuarios,
+    eventos, festivos, inscripciones, reservas, servicios, uploads, usuarios,
 )
 
 api_router = APIRouter()
@@ -18,7 +18,7 @@ api_router.include_router(usuarios.router)
 api_router.include_router(bloqueos.router)
 api_router.include_router(festivos.router)
 api_router.include_router(configuracion.router)
-api_router.include_router(semana.router)
+api_router.include_router(uploads.router)
 api_router.include_router(auditoria.router)
 api_router.include_router(actividades.router)
 api_router.include_router(inscripciones.router)

@@ -6,13 +6,15 @@ Cada bloque reproduce un problema concreto y verifica su solución:
 3. Bloqueos y festivos informan las reservas afectadas sin cancelarlas, impiden nuevas
    reservas y la cancelación posterior es explícita y notificada.
 4. Desactivar un evento/área corta las reservas desde el backend y se puede reactivar.
-5. Sesiones revocables, cancelación retroactiva, reinicio semanal y validaciones.
+5. Sesiones revocables, cancelación retroactiva y validaciones (la semana activa global y
+   el reinicio semanal se retiraron: cada evento tiene su propia vigencia).
 """
 from datetime import date, time, timedelta
 
 from app.database.session import SessionLocal
 from app.models import Administrador, Agenda, EstadoReserva, Notificacion, Reserva, Usuario
 from app.services.reserva_service import ReservaService
+from app.utils.time import today
 
 API = "/api/v1"
 
@@ -106,7 +108,8 @@ def test_cambiar_evento_de_agenda_con_reservas_se_rechaza(client, datos_base, he
     # no choca con la unicidad área+evento y llega a la validación de reservas.
     planta = client.post(f"{API}/areas", headers=headers_admin, json={"nombre": "Planta"}).json()
     servicio = client.post(f"{API}/servicios", headers=headers_admin, json={
-        "nombre": "Yoga",
+        "nombre": "Yoga", "vigencia_inicio": today().isoformat(),
+        "vigencia_fin": (today() + timedelta(days=60)).isoformat(),
         "agenda": {"area_id": planta["id"], "hora_inicio": "08:00", "hora_fin": "12:00", "duracion_minutos": 60},
     }).json()
     r = client.put(f"{API}/agendas/{datos_base['agenda_id']}", headers=headers_admin,
@@ -292,10 +295,17 @@ def test_mis_reservas_trae_nombre_del_evento_aunque_este_desactivado(client, dat
     assert mias[0]["puede_cancelar"] is True
 
 
-def test_reinicio_semanal_exige_lunes(client, datos_base, headers_admin):
-    martes = _lunes_futuro() + timedelta(days=1)
-    r = client.post(f"{API}/semana/reiniciar", params={"fecha_lunes": martes.isoformat()}, headers=headers_admin)
+def test_semana_activa_global_ya_no_existe(client, datos_base, headers_admin):
+    """La semana activa y la restricción semanal global se reemplazaron por la vigencia y la
+    regla de participación de cada evento (migración 0012)."""
+    lunes = _lunes_futuro()
+    assert client.get(f"{API}/semana/activa").status_code == 404
+    assert client.post(f"{API}/semana/reiniciar", params={"fecha_lunes": lunes.isoformat()},
+                       headers=headers_admin).status_code == 404
+    r = client.put(f"{API}/configuracion", headers=headers_admin, json={"clave": "evento_unico_por_semana", "valor": "true"})
     assert r.status_code == 400
+    publica = client.get(f"{API}/configuracion").json()
+    assert "semana_activa_inicio" not in publica and "evento_unico_por_semana" not in publica
 
 
 def test_configuracion_invalida_se_rechaza_por_api(client, datos_base, headers_admin):

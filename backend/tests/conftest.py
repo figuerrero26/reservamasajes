@@ -45,6 +45,9 @@ os.environ["MARIADB_USER"] = _url.username
 os.environ["MARIADB_PASSWORD"] = _url.password or ""
 os.environ["MARIADB_DATABASE"] = _url.database
 os.environ.setdefault("JWT_SECRET", "test-secret")
+# Las tareas programadas (fin de vigencia, limpieza de imágenes) no corren solas durante las
+# pruebas: las pruebas que las necesitan llaman a sus funciones directamente.
+os.environ["TAREAS_PROGRAMADAS"] = "false"
 
 from datetime import time  # noqa: E402
 

@@ -134,27 +134,6 @@ def test_reserva_manual_con_correo_inexistente_da_404(client, datos_base, header
     assert r.status_code == 404
 
 
-def test_reinicio_semana_no_borra_filas(client, db, datos_base, headers_admin, headers_usuario):
-    lunes = _lunes_futuro()
-    r = client.get(f"/api/v1/agendas/{datos_base['agenda_id']}/horarios", params={"fecha": lunes.isoformat()})
-    disponible = next(s for s in r.json()["slots"] if s["estado"] == "disponible")
-    r = client.post("/api/v1/reservas", json={
-        "agenda_id": datos_base["agenda_id"], "fecha": lunes.isoformat(), "hora_inicio": disponible["hora_inicio"],
-    }, headers=headers_usuario)
-    reserva_id = r.json()["id"]
-
-    r = client.post("/api/v1/semana/reiniciar", params={"fecha_lunes": lunes.isoformat()},
-                     headers=headers_admin)
-    assert r.status_code == 200
-    assert r.json()["reservas_afectadas"] == 1
-
-    r = client.get("/api/v1/reservas", params={"agenda_id": datos_base["agenda_id"]}, headers=headers_admin)
-    ids = [x["id"] for x in r.json()]
-    assert reserva_id in ids  # sigue existiendo, solo cambió de estado
-    afectada = next(x for x in r.json() if x["id"] == reserva_id)
-    assert afectada["estado"] == "cancelada"
-
-
 def test_auditoria_registra_login(client, datos_base, headers_admin):
     r = client.get("/api/v1/auditoria", headers=headers_admin)
     assert r.status_code == 200

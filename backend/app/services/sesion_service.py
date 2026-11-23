@@ -3,20 +3,29 @@ from datetime import timedelta
 
 from sqlalchemy.orm import Session
 
-from app.models import Sesion
+from app.models import Actividad, Sesion, Usuario
 from app.repositories.actividad_repository import ActividadRepository
 from app.repositories.inscripcion_repository import InscripcionRepository
 from app.repositories.sesion_repository import SesionRepository
 from app.schemas.sesion import MAX_SESIONES_LOTE, GenerarSesionesIn, SesionCreate, SesionOut, SesionUpdate
 from app.services import auditoria_service
 from app.services.actividad_service import (
-    actividad_disponible, construir_sesion, estado_sesion, ventana_inscripcion,
+    construir_sesion, estado_sesion, motivo_actividad_no_disponible, validar_sesion_en_vigencia,
+    ventana_inscripcion,
 )
 from app.services.errors import DomainError, NotFound
 from app.utils.time import ya_empezo
+from app.utils.vigencia import formato_fecha, motivo_limite
 
 CAMPOS_AUDITORIA = ["id", "actividad_id", "fecha", "hora_inicio", "hora_fin", "cupo_maximo", "lugar", "activa"]
 NO_NULOS = {"fecha", "hora_inicio", "hora_fin", "activa"}
+
+MOTIVO_POR_ESTADO = {
+    "cupo_lleno": "Esta sesión ya no tiene cupos disponibles.",
+    "cerrada": "Las inscripciones no están abiertas en este momento.",
+    "finalizada": "Esta sesión ya empezó o terminó.",
+    "inactiva": "Esta sesión no está disponible.",
+}
 
 
 class SesionService:
@@ -30,19 +39,40 @@ class SesionService:
         ids = [s.id for s in sesiones]
         conteos = self.inscripciones.contar_activas_por_sesiones(ids)
         inscritas = self.inscripciones.sesiones_inscritas(usuario_id, ids) if usuario_id else set()
+        usuario = self.db.get(Usuario, usuario_id) if usuario_id else None
+        exento = bool(usuario and usuario.permite_reservas_multiples)
         ventanas: dict[int, str] = {}
+        historial: dict[int, list] = {}
         resultado = []
         for s in sesiones:
+            actividad = s.actividad
             if s.actividad_id not in ventanas:
-                ventanas[s.actividad_id] = ventana_inscripcion(s.actividad)
+                ventanas[s.actividad_id] = ventana_inscripcion(actividad)
             inscritos = conteos.get(s.id, 0)
+            estado = estado_sesion(s, inscritos, ventanas[s.actividad_id])
+            puede, motivo = None, None
+            if usuario_id:
+                if s.id in inscritas:
+                    puede, motivo = False, "Ya estás inscrito en esta sesión."
+                elif estado != "disponible":
+                    puede, motivo = False, MOTIVO_POR_ESTADO.get(estado)
+                else:
+                    if not exento and actividad.limite_participaciones is not None:
+                        if actividad.id not in historial:
+                            historial[actividad.id] = self.inscripciones.fechas_participacion(usuario_id, actividad.id)
+                        motivo = motivo_limite(
+                            historial[actividad.id], s.fecha, actividad.limite_participaciones,
+                            actividad.periodo_limite, actividad.vigencia_inicio, "inscripción",
+                        )
+                    puede = motivo is None
             resultado.append(SesionOut(
                 id=s.id, actividad_id=s.actividad_id, fecha=s.fecha,
                 hora_inicio=s.hora_inicio, hora_fin=s.hora_fin, cupo_maximo=s.cupo_maximo, lugar=s.lugar,
                 activa=s.activa, inscritos=inscritos,
                 cupos_disponibles=max(0, s.cupo_maximo - inscritos) if s.cupo_maximo is not None else None,
-                estado=estado_sesion(s, inscritos, ventanas[s.actividad_id]),
+                estado=estado,
                 inscrito=(s.id in inscritas) if usuario_id else None,
+                puede_inscribirse=puede, motivo_no_disponible=motivo,
             ))
         return resultado
 
@@ -58,8 +88,11 @@ class SesionService:
 
     def listar_publicas(self, actividad_id: int, usuario_id: int | None = None) -> list[SesionOut]:
         actividad = self.actividades.get(actividad_id)
-        if not actividad or not actividad_disponible(actividad):
+        if not actividad:
             raise NotFound("Actividad no encontrada")
+        motivo = motivo_actividad_no_disponible(actividad)
+        if motivo:
+            raise NotFound(motivo)
         return self.listar(actividad_id, solo_activas=True, solo_futuras=True, usuario_id=usuario_id)
 
     def obtener(self, sesion_id: int) -> Sesion:
@@ -68,13 +101,14 @@ class SesionService:
             raise NotFound("Sesión no encontrada")
         return sesion
 
-    def _validar_actividad(self, actividad_id: int) -> None:
-        if not self.actividades.get(actividad_id):
+    def _actividad(self, actividad_id: int) -> Actividad:
+        actividad = self.actividades.get(actividad_id)
+        if not actividad:
             raise NotFound("Actividad no encontrada")
+        return actividad
 
     def crear(self, actividad_id: int, data: SesionCreate, admin_id: int) -> SesionOut:
-        self._validar_actividad(actividad_id)
-        sesion = construir_sesion(self.repo, actividad_id, data)
+        sesion = construir_sesion(self.repo, self._actividad(actividad_id), data)
         self.db.add(sesion)
         self.db.flush()
         auditoria_service.registrar(
@@ -87,8 +121,14 @@ class SesionService:
     def generar_lote(self, actividad_id: int, data: GenerarSesionesIn, admin_id: int) -> list[SesionOut]:
         """Atajo para actividades que sí se repiten: crea una sesión por cada día del rango
         que caiga en `dias_semana` (0=lunes...6=domingo). Omite fechas ya pasadas y las que
-        ya tienen una sesión a esa misma hora (no duplica)."""
-        self._validar_actividad(actividad_id)
+        ya tienen una sesión a esa misma hora (no duplica). El rango no puede empezar antes
+        de la vigencia del evento."""
+        actividad = self._actividad(actividad_id)
+        if actividad.vigencia_inicio and data.fecha_inicio < actividad.vigencia_inicio:
+            raise DomainError(
+                f"El rango empieza antes de la vigencia del evento: la primera fecha posible es el "
+                f"{formato_fecha(actividad.vigencia_inicio)}."
+            )
         nuevas: list[Sesion] = []
         cursor = data.fecha_inicio
         while cursor <= data.fecha_fin:
@@ -128,6 +168,8 @@ class SesionService:
         if ("fecha" in cambios or "hora_inicio" in cambios) and (fecha, hora_inicio) != (sesion.fecha, sesion.hora_inicio):
             if ya_empezo(fecha, hora_inicio):
                 raise DomainError("No se puede mover la sesión a una fecha u hora que ya pasó.")
+            if fecha != sesion.fecha:
+                validar_sesion_en_vigencia(sesion.actividad, fecha)
         nuevo_cupo = cambios.get("cupo_maximo", sesion.cupo_maximo)
         if nuevo_cupo is not None and nuevo_cupo < inscritos:
             raise DomainError(

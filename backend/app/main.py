@@ -1,5 +1,7 @@
 """Punto de entrada de la API — Sistema de Reservas de Bienestar."""
+import asyncio
 import logging
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
@@ -13,15 +15,32 @@ from slowapi.errors import RateLimitExceeded
 from app.api.v1.router import api_router
 from app.config import settings
 from app.services.errors import DomainError
+from app.services.tareas_programadas import bucle_tareas
 from app.utils.limiter import limiter
 from app.utils.uploads import PUBLIC_PREFIX, UPLOAD_DIR
 
 logger = logging.getLogger("reservas")
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Arranca las tareas programadas (registro del fin de vigencia de los eventos y limpieza
+    de imágenes sin uso, ver app/services/tareas_programadas.py) y las detiene al apagar."""
+    tarea = asyncio.create_task(bucle_tareas(settings.INTERVALO_TAREAS_SEGUNDOS)) if settings.TAREAS_PROGRAMADAS else None
+    try:
+        yield
+    finally:
+        if tarea:
+            tarea.cancel()
+            with suppress(asyncio.CancelledError):
+                await tarea
+
+
 app = FastAPI(
     title="Reservas de Bienestar",
     version="2.0.0",
     description="API para la gestión de reservas de actividades de bienestar.",
+    lifespan=lifespan,
 )
 
 app.state.limiter = limiter

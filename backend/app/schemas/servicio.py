@@ -1,9 +1,11 @@
-from datetime import time
+from datetime import date, datetime, time
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from app.schemas.agenda import DURACION_MAX, DURACION_MIN, normalizar_dias, validar_horario
 from app.schemas.reserva import ReservaAdminOut
+from app.schemas.vigencia import ConImagen, EstadoVigencia, PeriodoLimite, VigenciaYReglaCreate, VigenciaYReglaUpdate
+from app.utils.vigencia import describir_regla
 
 
 class AgendaInicial(BaseModel):
@@ -29,28 +31,32 @@ class AgendaInicial(BaseModel):
         return self
 
 
-class ServicioBase(BaseModel):
+class ServicioCreate(ConImagen, VigenciaYReglaCreate):
+    """Un evento por turnos se crea siempre junto con su área y su primera agenda (en la
+    misma transacción), con su vigencia y su regla de participación. Para ofrecerlo en otra
+    área se le agrega otra agenda."""
     nombre: str = Field(min_length=1, max_length=120)
     descripcion_corta: str | None = Field(default=None, max_length=255)
     descripcion_larga: str | None = None
-    imagen_url: str | None = Field(default=None, max_length=500)
     informacion_adicional: str | None = None
     activo: bool = True
-
-
-class ServicioCreate(ServicioBase):
-    """Un evento por turnos se crea siempre junto con su área y su primera agenda (en la
-    misma transacción). Para ofrecerlo en otra área se le agrega otra agenda."""
     agenda: AgendaInicial
 
 
-class ServicioUpdate(BaseModel):
+class ServicioUpdate(ConImagen, VigenciaYReglaUpdate):
     nombre: str | None = Field(default=None, min_length=1, max_length=120)
     descripcion_corta: str | None = Field(default=None, max_length=255)
     descripcion_larga: str | None = None
-    imagen_url: str | None = Field(default=None, max_length=500)
     informacion_adicional: str | None = None
     activo: bool | None = None
+
+
+def describir_regla_reserva(limite: int | None, periodo: str) -> str:
+    """En los eventos por turnos siempre rige además una reserva por persona por día."""
+    texto = describir_regla(limite, periodo, "reserva")
+    if limite is not None and limite > 1:
+        texto = texto.rstrip(".") + ", en días distintos."
+    return texto
 
 
 class ServicioOut(BaseModel):
@@ -63,8 +69,20 @@ class ServicioOut(BaseModel):
     duracion_minutos: int
     informacion_adicional: str | None = None
     activo: bool
+    vigencia_inicio: date | None = None
+    vigencia_fin: date | None = None
+    finalizado_en: datetime | None = None
+    estado_vigencia: EstadoVigencia = "sin_vigencia"
+    limite_participaciones: int | None = None
+    periodo_limite: PeriodoLimite = "dia"
+
+    @computed_field
+    @property
+    def regla_participacion(self) -> str:
+        return describir_regla_reserva(self.limite_participaciones, self.periodo_limite)
 
 
 class ServicioEstadoOut(ServicioOut):
-    """Al desactivar: reservas futuras que siguen vigentes (no se cancelan solas)."""
+    """Al desactivar el evento o al acortar su vigencia: reservas futuras que siguen
+    vigentes (no se cancelan solas; el administrador decide)."""
     reservas_afectadas: list[ReservaAdminOut] = []

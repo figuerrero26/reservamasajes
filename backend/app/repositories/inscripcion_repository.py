@@ -49,6 +49,35 @@ class InscripcionRepository(BaseRepository[Inscripcion]):
             )
         ).scalars().all())
 
+    def fechas_participacion(self, usuario_id: int, actividad_id: int, desde=None) -> list:
+        """Fecha de sesión de cada inscripción NO cancelada (activa, completada o con
+        inasistencia) de una persona en una actividad, desde `desde` (None = todas). Es el
+        historial con el que se valida el límite de participación: lo que ya ocurrió cuenta,
+        lo cancelado no. Se devuelven fechas (no un conteo) para evaluar varias sesiones con
+        una sola consulta."""
+        stmt = (
+            select(Sesion.fecha)
+            .join(Inscripcion, Inscripcion.sesion_id == Sesion.id)
+            .where(
+                Inscripcion.usuario_id == usuario_id,
+                Sesion.actividad_id == actividad_id,
+                Inscripcion.estado != EstadoInscripcion.CANCELADA.value,
+            )
+        )
+        if desde is not None:
+            stmt = stmt.where(Sesion.fecha >= desde)
+        return list(self.db.execute(stmt).scalars().all())
+
+    def contar_por_estado(self, actividad_id: int) -> dict[str, int]:
+        """Cuántas inscripciones tiene una actividad en cada estado (registro de auditoría)."""
+        filas = self.db.execute(
+            select(Inscripcion.estado, func.count())
+            .join(Sesion, Inscripcion.sesion_id == Sesion.id)
+            .where(Sesion.actividad_id == actividad_id)
+            .group_by(Inscripcion.estado)
+        ).all()
+        return {estado: total for estado, total in filas}
+
     def mias(self, usuario_id: int) -> list[Inscripcion]:
         return list(
             self.db.execute(

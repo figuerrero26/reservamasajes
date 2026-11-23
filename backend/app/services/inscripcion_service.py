@@ -7,9 +7,16 @@ que se resuelve bloqueando la fila de la sesión (`SELECT ... FOR UPDATE`) antes
 las inscripciones activas. Cuando se alcanza el cupo, la sesión queda en estado
 `cupo_lleno` y cualquier intento adicional recibe 409 (las inscripciones se cierran solas).
 Cancelar una inscripción libera el cupo de inmediato.
+
+Límite de participación por persona (por evento, ver app/utils/vigencia.py): se cuenta sobre
+las inscripciones NO canceladas de la persona en la actividad, según la fecha de cada sesión.
+Para contar de forma segura ante intentos simultáneos de la misma persona en sesiones
+distintas, primero se bloquea la fila del usuario y después la de la sesión (siempre en ese
+orden, también en la inscripción manual del administrador).
 """
 import json
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -23,10 +30,11 @@ from app.schemas.inscripcion import (
 )
 from app.services import auditoria_service
 from app.services.actividad_service import (
-    actividad_disponible, campos_formulario_de, inscripcion_disponible, sesion_llena,
+    campos_formulario_de, motivo_actividad_no_disponible, sesion_llena,
 )
 from app.services.errors import Conflict, DomainError, Forbidden, NotFound
 from app.utils.time import now, ya_empezo
+from app.utils.vigencia import motivo_limite, para_administrador
 
 MAX_LONGITUD_RESPUESTA = 1000
 
@@ -66,7 +74,10 @@ class InscripcionService:
 
     def _crear(self, usuario_id: int, sesion_id: int, respuestas: dict,
                notes: str | None, admin_id: int | None) -> Inscripcion:
-        usuario = self.db.get(Usuario, usuario_id)
+        # Bloqueos en orden fijo: usuario (límite de participación) y luego sesión (cupo).
+        usuario = self.db.execute(
+            select(Usuario).where(Usuario.id == usuario_id).with_for_update()
+        ).scalar_one_or_none()
         if not usuario or not usuario.activo:
             raise NotFound("Usuario no encontrado o inactivo")
 
@@ -76,12 +87,15 @@ class InscripcionService:
         if not sesion or not sesion.activa:
             raise DomainError("La sesión no está disponible")
         actividad = sesion.actividad
-        if not actividad_disponible(actividad):
-            # Actividad oculta o de un área desactivada: tampoco el admin inscribe aquí.
-            raise DomainError("La actividad no está disponible")
+        # Actividad oculta, de un área desactivada o fuera de su vigencia (próxima o
+        # finalizada): tampoco el admin inscribe aquí.
+        motivo = motivo_actividad_no_disponible(actividad)
+        if motivo:
+            raise DomainError(motivo)
         if ya_empezo(sesion.fecha, sesion.hora_inicio):
             raise DomainError("Esta sesión ya no está disponible para inscribirse.")
-        if not admin_id and not inscripcion_disponible(actividad):
+        # El switch manual de inscripciones solo pausa el portal: el admin sí puede inscribir.
+        if not admin_id and not actividad.inscripcion_abierta:
             raise Conflict("Las inscripciones para esta actividad no están abiertas en este momento.")
 
         if self.inscripciones.activa_por_usuario_sesion(usuario.id, sesion_id):
@@ -89,6 +103,16 @@ class InscripcionService:
                 "Ya tienes una inscripción activa para esta sesión." if not admin_id
                 else "Este colaborador ya tiene una inscripción activa en esta sesión."
             )
+
+        # Límite de participación del evento (excepción por usuario: permite_reservas_multiples).
+        if actividad.limite_participaciones is not None and not usuario.permite_reservas_multiples:
+            motivo = motivo_limite(
+                self.inscripciones.fechas_participacion(usuario.id, actividad.id), sesion.fecha,
+                actividad.limite_participaciones, actividad.periodo_limite, actividad.vigencia_inicio,
+                "inscripción",
+            )
+            if motivo:
+                raise Conflict(para_administrador(motivo) if admin_id else motivo)
 
         if sesion_llena(sesion, self.inscripciones.contar_activas_por_sesion(sesion_id)):
             raise Conflict("Esta sesión ya no tiene cupos disponibles.")
@@ -127,7 +151,8 @@ class InscripcionService:
 
     def crear_manual(self, data: InscripcionCreateManual, admin_id: int) -> Inscripcion:
         """Inscripción creada por el administrador en nombre de un colaborador: ignora la
-        ventana de inscripción, pero NO el cupo ni la duplicidad."""
+        pausa manual de inscripciones del portal, pero NO la vigencia del evento, el cupo, la
+        duplicidad ni el límite de participación."""
         usuario = self.usuarios.by_correo(data.correo)
         if not usuario:
             raise NotFound("No existe ningún colaborador con ese correo")

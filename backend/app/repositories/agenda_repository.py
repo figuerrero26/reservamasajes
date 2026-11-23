@@ -1,4 +1,6 @@
-from sqlalchemy import select
+from datetime import date
+
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Agenda, Area, Servicio
@@ -24,15 +26,20 @@ class AgendaRepository(BaseRepository[Agenda]):
             stmt = stmt.where(Agenda.servicio_id == servicio_id)
         return list(self.db.execute(stmt).scalars().all())
 
-    def list_reservables(self, servicio_id: int | None = None) -> list[Agenda]:
-        """Agendas que el portal público puede ofrecer: la agenda, su evento y su área
-        activos (misma regla que horario_service.agenda_reservable, resuelta en SQL)."""
+    def list_reservables(self, hoy: date, servicio_id: int | None = None) -> list[Agenda]:
+        """Agendas que el portal público puede ofrecer `hoy`: la agenda, su evento y su área
+        activos y el evento dentro de su vigencia (misma regla que
+        horario_service.motivo_no_reservable, resuelta en SQL)."""
         stmt = (
             select(Agenda)
             .join(Servicio, Agenda.servicio_id == Servicio.id)
             .join(Area, Agenda.area_id == Area.id)
             .options(joinedload(Agenda.area), joinedload(Agenda.servicio))
-            .where(Agenda.activo.is_(True), Servicio.activo.is_(True), Area.activo.is_(True))
+            .where(
+                Agenda.activo.is_(True), Servicio.activo.is_(True), Area.activo.is_(True),
+                or_(Servicio.vigencia_inicio.is_(None), Servicio.vigencia_inicio <= hoy),
+                or_(Servicio.vigencia_fin.is_(None), Servicio.vigencia_fin >= hoy),
+            )
             .order_by(Area.nombre)
         )
         if servicio_id:

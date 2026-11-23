@@ -8,6 +8,7 @@ from app.database.session import get_db
 from app.schemas.reserva import (
     AgendaDia, CancelacionIn, CancelarLoteIn, CancelarLoteOut, HorariosResponse, MarcarAsistenciaIn,
     MiReservaOut, ReservaAdminOut, ReservaCreadaOut, ReservaCreate, ReservaCreateManual, ReservaOut,
+    VerificacionReservaOut,
 )
 from app.services.email_service import enviar_cancelacion_reserva, enviar_confirmacion_reserva
 from app.services.horario_service import HorarioService
@@ -33,6 +34,14 @@ def crear_reserva(data: ReservaCreate, background_tasks: BackgroundTasks,
     )
     background_tasks.add_task(enviar_confirmacion_reserva, reserva.id)
     return ReservaCreadaOut(**ReservaOut.model_validate(reserva).model_dump())
+
+
+@router.get("/reservas/verificar", response_model=VerificacionReservaOut)
+def verificar_reserva(agenda_id: int, fecha: date = Query(...), db: Session = Depends(get_db),
+                      usuario: dict = Depends(get_current_usuario)):
+    """Antes de elegir un turno: ¿el colaborador puede reservar en este evento ese día?
+    (vigencia del evento y límite de participación por persona)."""
+    return ReservaService(db).verificar(usuario["id"], agenda_id, fecha)
 
 
 @router.get("/reservas/mias", response_model=list[MiReservaOut])

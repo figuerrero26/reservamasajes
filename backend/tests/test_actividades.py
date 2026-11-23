@@ -2,11 +2,11 @@
 
 Cubre: creación y administración de actividades y sesiones, inscripción de participantes,
 control de cupos, cierre automático al alcanzar el límite, estados de actividad/sesión,
-ventana de inscripción, cancelaciones, inscripción manual del admin y el correo de
-confirmación (que nunca duplica ni revierte la inscripción si el SMTP falla).
+vigencia y pausa de inscripciones, cancelaciones, inscripción manual del admin y el correo
+de confirmación (que nunca duplica ni revierte la inscripción si el SMTP falla).
 """
 import threading
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
 from app.config import settings
@@ -16,19 +16,22 @@ from app.auth.security import hash_password
 from app.services.email_service import enviar_confirmacion_inscripcion
 from app.services.errors import Conflict
 from app.services.inscripcion_service import InscripcionService
+from app.utils.time import today
 
 API = "/api/v1"
 
 
 def _en(dias: int) -> str:
-    return (date.today() + timedelta(days=dias)).isoformat()
+    # Fecha de la aplicación (America/Bogota): la vigencia se evalúa con ella, no con la del
+    # equipo donde corren las pruebas.
+    return (today() + timedelta(days=dias)).isoformat()
 
 
 def _crear_actividad(client, headers_admin, **extra) -> dict:
     # El área es obligatoria: por defecto, la primera área existente ("Oficinas").
     area_id = extra.pop("area_id", None) or client.get(f"{API}/areas", headers=headers_admin).json()[0]["id"]
     r = client.post(f"{API}/actividades", headers=headers_admin, json={
-        "area_id": area_id,
+        "area_id": area_id, "vigencia_inicio": _en(0), "vigencia_fin": _en(60),
         "nombre": "Caminata ecológica", "descripcion_corta": "Recorrido de 5 km",
         "campos_formulario": [
             {"clave": "talla", "etiqueta": "Talla de camiseta", "tipo": "seleccion",
@@ -149,20 +152,38 @@ def test_concurrencia_no_supera_el_cupo(client, datos_base, headers_admin):
     assert resultados.count("conflicto") == len(ids) - 1
 
 
-def test_ventana_de_inscripcion_y_estados(client, datos_base, headers_admin, headers_usuario):
-    apertura = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%dT%H:%M")
-    actividad = _crear_actividad(client, headers_admin, campos_formulario=[], fecha_apertura_inscripciones=apertura)
+def test_vigencia_y_pausa_de_inscripciones(client, datos_base, headers_admin, headers_usuario):
+    # Vigencia que todavía no empieza: el evento no se publica ni recibe inscripciones,
+    # tampoco manuales (antes del inicio nadie participa).
+    actividad = _crear_actividad(client, headers_admin, campos_formulario=[],
+                                 vigencia_inicio=_en(2), vigencia_fin=_en(30))
+    assert actividad["estado_vigencia"] == "proximo" and actividad["estado_inscripcion"] == "proximamente"
     sesion = _crear_sesion(client, headers_admin, actividad["id"], cupo=5, dias=10)
-    assert client.get(f"{API}/actividades/publicas/{actividad['id']}").json()["estado_inscripcion"] == "proximamente"
+    assert client.get(f"{API}/actividades/publicas/{actividad['id']}").status_code == 404
+    r = client.post(f"{API}/inscripciones", headers=headers_usuario, json={"sesion_id": sesion["id"]})
+    assert r.status_code == 400 and "abre sus inscripciones" in r.json()["detail"]
+    r = client.post(f"{API}/inscripciones/manual", headers=headers_admin,
+                    json={"correo": "colaborador.demo@example.com", "sesion_id": sesion["id"]})
+    assert r.status_code == 400
+
+    # Una sesión anterior al inicio de la vigencia nunca podría recibir inscripciones.
+    r = client.post(f"{API}/actividades/{actividad['id']}/sesiones", headers=headers_admin,
+                    json={"fecha": _en(1), "hora_inicio": "08:00", "hora_fin": "09:00"})
+    assert r.status_code == 400
+
+    # Al empezar la vigencia se publica.
+    r = client.put(f"{API}/actividades/{actividad['id']}", headers=headers_admin, json={"vigencia_inicio": _en(0)})
+    assert r.status_code == 200 and r.json()["estado_vigencia"] == "vigente"
+    assert client.get(f"{API}/actividades/publicas/{actividad['id']}").json()["estado_inscripcion"] == "abierta"
+
+    # La pausa manual cierra el portal, pero el administrador sí puede inscribir.
+    r = client.put(f"{API}/actividades/{actividad['id']}", headers=headers_admin, json={"inscripcion_abierta": False})
+    assert r.json()["estado_inscripcion"] == "cerrada"
     r = client.post(f"{API}/inscripciones", headers=headers_usuario, json={"sesion_id": sesion["id"]})
     assert r.status_code == 409
-    # El administrador sí puede inscribir fuera de la ventana (no fuera del cupo).
     r = client.post(f"{API}/inscripciones/manual", headers=headers_admin,
                     json={"correo": "colaborador.demo@example.com", "sesion_id": sesion["id"]})
     assert r.status_code == 201, r.text
-
-    r = client.put(f"{API}/actividades/{actividad['id']}", headers=headers_admin, json={"inscripcion_abierta": False})
-    assert r.json()["estado_inscripcion"] == "cerrada"
 
 
 def test_actividad_sin_sesiones_futuras_no_se_anuncia(client, datos_base, headers_admin):
@@ -206,7 +227,7 @@ def test_validaciones_de_sesiones(client, datos_base, headers_admin, headers_usu
 
 
 def test_generar_lote_no_duplica_ni_crea_pasadas(client, datos_base, headers_admin):
-    actividad = _crear_actividad(client, headers_admin, campos_formulario=[])
+    actividad = _crear_actividad(client, headers_admin, campos_formulario=[], vigencia_inicio=_en(-7))
     cuerpo = {"fecha_inicio": _en(-7), "fecha_fin": _en(13), "dias_semana": [0, 1, 2, 3, 4, 5, 6],
               "hora_inicio": "18:00", "hora_fin": "19:00", "cupo_maximo": 10}
     r = client.post(f"{API}/actividades/{actividad['id']}/sesiones/generar", headers=headers_admin, json=cuerpo)

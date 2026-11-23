@@ -3,14 +3,25 @@
 Verifica que el área sea obligatoria y quede registrada (evento por turnos a través de su
 agenda; actividad con su propia columna), los filtros por área, que un área inactiva retire
 sus agendas y actividades del portal, la creación atómica (evento + agenda, actividad +
-sesiones) y el resumen de disponibilidad que muestran las tarjetas del catálogo.
+sesiones) y que la disponibilidad se muestre solo en el detalle de cada evento.
 """
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 
 from app.database.session import SessionLocal
 from app.models import Actividad, Agenda, Servicio
+from app.services.horario_service import HorarioService
+from app.utils.time import today
 
 API = "/api/v1"
+
+
+def _vigencia(dias: int = 60) -> dict:
+    # Fecha de la aplicación (America/Bogota), no la del equipo donde corren las pruebas.
+    return {"vigencia_inicio": today().isoformat(), "vigencia_fin": (today() + timedelta(days=dias)).isoformat()}
+
+
+def _evento(nombre: str, area_id: int, **extra) -> dict:
+    return {"nombre": nombre, **_vigencia(), "agenda": _horario(area_id), **extra}
 
 
 def _lunes_futuro() -> date:
@@ -36,15 +47,14 @@ def test_evento_por_turnos_exige_area_y_horario(client, datos_base, headers_admi
     r = client.post(f"{API}/servicios", headers=headers_admin, json={"nombre": "Yoga"})
     assert r.status_code == 422
     antes = _contar(Servicio)
-    r = client.post(f"{API}/servicios", headers=headers_admin, json={"nombre": "Yoga", "agenda": _horario(999999)})
+    r = client.post(f"{API}/servicios", headers=headers_admin, json=_evento("Yoga", 999999))
     assert r.status_code == 400
     assert _contar(Servicio) == antes  # nada a medias: ni evento sin área ni agenda suelta
 
 
 def test_crear_evento_crea_tambien_su_agenda_en_el_area(client, datos_base, headers_admin):
-    r = client.post(f"{API}/servicios", headers=headers_admin, json={
-        "nombre": "Yoga", "descripcion_corta": "Estiramiento guiado", "agenda": _horario(datos_base["area_id"]),
-    })
+    r = client.post(f"{API}/servicios", headers=headers_admin,
+                    json=_evento("Yoga", datos_base["area_id"], descripcion_corta="Estiramiento guiado"))
     assert r.status_code == 201, r.text
     servicio_id = r.json()["id"]
     agendas = client.get(f"{API}/agendas", headers=headers_admin, params={"servicio_id": servicio_id}).json()
@@ -57,13 +67,13 @@ def test_crear_evento_crea_tambien_su_agenda_en_el_area(client, datos_base, head
 
 def test_area_inactiva_no_permite_crear_eventos(client, datos_base, headers_admin):
     client.post(f"{API}/areas/{datos_base['area_id']}/desactivar", headers=headers_admin)
-    r = client.post(f"{API}/servicios", headers=headers_admin, json={"nombre": "Yoga", "agenda": _horario(datos_base["area_id"])})
+    r = client.post(f"{API}/servicios", headers=headers_admin, json=_evento("Yoga", datos_base["area_id"]))
     assert r.status_code == 400
 
 
 def test_filtros_por_area(client, datos_base, headers_admin):
     planta = client.post(f"{API}/areas", headers=headers_admin, json={"nombre": "Planta"}).json()
-    client.post(f"{API}/servicios", headers=headers_admin, json={"nombre": "Pausa activa", "agenda": _horario(planta["id"])})
+    client.post(f"{API}/servicios", headers=headers_admin, json=_evento("Pausa activa", planta["id"]))
 
     en_planta = client.get(f"{API}/servicios", headers=headers_admin, params={"area_id": planta["id"]}).json()
     assert [s["nombre"] for s in en_planta] == ["Pausa activa"]
@@ -76,7 +86,7 @@ def test_filtros_por_area(client, datos_base, headers_admin):
 # ---- Actividades: área obligatoria y registrada --------------------------------------------
 
 def _actividad(area_id, **extra) -> dict:
-    return {"area_id": area_id, "nombre": "Taller de pausas", **extra}
+    return {"area_id": area_id, "nombre": "Taller de pausas", **_vigencia(), **extra}
 
 
 def _sesion(dias: int = 7, hora: str = "15:00") -> dict:
@@ -149,35 +159,49 @@ def test_actividad_antigua_sin_area_debe_asignarla_para_publicarse(client, datos
     assert client.post(f"{API}/actividades/{act['id']}/activar", headers=headers_admin).status_code == 200
 
 
-# ---- Disponibilidad en las tarjetas del catálogo -------------------------------------------
+# ---- Disponibilidad: solo en el detalle del evento ------------------------------------------
 
-def test_resumen_de_turnos_disponibles_en_el_catalogo(client, datos_base, headers_admin, headers_usuario):
-    lunes = _lunes_futuro()
-    client.put(f"{API}/semana/activa", headers=headers_admin,
-               json={"inicio": lunes.isoformat(), "fin": (lunes + timedelta(days=4)).isoformat()})
-    dias = client.get(f"{API}/semana/dias-reservables").json()
-    assert dias == [(lunes + timedelta(days=i)).isoformat() for i in range(5)]
+def _resumen_semana(agenda_id: int, lunes: date):
+    db = SessionLocal()
+    try:
+        agenda = db.get(Agenda, agenda_id)
+        dias = [lunes + timedelta(days=i) for i in range(5)]
+        return HorarioService(db).resumen_disponibilidad([agenda], dias)[agenda_id]
+    finally:
+        db.close()
 
-    def evento(servicio_id):
-        return next(e for e in client.get(f"{API}/eventos").json() if e["id"] == servicio_id)
 
-    # 08:00-17:00 con almuerzo 12-13: 16 turnos de 30 min por día × 5 días.
-    masajes = evento(datos_base["servicio_id"])
-    assert masajes["turnos_disponibles"] == 80
-    assert masajes["proximo_turno_fecha"] == lunes.isoformat() and masajes["proximo_turno_hora"].startswith("08:00")
-    assert evento(datos_base["servicio2_id"])["turnos_disponibles"] == 160  # turnos de 15 min
+def test_disponibilidad_solo_en_el_detalle_del_evento(client, datos_base, headers_admin, headers_usuario):
+    hoy, lunes = today(), _lunes_futuro()
+    fin = lunes + timedelta(days=4)
+    r = client.put(f"{API}/servicios/{datos_base['servicio_id']}", headers=headers_admin,
+                   json={"vigencia_inicio": hoy.isoformat(), "vigencia_fin": fin.isoformat()})
+    assert r.status_code == 200, r.text
 
+    # Catálogo (tarjetas): solo información general, nada de turnos ni cupos.
+    tarjeta = next(e for e in client.get(f"{API}/eventos").json() if e["id"] == datos_base["servicio_id"])
+    assert tarjeta["turnos_disponibles"] is None and tarjeta["dias_reservables"] is None
+    assert tarjeta["vigencia_fin"] == fin.isoformat() and tarjeta["regla_participacion"]
+
+    # Detalle: días reservables desde hoy hasta el fin de la vigencia, con su resumen.
+    detalle = client.get(f"{API}/eventos/{datos_base['servicio_id']}").json()
+    assert detalle["dias_reservables"][0] == hoy.isoformat()
+    assert detalle["dias_reservables"][-1] == fin.isoformat()
+    assert detalle["turnos_disponibles"] >= 80
+
+    # Resumen exacto de una semana futura (la misma función que usa el detalle): 08:00-17:00
+    # con almuerzo 12-13 = 16 turnos de 30 min por día × 5 días.
+    resumen = _resumen_semana(datos_base["agenda_id"], lunes)
+    assert resumen.disponibles == 80 and resumen.proxima_fecha == lunes and resumen.proxima_hora == time(8, 0)
     r = client.post(f"{API}/reservas", headers=headers_usuario,
                     json={"agenda_id": datos_base["agenda_id"], "fecha": lunes.isoformat(), "hora_inicio": "08:00"})
-    assert r.status_code == 201
-    masajes = evento(datos_base["servicio_id"])
-    assert masajes["turnos_disponibles"] == 79
-    assert masajes["proximo_turno_hora"].startswith("08:30")
-
+    assert r.status_code == 201, r.text
+    resumen = _resumen_semana(datos_base["agenda_id"], lunes)
+    assert resumen.disponibles == 79 and resumen.proxima_hora == time(8, 30)
     # Un bloqueo de día completo descuenta los turnos de ese día.
     client.post(f"{API}/bloqueos", headers=headers_admin,
                 json={"agenda_id": datos_base["agenda_id"], "tipo": "dia", "fecha": (lunes + timedelta(days=1)).isoformat()})
-    assert evento(datos_base["servicio_id"])["turnos_disponibles"] == 79 - 16
+    assert _resumen_semana(datos_base["agenda_id"], lunes).disponibles == 79 - 16
 
 
 def test_duracion_del_evento_sale_de_sus_agendas(client, datos_base, headers_admin):

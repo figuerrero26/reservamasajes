@@ -1,8 +1,4 @@
-from datetime import date
-
-from pydantic import BaseModel, Field, model_validator
-
-MAX_DIAS_SEMANA_ACTIVA = 62
+from pydantic import BaseModel, Field
 
 
 class ConfiguracionValor(BaseModel):
@@ -22,27 +18,11 @@ class ConfiguracionGeneralOut(BaseModel):
     imagen_bienvenida_url: str | None = None
     color_boton_disponibilidad: str | None = None
     color_fondo_bienvenida: str | None = None
-    evento_unico_por_semana: bool = False
     contacto_correo: str | None = None
     contacto_telefono: str | None = None
     contacto_direccion: str | None = None
     terminos_condiciones: str | None = None
     zona_horaria: str
-    semana_activa_inicio: date | None = None
-    semana_activa_fin: date | None = None
-
-
-class SemanaActivaSet(BaseModel):
-    inicio: date
-    fin: date
-
-    @model_validator(mode="after")
-    def _rango(self):
-        if self.fin < self.inicio:
-            raise ValueError("La fecha de fin debe ser igual o posterior a la de inicio")
-        if (self.fin - self.inicio).days + 1 > MAX_DIAS_SEMANA_ACTIVA:
-            raise ValueError(f"El periodo activo no puede superar {MAX_DIAS_SEMANA_ACTIVA} días")
-        return self
 
 
 class PlantillaCorreoOut(BaseModel):

@@ -1,6 +1,6 @@
 from datetime import date, time
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Agenda, Reserva, EstadoReserva
@@ -42,33 +42,26 @@ class ReservaRepository(BaseRepository[Reserva]):
             ).scalars().all()
         )
 
-    def activa_por_usuario_evento_fecha(self, usuario_id: int, servicio_id: int, fecha: date) -> Reserva | None:
-        """Solo para el mensaje de error amigable antes de tocar la BD (ver ReservaService).
-        Usa `.first()` a propósito: con la excepción `permite_reservas_multiples` puede haber
-        más de una fila activa para la misma combinación usuario+evento+día."""
-        return self.db.execute(
-            select(Reserva).where(
-                Reserva.usuario_id == usuario_id,
-                Reserva.servicio_id == servicio_id,
-                Reserva.fecha == fecha,
-                Reserva.estado == EstadoReserva.ACTIVA.value,
-            )
-        ).scalars().first()
+    def fechas_participacion(self, usuario_id: int, servicio_id: int, desde: date | None = None) -> list[date]:
+        """Fecha de cada reserva NO cancelada (activa, completada o con inasistencia) de una
+        persona en un evento, desde `desde` (None = todas). Es el historial con el que se
+        valida el límite de participación del evento: lo que ya ocurrió también cuenta, lo
+        cancelado no."""
+        stmt = select(Reserva.fecha).where(
+            Reserva.usuario_id == usuario_id,
+            Reserva.servicio_id == servicio_id,
+            Reserva.estado != EstadoReserva.CANCELADA.value,
+        )
+        if desde is not None:
+            stmt = stmt.where(Reserva.fecha >= desde)
+        return list(self.db.execute(stmt).scalars().all())
 
-    def activa_por_usuario_evento_rango(
-        self, usuario_id: int, servicio_id: int, fecha_inicio: date, fecha_fin: date,
-    ) -> Reserva | None:
-        """Como `activa_por_usuario_evento_fecha`, pero para la regla opcional
-        `evento_unico_por_semana`: busca en todo el rango [fecha_inicio, fecha_fin]."""
-        return self.db.execute(
-            select(Reserva).where(
-                Reserva.usuario_id == usuario_id,
-                Reserva.servicio_id == servicio_id,
-                Reserva.fecha >= fecha_inicio,
-                Reserva.fecha <= fecha_fin,
-                Reserva.estado == EstadoReserva.ACTIVA.value,
-            )
-        ).scalars().first()
+    def contar_por_estado(self, servicio_id: int) -> dict[str, int]:
+        """Cuántas reservas tiene un evento en cada estado (registro de auditoría)."""
+        filas = self.db.execute(
+            select(Reserva.estado, func.count()).where(Reserva.servicio_id == servicio_id).group_by(Reserva.estado)
+        ).all()
+        return {estado: total for estado, total in filas}
 
     def activas_por_agenda_fecha(self, agenda_id: int, fecha: date) -> list[Reserva]:
         return list(
@@ -171,12 +164,20 @@ class ReservaRepository(BaseRepository[Reserva]):
             ).scalars().all()
         )
 
-    def activas_desde(self, fecha_inicio: date, fecha_fin: date) -> list[Reserva]:
-        """Reservas activas de un rango de fechas que todavía no han ocurrido (para el
-        reinicio semanal: lo ya ocurrido queda pendiente de marcar asistencia)."""
-        stmt = select(Reserva).where(
-            Reserva.fecha >= fecha_inicio,
-            Reserva.fecha <= fecha_fin,
+    def activas_futuras_fuera_de(self, servicio_id: int, inicio: date | None, fin: date | None) -> list[Reserva]:
+        """Reservas activas y futuras de un evento cuya fecha queda fuera de [inicio, fin]
+        (al acortar la vigencia). Se informan al administrador; nunca se cancelan solas."""
+        condiciones = []
+        if inicio is not None:
+            condiciones.append(Reserva.fecha < inicio)
+        if fin is not None:
+            condiciones.append(Reserva.fecha > fin)
+        if not condiciones:
+            return []
+        stmt = _con_detalle(select(Reserva)).where(
+            Reserva.servicio_id == servicio_id,
             Reserva.estado == EstadoReserva.ACTIVA.value,
+            or_(*condiciones),
         )
-        return list(self.db.execute(_solo_futuras(stmt)).scalars().all())
+        stmt = _solo_futuras(stmt).order_by(Reserva.fecha, Reserva.hora_inicio)
+        return list(self.db.execute(stmt).unique().scalars().all())

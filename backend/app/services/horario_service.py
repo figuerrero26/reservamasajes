@@ -11,8 +11,11 @@ min) generara turnos para siempre. Con enteros el último turno nunca puede supe
 
 Estructura: `calcular_slots` es una función pura (recibe los bloqueos, festivo y reservas ya
 cargados). La usan tanto la disponibilidad de un día (`HorarioService.generar`, una agenda)
-como el resumen del catálogo (`HorarioService.resumen_disponibilidad`, varias agendas y días
-con consultas agrupadas): las dos vistas aplican exactamente la misma regla.
+como el resumen del detalle de un evento (`HorarioService.resumen_disponibilidad`, varias
+agendas y días con consultas agrupadas): las dos vistas aplican exactamente la misma regla.
+
+Vigencia: cada evento tiene su propio periodo (ver app/utils/vigencia.py). Fuera de él la
+agenda no ofrece turnos ni acepta reservas; las reservas que ya existían no se tocan.
 """
 from collections import defaultdict
 from dataclasses import dataclass
@@ -20,14 +23,14 @@ from datetime import date, datetime, time, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.models import Agenda
+from app.models import Agenda, Servicio
 from app.repositories.agenda_repository import AgendaRepository
 from app.repositories.bloqueo_repository import BloqueoRepository
-from app.repositories.configuracion_repository import ConfiguracionRepository
 from app.repositories.reserva_repository import ReservaRepository
 from app.schemas.reserva import EstadoSlot, Slot
 from app.services.errors import NotFound
 from app.utils.time import a_minutos, desde_minutos, now, overlaps, today
+from app.utils.vigencia import fecha_en_vigencia, motivo_fuera_de_vigencia
 
 # Un día tiene 1440 minutos y la duración mínima de un turno es 5: nunca puede haber más de
 # 288 turnos legítimos. Cualquier cosa por encima de esto es un error de configuración.
@@ -127,29 +130,23 @@ def calcular_slots(
 
 
 def calcular_fechas_reservables(hoy: date, inicio: date | None, fin: date | None) -> list[date]:
-    """Días que el portal ofrece para reservar (única fuente de verdad, la consume también el
-    frontend vía GET /semana/dias-reservables):
+    """Días que el portal ofrece para reservar en un evento (única fuente de verdad: el
+    detalle público del evento los entrega como `dias_reservables`):
 
-    - Con semana activa configurada: de max(inicio, hoy) a fin (máximo 31 días). Si ya
-      terminó, ninguno.
-    - Sin semana activa: los días hábiles (lunes a viernes) que quedan de esta semana; si ya
-      no queda ninguno (fin de semana), los de la semana siguiente.
+    - Con vigencia: desde max(inicio, hoy) hasta el fin de la vigencia, con un máximo de 31
+      días a la vista (ventana móvil si la vigencia es más larga). Si ya terminó, ninguno.
+    - Sin vigencia (solo eventos antiguos que nunca tuvieron fechas): los días hábiles que
+      quedan de esta semana o, si ya es fin de semana, los de la semana siguiente.
     """
-    if inicio and fin:
-        desde = max(inicio, hoy)
-        if fin < desde:
-            return []
-        return [desde + timedelta(days=i) for i in range(min((fin - desde).days + 1, MAX_DIAS_RESERVABLES))]
-    lunes = hoy - timedelta(days=hoy.weekday())
-    restantes = [lunes + timedelta(days=i) for i in range(5) if lunes + timedelta(days=i) >= hoy]
-    return restantes or [lunes + timedelta(days=7 + i) for i in range(5)]
-
-
-def _fecha_o_none(valor: str | None) -> date | None:
-    try:
-        return date.fromisoformat(valor) if valor else None
-    except ValueError:
-        return None
+    if inicio is None and fin is None:
+        lunes = hoy - timedelta(days=hoy.weekday())
+        restantes = [lunes + timedelta(days=i) for i in range(5) if lunes + timedelta(days=i) >= hoy]
+        return restantes or [lunes + timedelta(days=7 + i) for i in range(5)]
+    desde = max(inicio, hoy) if inicio else hoy
+    hasta = fin if fin else desde + timedelta(days=MAX_DIAS_RESERVABLES - 1)
+    if hasta < desde:
+        return []
+    return [desde + timedelta(days=i) for i in range(min((hasta - desde).days + 1, MAX_DIAS_RESERVABLES))]
 
 
 class HorarioService:
@@ -158,7 +155,6 @@ class HorarioService:
         self.agendas = AgendaRepository(db)
         self.bloqueos = BloqueoRepository(db)
         self.reservas = ReservaRepository(db)
-        self.configuracion = ConfiguracionRepository(db)
 
     def generar(self, agenda_id: int, fecha: date, incluir_pasado: bool = False) -> list[Slot]:
         """Disponibilidad pública de una agenda para una fecha (o la vista administrativa del
@@ -166,16 +162,19 @@ class HorarioService:
         agenda = self.agendas.get(agenda_id)
         if not agenda or not agenda.activo:
             raise NotFound("Agenda no encontrada o inactiva")
-        if not incluir_pasado and not agenda_reservable(agenda):
-            # El evento (servicio) o el área se desactivaron: la agenda deja de ofrecer
-            # turnos aunque su propio flag siga activo (ver ServicioService).
-            raise NotFound("Este evento no está disponible en este momento")
+        if not incluir_pasado:
+            # El evento o el área se desactivaron, o el evento está fuera de su vigencia: la
+            # agenda deja de ofrecer turnos aunque su propio flag siga activo.
+            motivo = motivo_no_reservable(agenda, today())
+            if motivo:
+                raise NotFound(motivo)
 
         ahora = now()
         if fecha < today() and not incluir_pasado:
             return []  # nunca hay turnos reservables en un día que ya pasó
-        if not incluir_pasado and not self._dentro_de_semana_activa(fecha):
-            return []
+        servicio = agenda.servicio
+        if not incluir_pasado and not fecha_en_vigencia(servicio.vigencia_inicio, servicio.vigencia_fin, fecha):
+            return []  # día fuera de la vigencia del evento
 
         return calcular_slots(
             agenda, fecha,
@@ -186,23 +185,11 @@ class HorarioService:
             incluir_pasado=incluir_pasado,
         )
 
-    def _semana_activa(self) -> tuple[date | None, date | None]:
-        return (
-            _fecha_o_none(self.configuracion.get("semana_activa_inicio")),
-            _fecha_o_none(self.configuracion.get("semana_activa_fin")),
-        )
-
-    def _dentro_de_semana_activa(self, fecha: date) -> bool:
-        inicio, fin = self._semana_activa()
-        if inicio and fecha < inicio:
-            return False
-        if fin and fecha > fin:
-            return False
-        return True
-
-    def fechas_reservables(self) -> list[date]:
-        inicio, fin = self._semana_activa()
-        return calcular_fechas_reservables(today(), inicio, fin)
+    @staticmethod
+    def fechas_reservables(servicio: Servicio) -> list[date]:
+        """Días que el portal ofrece para reservar en este evento (ver
+        `calcular_fechas_reservables`)."""
+        return calcular_fechas_reservables(today(), servicio.vigencia_inicio, servicio.vigencia_fin)
 
     def resumen_disponibilidad(self, agendas: list[Agenda], fechas: list[date]) -> dict[int, ResumenTurnos]:
         """Turnos disponibles y próximo turno libre de cada agenda en `fechas`, con TRES
@@ -238,8 +225,19 @@ class HorarioService:
         return resultado
 
 
-def agenda_reservable(agenda: Agenda) -> bool:
-    """Una agenda solo ofrece turnos si ella, su evento (servicio) y su área están activos.
-    Es la única fuente de verdad de esta regla: la usan el catálogo público, la
-    disponibilidad y la creación de reservas (ver ServicioService / ReservaService)."""
-    return bool(agenda.activo and agenda.servicio.activo and agenda.area.activo)
+def motivo_no_reservable(agenda: Agenda, hoy: date | None = None) -> str | None:
+    """None si la agenda puede ofrecer turnos y recibir reservas hoy; si no, el motivo
+    legible. Única fuente de verdad de esta regla (la usan el catálogo público, la
+    disponibilidad y la creación de reservas, también la manual del administrador):
+
+    - la agenda, su evento (servicio) y su área deben estar activos, y
+    - el evento debe estar dentro de su vigencia (ni próximo ni finalizado).
+    """
+    servicio = agenda.servicio
+    if not (agenda.activo and servicio.activo and agenda.area.activo):
+        return "Este evento no está disponible para reservas en este momento."
+    return motivo_fuera_de_vigencia(servicio.vigencia_inicio, servicio.vigencia_fin, hoy or today(), "reservas")
+
+
+def agenda_reservable(agenda: Agenda, hoy: date | None = None) -> bool:
+    return motivo_no_reservable(agenda, hoy) is None
