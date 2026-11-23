@@ -6,12 +6,13 @@ import {
 import AddIcon from "@mui/icons-material/Add";
 import SearchIcon from "@mui/icons-material/Search";
 import type { Actividad, Agenda, Area, EstadoVigencia, ReservaAdmin, Servicio } from "../../types";
-import { listarActividades, activarActividad, desactivarActividad } from "../../services/actividades";
+import { listarActividades, activarActividad, desactivarActividad, eliminarActividad } from "../../services/actividades";
 import { listarAgendas } from "../../services/agendas";
 import { listarAreas } from "../../services/areas";
-import { activarServicio, desactivarServicio, listarServicios } from "../../services/servicios";
+import { activarServicio, desactivarServicio, eliminarServicio, listarServicios } from "../../services/servicios";
 import { mensajeError } from "../../utils/errors";
 import { formatearFecha, formatearHora, nombreDia, textoVigencia } from "../../utils/fechas";
+import ConfirmDialog from "../../components/ConfirmDialog";
 import DataTable, { type ColumnaDataTable } from "../../components/DataTable";
 import EstadoChip from "../../components/EstadoChip";
 import Loader from "../../components/Loader";
@@ -82,6 +83,9 @@ export default function EventosAdminPage() {
   const [reservaAbierta, setReservaAbierta] = useState<{ id: number | null; pestana: PestanaReserva } | null>(null);
   const [inscripcionAbierta, setInscripcionAbierta] = useState<{ id: number | null; pestana: PestanaInscripcion } | null>(null);
   const [afectadas, setAfectadas] = useState<Afectadas | null>(null);
+  const [aEliminar, setAEliminar] = useState<Fila | null>(null);
+  const [eliminando, setEliminando] = useState(false);
+  const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
 
   // Filtros en la URL: permiten llegar filtrado desde Áreas ("Ver eventos") o desde un enlace.
   const filtroArea = params.get("area") ?? "todas"; // "todas" | "sin" | id
@@ -198,6 +202,27 @@ export default function EventosAdminPage() {
     }
   }
 
+  async function confirmarEliminar() {
+    if (!aEliminar) return;
+    setEliminando(true);
+    setErrorEliminar(null);
+    try {
+      if (aEliminar.tipo === "reserva") {
+        const r = await eliminarServicio(aEliminar.servicio!.id);
+        setAviso(`«${aEliminar.nombre}» se eliminó de forma permanente: ${r.reservas_eliminadas} reserva(s) y ${r.agendas_eliminadas} agenda(s) borradas.`);
+      } else {
+        const r = await eliminarActividad(aEliminar.actividad!.id);
+        setAviso(`«${aEliminar.nombre}» se eliminó de forma permanente: ${r.inscripciones_eliminadas} inscripción(es) y ${r.sesiones_eliminadas} fecha(s) borradas.`);
+      }
+      setAEliminar(null);
+      await cargar();
+    } catch (e) {
+      setErrorEliminar(mensajeError(e, "No se pudo eliminar el evento."));
+    } finally {
+      setEliminando(false);
+    }
+  }
+
   const programacion = (f: Fila) => {
     if (f.tipo === "reserva") {
       if (f.agendas.length === 0) return <Typography variant="body2" color="warning.main">Sin agendas</Typography>;
@@ -284,6 +309,9 @@ export default function EventosAdminPage() {
               <Button size="small" color={f.activo ? "error" : "primary"} onClick={() => alternarServicio(f.servicio!)}>
                 {f.activo ? "Desactivar" : "Activar"}
               </Button>
+              <Button size="small" color="error" onClick={() => { setAEliminar(f); setErrorEliminar(null); }}>
+                Eliminar
+              </Button>
             </>
           ) : (
             <>
@@ -293,6 +321,9 @@ export default function EventosAdminPage() {
               </Button>
               <Button size="small" color={f.activo ? "error" : "primary"} onClick={() => alternarActividad(f.actividad!)}>
                 {f.activo ? "Ocultar" : "Publicar"}
+              </Button>
+              <Button size="small" color="error" onClick={() => { setAEliminar(f); setErrorEliminar(null); }}>
+                Eliminar
               </Button>
             </>
           )}
@@ -421,6 +452,28 @@ export default function EventosAdminPage() {
         reservas={afectadas?.reservas ?? []}
         motivoSugerido={afectadas?.motivo ?? ""}
         onCerrar={() => setAfectadas(null)}
+      />
+      <ConfirmDialog
+        abierto={!!aEliminar}
+        titulo={`Eliminar «${aEliminar?.nombre ?? ""}»`}
+        contenido={
+          aEliminar && (
+            <Alert severity="error">
+              Esto borra el evento de forma permanente, junto con <strong>todo su registro</strong>:
+              {aEliminar.tipo === "reserva"
+                ? " todas sus agendas y todas sus reservas, pasadas y futuras, en cualquier estado."
+                : " todas sus fechas y todas sus inscripciones, pasadas y futuras, en cualquier estado."}
+              {" "}No es lo mismo que desactivar u ocultar (eso conserva el historial): esta acción{" "}
+              <strong>no se puede deshacer</strong> y el historial no se podrá recuperar.
+            </Alert>
+          )
+        }
+        textoConfirmar="Eliminar definitivamente"
+        colorConfirmar="error"
+        cargando={eliminando}
+        error={errorEliminar}
+        onConfirmar={confirmarEliminar}
+        onCancelar={() => setAEliminar(null)}
       />
     </Box>
   );

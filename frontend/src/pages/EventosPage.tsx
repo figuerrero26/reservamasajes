@@ -10,7 +10,6 @@ import SpaOutlinedIcon from "@mui/icons-material/SpaOutlined";
 import EventCard, { type DatoTarjeta } from "../components/EventCard";
 import EmptyState from "../components/EmptyState";
 import Loader from "../components/Loader";
-import Marca from "../components/Marca";
 import MutedVideo from "../components/MutedVideo";
 import type { ActividadPublica, EventoPublico } from "../types";
 import { listarEventos } from "../services/eventos";
@@ -116,14 +115,6 @@ export default function EventosPage() {
       {/* Portada */}
       <Grid container spacing={{ xs: 4, md: 6 }} alignItems="center" sx={{ mb: { xs: 6, md: 10 } }}>
         <Grid item xs={12} md={media ? 6 : 12}>
-          {config.empresa_nombre && (
-            <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.5, color: "text.secondary" }}>
-              <Box sx={{ width: 22, height: 2, bgcolor: "secondary.main", borderRadius: 1, flexShrink: 0 }} />
-              <Typography component="p" sx={{ fontSize: "0.9rem", color: "inherit" }}>
-                <Marca nombre={config.empresa_nombre} acento={theme.palette.primary.main} />
-              </Typography>
-            </Stack>
-          )}
           <Typography
             variant="h2"
             component="h1"

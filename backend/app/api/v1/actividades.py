@@ -74,6 +74,14 @@ def activar(actividad_id: int, db: Session = Depends(get_db),
     return servicio.a_out(servicio.cambiar_estado(actividad_id, True, admin["id"]))
 
 
+@router.delete("/{actividad_id}")
+def eliminar(actividad_id: int, db: Session = Depends(get_db),
+             admin: dict = Depends(get_current_admin_full)):
+    """Borra la actividad de verdad, con todas sus sesiones e inscripciones (en cualquier
+    estado). A diferencia de desactivar, es irreversible: no conserva historial."""
+    return ActividadService(db).eliminar(actividad_id, admin["id"])
+
+
 @router.get("/{actividad_id}/sesiones", response_model=list[SesionOut])
 def listar_sesiones(actividad_id: int, db: Session = Depends(get_db),
                      _: dict = Depends(get_current_admin)):

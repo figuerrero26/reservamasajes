@@ -54,3 +54,11 @@ def activar(servicio_id: int, db: Session = Depends(get_db),
     """Vuelve a publicar el evento con las agendas que estaban activas (si está dentro de su
     vigencia)."""
     return _con_afectadas(*ServicioService(db).cambiar_estado(servicio_id, True, admin["id"]))
+
+
+@router.delete("/{servicio_id}")
+def eliminar(servicio_id: int, db: Session = Depends(get_db),
+             admin: dict = Depends(get_current_admin_full)):
+    """Borra el evento de verdad, con todas sus agendas y reservas (en cualquier estado). A
+    diferencia de desactivar, es irreversible: no conserva historial."""
+    return ServicioService(db).eliminar(servicio_id, admin["id"])

@@ -18,9 +18,10 @@ Vigencia (ver app/utils/vigencia.py): la misma regla aplica automáticamente fue
 periodo del evento — antes del inicio ("próximo") y después del fin ("finalizado") no se
 publica ni recibe reservas, sin tocar el flag `activo` ni ninguna reserva existente.
 """
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
-from app.models import Agenda, Servicio
+from app.models import Agenda, Bloqueo, Notificacion, Reserva, Servicio
 from app.repositories.agenda_repository import AgendaRepository
 from app.repositories.area_repository import AreaRepository
 from app.repositories.reserva_repository import ReservaRepository
@@ -248,3 +249,34 @@ class ServicioService:
         self.db.commit()
         afectadas = [] if activo else [a_admin_out(r) for r in self.reservas.activas_futuras(servicio_id=servicio_id)]
         return serv, afectadas
+
+    def eliminar(self, servicio_id: int, admin_id: int) -> dict:
+        """Borra el evento de verdad, con TODO su historial: a diferencia de desactivar (que
+        conserva reservas e historial), esta acción es irreversible y elimina también sus
+        agendas, sus reservas (en cualquier estado) y los bloqueos propios de esas agendas.
+        Las notificaciones ya enviadas se conservan, solo pierden la referencia a la reserva
+        borrada (igual que cuando se elimina la cuenta de un colaborador)."""
+        serv = self.obtener(servicio_id)
+        agenda_ids = list(self.db.execute(
+            select(Agenda.id).where(Agenda.servicio_id == servicio_id)
+        ).scalars().all())
+        reserva_ids = list(self.db.execute(
+            select(Reserva.id).where(Reserva.servicio_id == servicio_id)
+        ).scalars().all())
+
+        if reserva_ids:
+            self.db.execute(update(Notificacion).where(Notificacion.reserva_id.in_(reserva_ids)).values(reserva_id=None))
+        if agenda_ids:
+            self.db.execute(delete(Bloqueo).where(Bloqueo.agenda_id.in_(agenda_ids)))
+        self.db.execute(delete(Reserva).where(Reserva.servicio_id == servicio_id))
+        self.db.execute(delete(Agenda).where(Agenda.servicio_id == servicio_id))
+
+        auditoria_service.registrar(
+            self.db, admin_id, "eliminar_evento", "servicio", servicio_id,
+            datos_anteriores={
+                "nombre": serv.nombre, "agendas_eliminadas": len(agenda_ids), "reservas_eliminadas": len(reserva_ids),
+            },
+        )
+        self.db.delete(serv)
+        self.db.commit()
+        return {"agendas_eliminadas": len(agenda_ids), "reservas_eliminadas": len(reserva_ids)}

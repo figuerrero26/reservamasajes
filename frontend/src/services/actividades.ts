@@ -58,6 +58,12 @@ export async function activarActividad(id: number): Promise<Actividad> {
   return data;
 }
 
+/** Borra la actividad de verdad (irreversible): también sus sesiones e inscripciones. */
+export async function eliminarActividad(id: number): Promise<{ sesiones_eliminadas: number; inscripciones_eliminadas: number }> {
+  const { data } = await api.delete(`/actividades/${id}`);
+  return data;
+}
+
 export interface SesionPayload {
   fecha: string; hora_inicio: string; hora_fin: string; cupo_maximo?: number | null; lugar?: string | null;
 }

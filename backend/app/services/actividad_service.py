@@ -20,9 +20,10 @@ import json
 from datetime import date
 from typing import Literal
 
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.models import Actividad, Sesion
+from app.models import Actividad, Inscripcion, Sesion
 from app.repositories.actividad_repository import ActividadRepository
 from app.repositories.area_repository import AreaRepository
 from app.repositories.inscripcion_repository import InscripcionRepository
@@ -336,3 +337,31 @@ class ActividadService:
         )
         self.db.commit()
         return actividad
+
+    def eliminar(self, actividad_id: int, admin_id: int) -> dict:
+        """Borra la actividad de verdad, con TODO su historial: a diferencia de desactivar
+        (que conserva inscripciones e historial), esta acción es irreversible y elimina
+        también sus sesiones y sus inscripciones (en cualquier estado). Las notificaciones ya
+        enviadas se conservan (ON DELETE SET NULL en notificaciones.inscripcion_id)."""
+        actividad = self.obtener(actividad_id)
+        sesion_ids = list(self.db.execute(
+            select(Sesion.id).where(Sesion.actividad_id == actividad_id)
+        ).scalars().all())
+        inscripcion_ids = list(self.db.execute(
+            select(Inscripcion.id).where(Inscripcion.sesion_id.in_(sesion_ids))
+        ).scalars().all()) if sesion_ids else []
+
+        if sesion_ids:
+            self.db.execute(delete(Inscripcion).where(Inscripcion.sesion_id.in_(sesion_ids)))
+        self.db.execute(delete(Sesion).where(Sesion.actividad_id == actividad_id))
+
+        auditoria_service.registrar(
+            self.db, admin_id, "eliminar_evento", "actividad", actividad_id,
+            datos_anteriores={
+                "nombre": actividad.nombre, "sesiones_eliminadas": len(sesion_ids),
+                "inscripciones_eliminadas": len(inscripcion_ids),
+            },
+        )
+        self.db.delete(actividad)
+        self.db.commit()
+        return {"sesiones_eliminadas": len(sesion_ids), "inscripciones_eliminadas": len(inscripcion_ids)}

@@ -50,3 +50,7 @@ export const desactivarServicio = async (id: number) =>
 
 export const activarServicio = async (id: number) =>
   (await api.post<Servicio & ConReservasAfectadas>(`/servicios/${id}/activar`)).data;
+
+/** Borra el evento de verdad (irreversible): también sus agendas y reservas. */
+export const eliminarServicio = async (id: number) =>
+  (await api.delete<{ agendas_eliminadas: number; reservas_eliminadas: number }>(`/servicios/${id}`)).data;
