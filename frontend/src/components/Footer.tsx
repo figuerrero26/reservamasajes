@@ -42,7 +42,7 @@ export default function Footer() {
             </Typography>
             {lema && <Typography sx={{ color: amarillo, fontWeight: 600, fontSize: "0.9rem", mt: 0.5 }}>{lema}</Typography>}
             <Typography sx={{ color: TEXTO_SUAVE, fontSize: "0.9rem", mt: 1.5, lineHeight: 1.6 }}>
-              Espacios de bienestar y actividades para SIGRA
+              Espacios de bienestar y actividades para todo SIGRA
             </Typography>
           </Box>
 
