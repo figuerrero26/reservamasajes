@@ -4,7 +4,6 @@ import CategoryOutlinedIcon from "@mui/icons-material/CategoryOutlined";
 import SpaOutlinedIcon from "@mui/icons-material/SpaOutlined";
 import EventNoteOutlinedIcon from "@mui/icons-material/EventNoteOutlined";
 import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
-import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import PeopleOutlineIcon from "@mui/icons-material/PeopleOutline";
 import BlockOutlinedIcon from "@mui/icons-material/BlockOutlined";
 import CelebrationOutlinedIcon from "@mui/icons-material/CelebrationOutlined";
@@ -25,11 +24,11 @@ export interface SeccionAdmin {
 export const SECCIONES_ADMIN: SeccionAdmin[] = [
   { texto: "Inicio", descripcion: "Resumen del día.", ruta: "/admin", icono: <DashboardOutlinedIcon />, grupo: "operacion" },
   { texto: "Reservas", descripcion: "Turnos del día, reservas manuales, asistencia y cancelaciones.", ruta: "/admin/reservas", icono: <EventAvailableOutlinedIcon />, grupo: "operacion" },
-  { texto: "Actividades", descripcion: "Actividades con cupo, sesiones e inscritos.", ruta: "/admin/actividades", icono: <GroupsOutlinedIcon />, grupo: "operacion" },
   { texto: "Usuarios", descripcion: "Cuentas de colaboradores: bloqueo, contraseña y excepciones.", ruta: "/admin/usuarios", icono: <PeopleOutlineIcon />, grupo: "operacion" },
-  { texto: "Eventos", descripcion: "Eventos reservables por turnos que se muestran en el portal.", ruta: "/admin/servicios", icono: <SpaOutlinedIcon />, grupo: "catalogo" },
+  // Catálogo en el orden de trabajo pedido: Eventos (turnos y actividades juntos), Áreas, Agendas.
+  { texto: "Eventos", descripcion: "Reservas por turnos y actividades con inscripción: creación, agendas, sesiones e inscritos.", ruta: "/admin/eventos", icono: <SpaOutlinedIcon />, grupo: "catalogo" },
+  { texto: "Áreas", descripcion: "Las áreas a las que pertenece cada evento.", ruta: "/admin/areas", icono: <CategoryOutlinedIcon />, grupo: "catalogo" },
   { texto: "Agendas", descripcion: "Horario, duración de turnos y días de cada evento por área.", ruta: "/admin/agendas", icono: <EventNoteOutlinedIcon />, grupo: "catalogo" },
-  { texto: "Áreas", descripcion: "Lugares físicos donde se atiende.", ruta: "/admin/areas", icono: <CategoryOutlinedIcon />, grupo: "catalogo" },
   { texto: "Bloqueos", descripcion: "Días u horas sin atención en una o todas las agendas.", ruta: "/admin/bloqueos", icono: <BlockOutlinedIcon />, grupo: "catalogo" },
   { texto: "Festivos", descripcion: "Días no laborables del calendario.", ruta: "/admin/festivos", icono: <CelebrationOutlinedIcon />, grupo: "catalogo" },
   { texto: "Configuración", descripcion: "Marca, contacto, semana activa, reglas y correo.", ruta: "/admin/configuracion", icono: <SettingsOutlinedIcon />, grupo: "sistema" },

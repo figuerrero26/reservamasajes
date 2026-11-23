@@ -1,7 +1,7 @@
 import api from "./api";
 import apiUsuario from "./apiUsuario";
 import type {
-  AgendaDia, CancelarLoteResultado, HorariosResponse, MiReserva, Reserva, ReservaAdmin, ReservaCreada,
+  AgendaDia, CancelarLoteResultado, HorariosResponse, MiReserva, Reserva, ReservaCreada,
 } from "../types";
 
 // ---- Portal público (requiere sesión de usuario, salvo horarios que es abierto) ----
@@ -36,14 +36,6 @@ export async function obtenerDia(fecha: string, servicioId?: number): Promise<Ag
   const { data } = await api.get<AgendaDia[]>("/reservas/dia", {
     params: { fecha, servicio_id: servicioId },
   });
-  return data;
-}
-
-export async function buscarReservas(params: {
-  nombre?: string; correo?: string; fecha?: string; agenda_id?: number; servicio_id?: number;
-  estado?: string;
-}): Promise<ReservaAdmin[]> {
-  const { data } = await api.get<ReservaAdmin[]>("/reservas", { params });
   return data;
 }
 

@@ -1,4 +1,4 @@
-import { alpha, createTheme } from "@mui/material/styles";
+import { alpha, createTheme, darken, getContrastRatio, lighten } from "@mui/material/styles";
 
 /**
  * Sistema visual de la plataforma: minimalista, con mucho aire, tipografía protagonista y
@@ -23,14 +23,41 @@ export const TOKENS = {
 
 const FUENTE = "'Inter', 'Helvetica Neue', Helvetica, Arial, system-ui, sans-serif";
 
+export const BLANCO = "#FFFFFF";
+export const NEGRO = "#111111";
+
+/** Texto pequeño sobre un fondo de color: blanco o negro, el que más contraste dé. Sobre el
+ * verde de SIGRA (#7f9136) gana el negro (6:1 frente a 3,5:1 del blanco). */
+export function textoLegibleSobre(fondo: string): string {
+  return getContrastRatio(fondo, BLANCO) >= getContrastRatio(fondo, NEGRO) ? BLANCO : NEGRO;
+}
+
+/** Texto grande o en negrita (títulos, íconos): basta un contraste de 3:1 (WCAG), así el
+ * blanco se puede usar sobre verdes medios y combinar con el negro de los textos pequeños. */
+export function textoGrandeSobre(fondo: string): string {
+  return getContrastRatio(fondo, BLANCO) >= 3 ? BLANCO : NEGRO;
+}
+
+/** Tonos suaves y opacos (sólidos, no transparentes) derivados del color de marca, para
+ * superficies como las tarjetas sin foto o el bloque de disponibilidad. */
+export function tonosSuaves(color: string) {
+  return {
+    fondo: lighten(color, 0.86),
+    fondoMedio: lighten(color, 0.72),
+    texto: darken(color, 0.38),
+  };
+}
+
 export function createAppTheme(colorPrimario?: string | null, colorSecundario?: string | null) {
   const primario = colorPrimario || "#1F3A5F";
   const secundario = colorSecundario || "#2E6DA4";
 
   return createTheme({
     palette: {
-      primary: { main: primario },
-      secondary: { main: secundario },
+      // El texto de botones y chips de color se elige por contraste real (no por el umbral
+      // por defecto de MUI, que pondría blanco poco legible sobre verdes medios).
+      primary: { main: primario, contrastText: textoLegibleSobre(primario) },
+      secondary: { main: secundario, contrastText: textoLegibleSobre(secundario) },
       text: { primary: TOKENS.tinta, secondary: TOKENS.tintaSuave },
       divider: TOKENS.borde,
       background: { default: TOKENS.fondo, paper: TOKENS.superficie },
@@ -151,9 +178,11 @@ export function createAppTheme(colorPrimario?: string | null, colorSecundario?: 
             borderRadius: TOKENS.radio,
             marginInline: 8,
             marginBlock: 2,
-            "&.Mui-selected": { backgroundColor: alpha(primario, 0.09), color: primario, fontWeight: 600 },
-            "&.Mui-selected .MuiListItemIcon-root": { color: primario },
-            "&.Mui-selected:hover": { backgroundColor: alpha(primario, 0.13) },
+            // Texto del ítem activo en una versión oscura del color de marca: el verde medio
+            // sobre su propio tinte claro no alcanza un contraste cómodo de lectura.
+            "&.Mui-selected": { backgroundColor: alpha(primario, 0.12), color: darken(primario, 0.35), fontWeight: 600 },
+            "&.Mui-selected .MuiListItemIcon-root": { color: darken(primario, 0.35) },
+            "&.Mui-selected:hover": { backgroundColor: alpha(primario, 0.18) },
           },
         },
       },

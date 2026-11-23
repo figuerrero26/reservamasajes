@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import Loader from "../components/Loader";
 import PublicLayout from "../layouts/PublicLayout";
 import EventosPage from "../pages/EventosPage";
@@ -11,7 +11,7 @@ import RestablecerPasswordPage from "../pages/RestablecerPasswordPage";
 import MisReservasPage from "../pages/MisReservasPage";
 import ActividadDetallePage from "../pages/ActividadDetallePage";
 import MisInscripcionesPage from "../pages/MisInscripcionesPage";
-import LegalPage from "../pages/LegalPage";
+import TerminosPage from "../pages/TerminosPage";
 import NoEncontradaPage from "../pages/NoEncontradaPage";
 
 // El panel administrativo se carga bajo demanda: los colaboradores que solo usan el portal
@@ -19,11 +19,10 @@ import NoEncontradaPage from "../pages/NoEncontradaPage";
 const AdminLayout = lazy(() => import("../layouts/AdminLayout"));
 const LoginPage = lazy(() => import("../pages/LoginPage"));
 const DashboardPage = lazy(() => import("../pages/admin/DashboardPage"));
+const EventosAdminPage = lazy(() => import("../pages/admin/EventosAdminPage"));
 const AreasPage = lazy(() => import("../pages/admin/AreasPage"));
-const ServiciosPage = lazy(() => import("../pages/admin/ServiciosPage"));
 const AgendasPage = lazy(() => import("../pages/admin/AgendasPage"));
 const ReservasPage = lazy(() => import("../pages/admin/ReservasPage"));
-const ActividadesPage = lazy(() => import("../pages/admin/ActividadesPage"));
 const UsuariosPage = lazy(() => import("../pages/admin/UsuariosPage"));
 const AdministradoresPage = lazy(() => import("../pages/admin/AdministradoresPage"));
 const BloqueosPage = lazy(() => import("../pages/admin/BloqueosPage"));
@@ -46,8 +45,7 @@ export default function AppRoutes() {
           <Route path="/mis-reservas" element={<MisReservasPage />} />
           <Route path="/actividades/:id" element={<ActividadDetallePage />} />
           <Route path="/mis-inscripciones" element={<MisInscripcionesPage />} />
-          <Route path="/privacidad" element={<LegalPage tipo="privacidad" />} />
-          <Route path="/terminos" element={<LegalPage tipo="terminos" />} />
+          <Route path="/terminos" element={<TerminosPage />} />
           <Route path="*" element={<NoEncontradaPage />} />
         </Route>
 
@@ -55,11 +53,13 @@ export default function AppRoutes() {
         <Route path="/admin/login" element={<LoginPage />} />
         <Route element={<AdminLayout />}>
           <Route path="/admin" element={<DashboardPage />} />
+          <Route path="/admin/eventos" element={<EventosAdminPage />} />
           <Route path="/admin/areas" element={<AreasPage />} />
-          <Route path="/admin/servicios" element={<ServiciosPage />} />
           <Route path="/admin/agendas" element={<AgendasPage />} />
           <Route path="/admin/reservas" element={<ReservasPage />} />
-          <Route path="/admin/actividades" element={<ActividadesPage />} />
+          {/* Secciones unificadas en «Eventos»: los enlaces antiguos siguen funcionando. */}
+          <Route path="/admin/servicios" element={<Navigate to="/admin/eventos?tipo=turnos" replace />} />
+          <Route path="/admin/actividades" element={<Navigate to="/admin/eventos?tipo=actividad" replace />} />
           <Route path="/admin/usuarios" element={<UsuariosPage />} />
           <Route path="/admin/bloqueos" element={<BloqueosPage />} />
           <Route path="/admin/festivos" element={<FestivosPage />} />

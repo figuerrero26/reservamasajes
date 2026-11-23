@@ -139,7 +139,9 @@ export default function ActividadDetallePage() {
           <Stack spacing={2.5}>
             <Box>
               <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-                <Typography variant="overline" color="text.secondary">Actividad</Typography>
+                <Typography variant="overline" color="text.secondary">
+                  Actividad{actividad.area_nombre ? ` · ${actividad.area_nombre}` : ""}
+                </Typography>
                 <EstadoChip tipo="actividad" estado={actividad.estado_inscripcion} />
               </Stack>
               <Typography variant="h3" component="h1" sx={{ fontSize: { xs: "2rem", sm: "2.6rem" } }}>

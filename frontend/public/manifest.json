@@ -1,11 +1,11 @@
 {
-  "name": "Reservas de Bienestar",
-  "short_name": "Reservas",
-  "description": "Reserva de actividades de bienestar para colaboradores",
+  "name": "Vive la Semana Sigra Vive | Reserva un espacio",
+  "short_name": "Sigra Vive",
+  "description": "Reserva un espacio de bienestar o inscríbete en las actividades de la Semana Sigra Vive",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#F4F7FB",
-  "theme_color": "#1F3A5F",
+  "background_color": "#FAFAF8",
+  "theme_color": "#7f9136",
   "icons": [
     {
       "src": "/icon-192.png",

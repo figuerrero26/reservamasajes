@@ -52,7 +52,8 @@ export interface AgendaResumen {
   area_nombre: string;
 }
 
-/** Tarjeta pública (catálogo tipo Bookings). Sin autenticación. */
+/** Tarjeta pública de un evento por turnos. Duración y disponibilidad salen de sus agendas
+ * reservables (ver backend EventoPublico). */
 export interface EventoPublico {
   id: number;
   nombre: string;
@@ -60,9 +61,14 @@ export interface EventoPublico {
   descripcion_larga?: string | null;
   imagen_url?: string | null;
   duracion_minutos: number;
+  duracion_maxima: number;
   informacion_adicional?: string | null;
   areas: string[];
+  area_ids: number[];
   agendas: AgendaResumen[];
+  turnos_disponibles: number;
+  proximo_turno_fecha?: string | null;
+  proximo_turno_hora?: string | null;
 }
 
 export type EstadoSlot = "disponible" | "ocupado" | "bloqueado" | "pasado";
@@ -155,6 +161,8 @@ export interface ReservaCreada extends Reserva {
  * (desactivar evento/área/agenda, crear bloqueo o festivo). */
 export interface ConReservasAfectadas {
   reservas_afectadas: ReservaAdmin[];
+  /** Solo al desactivar un área: actividades activas que quedan ocultas del portal. */
+  actividades_afectadas?: number;
 }
 
 export interface CancelarLoteResultado {
@@ -258,7 +266,6 @@ export interface ConfiguracionGeneral {
   contacto_correo?: string | null;
   contacto_telefono?: string | null;
   contacto_direccion?: string | null;
-  politica_privacidad?: string | null;
   terminos_condiciones?: string | null;
   zona_horaria: string;
   semana_activa_inicio?: string | null;
@@ -351,6 +358,9 @@ export interface ResumenSesiones {
 
 export interface Actividad {
   id: number;
+  /** null solo en actividades creadas antes de que el área fuera obligatoria. */
+  area_id?: number | null;
+  area_nombre?: string | null;
   nombre: string;
   descripcion_corta?: string | null;
   descripcion_larga?: string | null;
@@ -368,6 +378,8 @@ export interface Actividad {
 /** Catálogo público: con el estado de inscripción y la próxima sesión ya evaluados. */
 export interface ActividadPublica {
   id: number;
+  area_id?: number | null;
+  area_nombre?: string | null;
   nombre: string;
   descripcion_corta?: string | null;
   descripcion_larga?: string | null;

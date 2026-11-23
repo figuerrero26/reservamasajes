@@ -13,9 +13,8 @@ import ReservationDialog from "../components/ReservationDialog";
 import type { AgendaPublica, EventoPublico, Slot } from "../types";
 import { obtenerEvento } from "../services/eventos";
 import { listarAgendasPublicas } from "../services/agendas";
-import { obtenerConfiguracion } from "../services/configuracion";
+import { obtenerDiasReservables } from "../services/configuracion";
 import { mensajeError } from "../utils/errors";
-import { diasHabilesSemana, hoyBogota, rangoFechas, sumarDias } from "../utils/fechas";
 import { useUsuarioAuth } from "../hooks/useUsuarioAuth";
 
 const CLAVE_RESERVA_PENDIENTE = "reserva_pendiente";
@@ -52,27 +51,14 @@ export default function DisponibilidadPage() {
     setAgendaSeleccionada(null);
     setSeleccion(null);
 
-    Promise.all([
-      obtenerEvento(eventoId),
-      listarAgendasPublicas(eventoId),
-      obtenerConfiguracion().catch(() => null),
-    ])
-      .then(([eventoData, agendasData, config]) => {
+    // Los días los decide el backend (semana activa desde hoy o días hábiles restantes): es la
+    // misma regla con la que se calcula la disponibilidad que muestran las tarjetas.
+    Promise.all([obtenerEvento(eventoId), listarAgendasPublicas(eventoId), obtenerDiasReservables()])
+      .then(([eventoData, agendasData, diasReservables]) => {
         setEvento(eventoData);
         setAgendas(agendasData);
         if (agendasData.length === 1) setAgendaSeleccionada(agendasData[0]);
-
-        // Solo días de hoy en adelante: los días ya pasados nunca tienen turnos reservables.
-        const hoy = hoyBogota();
-        const inicio = config?.semana_activa_inicio;
-        const fin = config?.semana_activa_fin;
-        if (inicio && fin) {
-          setDias(rangoFechas(inicio < hoy ? hoy : inicio, fin));
-        } else {
-          const estaSemana = diasHabilesSemana(hoy).filter((d) => d >= hoy);
-          // Fin de semana sin semana activa configurada: se muestra la semana siguiente.
-          setDias(estaSemana.length > 0 ? estaSemana : diasHabilesSemana(sumarDias(hoy, 7)));
-        }
+        setDias(diasReservables);
       })
       .catch((e) => setError(mensajeError(e, "No se pudo cargar el evento.")))
       .finally(() => setCargando(false));
@@ -144,8 +130,19 @@ export default function DisponibilidadPage() {
             </Typography>
           )}
           <Stack direction="row" spacing={1} sx={{ mt: 2 }} flexWrap="wrap" useFlexGap>
-            <Chip size="small" variant="outlined" label={`Sesiones de ${evento.duracion_minutos} min`} />
+            <Chip
+              size="small"
+              variant="outlined"
+              label={evento.duracion_minutos === evento.duracion_maxima
+                ? `Sesiones de ${evento.duracion_minutos} min`
+                : `Sesiones de ${evento.duracion_minutos}–${evento.duracion_maxima} min`}
+            />
             {evento.areas.map((a) => <Chip key={a} size="small" variant="outlined" label={a} />)}
+            <Chip
+              size="small"
+              color={evento.turnos_disponibles > 0 ? "primary" : "default"}
+              label={evento.turnos_disponibles > 0 ? `${evento.turnos_disponibles} turnos disponibles` : "Sin turnos disponibles"}
+            />
           </Stack>
         </Grid>
         {evento.imagen_url && (

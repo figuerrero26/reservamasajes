@@ -20,6 +20,7 @@ export async function listarSesionesPublicas(actividadId: number): Promise<Sesio
 
 // ---- Administración ----
 export interface ActividadPayload {
+  area_id: number;
   nombre: string;
   descripcion_corta?: string | null;
   descripcion_larga?: string | null;
@@ -36,7 +37,8 @@ export async function listarActividades(): Promise<Actividad[]> {
   return data;
 }
 
-export async function crearActividad(payload: ActividadPayload): Promise<Actividad> {
+/** Crea la actividad (área obligatoria) y, si se envían, sus primeras sesiones en la misma operación. */
+export async function crearActividad(payload: ActividadPayload & { sesiones?: SesionPayload[] }): Promise<Actividad> {
   const { data } = await api.post<Actividad>("/actividades", payload);
   return data;
 }

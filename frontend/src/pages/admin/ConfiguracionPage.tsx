@@ -68,7 +68,6 @@ interface FormularioGeneral {
   contacto_correo: string;
   contacto_telefono: string;
   contacto_direccion: string;
-  politica_privacidad: string;
   terminos_condiciones: string;
 }
 
@@ -87,7 +86,6 @@ function aFormulario(c: ConfiguracionGeneral): FormularioGeneral {
     contacto_correo: c.contacto_correo ?? "",
     contacto_telefono: c.contacto_telefono ?? "",
     contacto_direccion: c.contacto_direccion ?? "",
-    politica_privacidad: c.politica_privacidad ?? "",
     terminos_condiciones: c.terminos_condiciones ?? "",
   };
 }
@@ -582,17 +580,6 @@ export default function ConfiguracionPage() {
                 value={form.contacto_direccion}
                 onChange={(e) => setForm({ ...form, contacto_direccion: e.target.value })}
                 inputProps={{ maxLength: 300 }}
-                fullWidth
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                label="Política de privacidad"
-                helperText="Página /privacidad del portal. Si la dejas vacía se muestra un texto base."
-                value={form.politica_privacidad}
-                onChange={(e) => setForm({ ...form, politica_privacidad: e.target.value })}
-                multiline
-                minRows={4}
                 fullWidth
               />
             </Grid>

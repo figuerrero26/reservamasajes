@@ -79,8 +79,7 @@ export default function RegistroPage() {
           {cargando ? "Creando cuenta…" : "Crear cuenta"}
         </Button>
         <Typography variant="caption" color="text.secondary" align="center">
-          Al registrarte aceptas los <Link component={RouterLink} to="/terminos">términos</Link> y la{" "}
-          <Link component={RouterLink} to="/privacidad">política de privacidad</Link>.
+          Al registrarte aceptas los <Link component={RouterLink} to="/terminos">términos y condiciones</Link>.
         </Typography>
         <Typography variant="body2" align="center" color="text.secondary">
           ¿Ya tienes cuenta?{" "}

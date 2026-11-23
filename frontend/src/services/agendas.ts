@@ -2,7 +2,8 @@ import api from "./api";
 import apiUsuario from "./apiUsuario";
 import type { Agenda, AgendaPublica, ConReservasAfectadas } from "../types";
 
-export const listarAgendas = async () => (await api.get<Agenda[]>("/agendas")).data;
+export const listarAgendas = async (filtros: { area_id?: number; servicio_id?: number } = {}) =>
+  (await api.get<Agenda[]>("/agendas", { params: filtros })).data;
 
 /** Público: agendas reservables de un evento (agenda, evento y área activos). */
 export const listarAgendasPublicas = async (servicioId: number) =>

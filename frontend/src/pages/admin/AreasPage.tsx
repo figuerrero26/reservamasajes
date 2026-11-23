@@ -12,16 +12,24 @@ import {
   TextField,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import type { Area, ReservaAdmin } from "../../types";
+import { useNavigate } from "react-router-dom";
+import type { Actividad, Agenda, Area, ReservaAdmin } from "../../types";
 import { activarArea, actualizarArea, crearArea, desactivarArea, listarAreas } from "../../services/areas";
+import { listarAgendas } from "../../services/agendas";
+import { listarActividades } from "../../services/actividades";
 import { mensajeError } from "../../utils/errors";
 import Loader from "../../components/Loader";
 import DataTable, { type ColumnaDataTable } from "../../components/DataTable";
 import PageHeader from "../../components/PageHeader";
 import ReservasAfectadasDialog from "../../components/ReservasAfectadasDialog";
 
+/** Áreas: organizan los eventos. Un evento por turnos pertenece a un área por sus agendas y
+ * una actividad por su campo de área; ambos son obligatorios al crear. */
 export default function AreasPage() {
+  const navigate = useNavigate();
   const [areas, setAreas] = useState<Area[]>([]);
+  const [agendas, setAgendas] = useState<Agenda[]>([]);
+  const [actividades, setActividades] = useState<Actividad[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -38,7 +46,10 @@ export default function AreasPage() {
     setCargando(true);
     setError(null);
     try {
-      setAreas(await listarAreas());
+      const [ar, ag, ac] = await Promise.all([listarAreas(), listarAgendas(), listarActividades()]);
+      setAreas(ar);
+      setAgendas(ag);
+      setActividades(ac);
     } catch (e) {
       setError(mensajeError(e, "No se pudieron cargar las áreas."));
     } finally {
@@ -90,8 +101,11 @@ export default function AreasPage() {
     try {
       if (area.activo) {
         const r = await desactivarArea(area.id);
+        const actividadesTexto = r.actividades_afectadas
+          ? ` y ${r.actividades_afectadas} actividad(es) se ocultaron del portal (sus inscripciones se conservan)`
+          : "";
         if (r.reservas_afectadas.length > 0) setAfectadas({ nombre: area.nombre, reservas: r.reservas_afectadas });
-        else setAviso(`«${area.nombre}» quedó desactivada: sus agendas dejan de ofrecer turnos.`);
+        setAviso(`«${area.nombre}» quedó desactivada: sus agendas dejan de ofrecer turnos${actividadesTexto}.`);
       } else {
         await activarArea(area.id);
         setAviso(`«${area.nombre}» está activa de nuevo.`);
@@ -106,18 +120,30 @@ export default function AreasPage() {
     { key: "nombre", label: "Nombre", principal: true },
     { key: "descripcion", label: "Descripción", render: (a) => a.descripcion || "—" },
     {
+      key: "eventos",
+      label: "Agendas / actividades",
+      render: (a) => {
+        const nAgendas = agendas.filter((g) => g.area_id === a.id).length;
+        const nActividades = actividades.filter((x) => x.area_id === a.id).length;
+        return `${nAgendas} agenda(s) · ${nActividades} actividad(es)`;
+      },
+    },
+    {
       key: "activo",
       label: "Estado",
       render: (a) => (
-        <Chip size="small" label={a.activo ? "Activa" : "Inactiva"} color={a.activo ? "success" : "default"} />
+        <Chip size="small" label={a.activo ? "Activa" : "Inactiva"} color={a.activo ? "success" : "default"} variant={a.activo ? "filled" : "outlined"} />
       ),
     },
     {
       key: "acciones",
-      label: "Acciones",
+      label: "",
       align: "right",
       render: (a) => (
-        <Stack direction="row" spacing={1} justifyContent="flex-end">
+        <Stack direction="row" spacing={1} justifyContent="flex-end" flexWrap="wrap" useFlexGap>
+          <Button size="small" variant="outlined" onClick={() => navigate(`/admin/eventos?area=${a.id}`)}>
+            Ver eventos
+          </Button>
           <Button size="small" onClick={() => abrirEditar(a)}>
             Editar
           </Button>
@@ -133,7 +159,7 @@ export default function AreasPage() {
     <Box>
       <PageHeader
         titulo="Áreas"
-        descripcion="Lugares físicos donde se atiende. Un área inactiva deja de ofrecer turnos en todas sus agendas."
+        descripcion="Las áreas organizan los eventos: todo evento, agenda y actividad pertenece a una. Un área inactiva deja de ofrecer sus turnos y oculta sus actividades del portal."
         acciones={<Button variant="contained" startIcon={<AddIcon />} onClick={abrirCrear}>Nueva área</Button>}
       />
 

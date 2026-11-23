@@ -2,12 +2,16 @@ import { createContext, useEffect, useState, type ReactNode } from "react";
 import type { ConfiguracionGeneral } from "../types";
 import { obtenerConfiguracion } from "../services/configuracion";
 
+// Valores mientras llega la configuración real (primera visita, sin caché): la identidad de
+// la Semana Sigra Vive, para que el primer render ya tenga los colores y el título correctos.
 const DEFAULT_CONFIG: ConfiguracionGeneral = {
-  empresa_nombre: "Empresa",
-  sistema_nombre: "Reservas de Bienestar",
+  empresa_nombre: "SIGRA S.A.S",
+  sistema_nombre: "Vive la Semana Sigra Vive | Reserva un espacio",
   logo_url: null,
-  color_primario: "#1F3A5F",
-  color_secundario: "#2E6DA4",
+  color_primario: "#7f9136",
+  color_secundario: "#edcd30",
+  contacto_correo: "talentohumano@sigra.com",
+  contacto_telefono: "+57 3152579481",
   zona_horaria: "America/Bogota",
 };
 
