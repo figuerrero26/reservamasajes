@@ -8,6 +8,8 @@ import type { Actividad, InscripcionAdmin, Sesion } from "../../types";
 import { buscarInscripciones, cancelarInscripcion, eliminarInscripcionCancelada, crearInscripcionManual } from "../../services/inscripciones";
 import { mensajeError } from "../../utils/errors";
 import { descargarCSV, formatearFechaLarga, formatearHora } from "../../utils/fechas";
+import { formatearRespuesta, preguntasConRespuestas } from "../../utils/respuestasInscripcion";
+import RespuestasInscripcionButton from "./RespuestasInscripcionButton";
 import EliminarCanceladaButton from "./EliminarCanceladaButton";
 import ConfirmDialog from "../ConfirmDialog";
 import EstadoChip from "../EstadoChip";
@@ -106,22 +108,18 @@ export default function InscritosDialog({ actividad, sesion, onCerrar, onCambio 
     }
   }
 
-  const etiqueta = (clave: string) => actividad.campos_formulario.find((c) => c.clave === clave)?.etiqueta ?? clave;
   const confirmados = inscritos.filter((i) => i.estado === "activa");
   const visibles = mostrarTodos ? inscritos : confirmados;
 
   function exportar() {
     if (!actual) return;
-    const preguntas = actividad.campos_formulario;
+    const preguntas = preguntasConRespuestas(actividad.campos_formulario, inscritos);
     descargarCSV(
       `inscritos-${actividad.nombre}-${actual.fecha}.csv`.replace(/[^\w.-]+/g, "_"),
       ["Nombre", "Apellido", "Correo", "Estado", "Inscrito el", ...preguntas.map((p) => p.etiqueta)],
       inscritos.map((i) => [
         i.usuario_nombre, i.usuario_apellido, i.usuario_correo, i.estado, i.created_at.slice(0, 16).replace("T", " "),
-        ...preguntas.map((p) => {
-          const v = i.respuestas_formulario?.[p.clave];
-          return typeof v === "boolean" ? (v ? "Sí" : "No") : (v ?? "");
-        }),
+        ...preguntas.map((p) => formatearRespuesta(i, p.clave)),
       ]),
     );
   }
@@ -170,16 +168,10 @@ export default function InscritosDialog({ actividad, sesion, onCerrar, onCambio 
                       <Box sx={{ minWidth: 0 }}>
                         <Typography variant="body2" fontWeight={600}>{i.usuario_nombre} {i.usuario_apellido}</Typography>
                         <Typography variant="caption" color="text.secondary">{i.usuario_correo || "—"}</Typography>
-                        {i.respuestas_formulario && Object.keys(i.respuestas_formulario).length > 0 && (
-                          <Typography variant="caption" display="block" color="text.secondary">
-                            {Object.entries(i.respuestas_formulario)
-                              .map(([k, v]) => `${etiqueta(k)}: ${typeof v === "boolean" ? (v ? "Sí" : "No") : v}`)
-                              .join(" · ")}
-                          </Typography>
-                        )}
                       </Box>
                       <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" useFlexGap>
                         <EstadoChip tipo="inscripcion" estado={i.estado} />
+                        <RespuestasInscripcionButton campos={actividad.campos_formulario} inscripcion={i} />
                         {i.estado === "cancelada" && (
                           <EliminarCanceladaButton
                             tipo="inscripción" nombre={`${i.usuario_nombre} ${i.usuario_apellido}`}

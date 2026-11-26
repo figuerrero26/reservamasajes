@@ -460,11 +460,13 @@ export interface Sesion {
 
 export type EstadoInscripcion = "activa" | "cancelada";
 
+export type RespuestaFormulario = string | number | boolean | null | string[];
+
 export interface Inscripcion {
   id: number;
   sesion_id: number;
   usuario_id?: number | null;
-  respuestas_formulario?: Record<string, string | number | boolean | null> | null;
+  respuestas_formulario?: Record<string, RespuestaFormulario> | null;
   estado: EstadoInscripcion;
   notes?: string | null;
   created_at: string;

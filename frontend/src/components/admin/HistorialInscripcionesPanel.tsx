@@ -7,6 +7,8 @@ import type { Actividad, EstadoInscripcion, InscripcionAdmin } from "../../types
 import { buscarInscripciones, cancelarInscripcion, eliminarInscripcionCancelada } from "../../services/inscripciones";
 import { mensajeError } from "../../utils/errors";
 import { descargarCSV, formatearFecha, formatearHora, nombreDia } from "../../utils/fechas";
+import { formatearRespuesta, preguntasConRespuestas } from "../../utils/respuestasInscripcion";
+import RespuestasInscripcionButton from "./RespuestasInscripcionButton";
 import EliminarCanceladaButton from "./EliminarCanceladaButton";
 import ConfirmDialog from "../ConfirmDialog";
 import DataTable, { type ColumnaDataTable } from "../DataTable";
@@ -96,6 +98,10 @@ export default function HistorialInscripcionesPanel({ actividad, soloLectura = f
     },
     { key: "estado", label: "Estado", render: (i) => <EstadoChip tipo="inscripcion" estado={i.estado} /> },
     {
+      key: "respuestas", label: "", align: "right",
+      render: (i) => <RespuestasInscripcionButton campos={actividad.campos_formulario} inscripcion={i} />,
+    },
+    {
       key: "acciones", label: "", align: "right",
       render: (i) => {
         if (soloLectura) return null;
@@ -119,17 +125,14 @@ export default function HistorialInscripcionesPanel({ actividad, soloLectura = f
   ];
 
   function exportar() {
-    const preguntas = actividad.campos_formulario;
+    const preguntas = preguntasConRespuestas(actividad.campos_formulario, inscripciones);
     descargarCSV(
       `historial-${actividad.nombre.replace(/[^\w-]+/g, "_")}.csv`,
       ["Fecha", "Hora", "Nombre", "Apellido", "Correo", "Estado", "Cancelada por", ...preguntas.map((p) => p.etiqueta)],
       inscripciones.map((i) => [
         i.sesion_fecha, formatearHora(i.sesion_hora_inicio), i.usuario_nombre, i.usuario_apellido,
         i.usuario_correo, i.estado, i.cancelled_by,
-        ...preguntas.map((p) => {
-          const v = i.respuestas_formulario?.[p.clave];
-          return typeof v === "boolean" ? (v ? "Sí" : "No") : (v ?? "");
-        }),
+        ...preguntas.map((p) => formatearRespuesta(i, p.clave)),
       ]),
     );
   }
@@ -137,17 +140,14 @@ export default function HistorialInscripcionesPanel({ actividad, soloLectura = f
   /** Listado definitivo de participantes: solo inscripciones activas (quienes conservaron su
    * cupo), sin cancelados y sin usar la asistencia como criterio (no se valida). */
   function exportarParticipantes() {
-    const preguntas = actividad.campos_formulario;
     const activas = inscripciones.filter((i) => i.estado === "activa");
+    const preguntas = preguntasConRespuestas(actividad.campos_formulario, activas);
     descargarCSV(
       `participantes-${actividad.nombre.replace(/[^\w-]+/g, "_")}.csv`,
       ["Fecha", "Hora", "Nombre", "Apellido", "Correo", ...preguntas.map((p) => p.etiqueta)],
       activas.map((i) => [
         i.sesion_fecha, formatearHora(i.sesion_hora_inicio), i.usuario_nombre, i.usuario_apellido, i.usuario_correo,
-        ...preguntas.map((p) => {
-          const v = i.respuestas_formulario?.[p.clave];
-          return typeof v === "boolean" ? (v ? "Sí" : "No") : (v ?? "");
-        }),
+        ...preguntas.map((p) => formatearRespuesta(i, p.clave)),
       ]),
     );
   }
