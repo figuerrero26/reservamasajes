@@ -30,7 +30,7 @@ class HorarioParticipacion(BaseModel):
     hora_apertura: time | None = None
     hora_cierre: time | None = None
 
-    @field_validator("publicacion_en", "hora_apertura", "hora_cierre")
+    @field_validator("publicacion_en", "hora_apertura", "hora_cierre", "apertura_reservas_en", check_fields=False)
     @classmethod
     def _hora_local(cls, valor):
         if valor is not None and valor.tzinfo is not None:
@@ -40,11 +40,19 @@ class HorarioParticipacion(BaseModel):
 
 def validar_horario_participacion(
     inicio: date | None, fin: date | None, horario: HorarioParticipacion,
+    apertura_en: datetime | None = None,
 ) -> None:
-    if horario.hora_apertura is not None and inicio is None:
-        raise ValueError("Define la fecha de apertura para configurar su hora.")
     if horario.hora_cierre is not None and fin is None:
         raise ValueError("Define la fecha de cierre para configurar su hora.")
+    if apertura_en is not None:
+        if fin is not None and (apertura_en.date() > fin or (
+            apertura_en.date() == fin and horario.hora_cierre is not None
+            and apertura_en.time() >= horario.hora_cierre
+        )):
+            raise ValueError("El cierre debe ser posterior a la apertura.")
+        return
+    if horario.hora_apertura is not None and inicio is None:
+        raise ValueError("Define la fecha de apertura para configurar su hora.")
     if inicio and inicio == fin and horario.hora_cierre is not None:
         if horario.hora_cierre <= (horario.hora_apertura or time.min):
             raise ValueError("El cierre debe ser posterior a la apertura.")
@@ -60,7 +68,9 @@ class VigenciaYReglaCreate(HorarioParticipacion):
     @model_validator(mode="after")
     def _vigencia(self):
         validar_rango_vigencia(self.vigencia_inicio, self.vigencia_fin)
-        validar_horario_participacion(self.vigencia_inicio, self.vigencia_fin, self)
+        validar_horario_participacion(
+            self.vigencia_inicio, self.vigencia_fin, self, getattr(self, "apertura_reservas_en", None),
+        )
         return self
 
 

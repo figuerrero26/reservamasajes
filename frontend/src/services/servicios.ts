@@ -27,6 +27,7 @@ export interface AgendaInicialPayload {
 }
 
 export interface ServicioInfoPayload {
+  apertura_reservas_en?: string | null;
   nombre: string;
   descripcion_corta?: string | null;
   descripcion_larga?: string | null;

@@ -41,7 +41,7 @@ CAMPOS = [
     "id", "nombre", "descripcion_corta", "descripcion_larga", "imagen_url",
     "duracion_minutos", "informacion_adicional", "activo",
     "vigencia_inicio", "vigencia_fin", "limite_participaciones", "periodo_limite",
-    "publicacion_en", "hora_apertura", "hora_cierre",
+    "publicacion_en", "apertura_reservas_en", "hora_apertura", "hora_cierre",
 ]
 CAMPOS_AGENDA = [
     "id", "nombre", "area_id", "servicio_id", "hora_inicio", "hora_fin",
@@ -229,7 +229,9 @@ class ServicioService:
             for campo in HorarioParticipacion.model_fields
         })
         try:
-            validar_horario_participacion(inicio, fin, horario)
+            validar_horario_participacion(
+                inicio, fin, horario, cambios.get("apertura_reservas_en", serv.apertura_reservas_en),
+            )
         except ValueError as exc:
             raise DomainError(str(exc)) from exc
 

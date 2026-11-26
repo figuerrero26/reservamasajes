@@ -132,3 +132,57 @@ def test_titulo_bienvenida_se_guarda_y_se_publica(client, headers_admin):
     assert client.get(url).json()["titulo_bienvenida"] == titulo
     assert client.put(url, headers=headers_admin, json={**valor, "valor": " "}).status_code == 204
     assert client.get(url).json()["titulo_bienvenida"] is None
+
+
+@pytest.mark.parametrize("dias_hasta_atencion", [-1, 1])
+def test_apertura_reservas_es_independiente_del_primer_dia_de_atencion(
+    dias_hasta_atencion, client, datos_base, headers_admin, headers_usuario, controlar_reloj,
+):
+    cambiar, _, apertura, _ = controlar_reloj
+    inicio = apertura.date() + timedelta(days=dias_hasta_atencion)
+    fin = apertura.date() + timedelta(days=4)
+    turno = max(inicio, apertura.date()) + timedelta(days=1)
+    configurada = apertura.replace(tzinfo=None).isoformat()
+    respuesta = client.post(f"{API}/servicios", headers=headers_admin, json={
+        "nombre": "Masaje con apertura independiente",
+        "vigencia_inicio": inicio.isoformat(),
+        "vigencia_fin": fin.isoformat(),
+        "apertura_reservas_en": configurada,
+        "agendas": [{
+            "area_id": datos_base["area_id"], "hora_inicio": "08:00", "hora_fin": "17:00",
+            "duracion_minutos": 30, "dias_habilitados": "0,1,2,3,4,5,6",
+        }],
+    })
+    assert respuesta.status_code == 201, respuesta.text
+    evento_id = respuesta.json()["id"]
+    assert respuesta.json()["apertura_reservas_en"] == configurada
+    url = f"{API}/eventos/{evento_id}"
+    agenda_id = client.get(url).json()["agendas"][0]["id"]
+
+    cambiar(apertura - timedelta(seconds=1))
+    detalle = client.get(url).json()
+    assert detalle["dias_reservables"] == []
+    assert "Las reservas estarán habilitadas" in detalle["motivo_no_disponible"]
+    assert detalle["proximo_cambio_en"] == apertura.isoformat()
+    assert _reservar(client, headers_usuario, agenda_id, turno).status_code == 400
+
+    cambiar(apertura)
+    detalle = client.get(url).json()
+    assert detalle["dias_reservables"][0] == max(inicio, apertura.date()).isoformat()
+    assert _reservar(client, headers_usuario, agenda_id, turno).status_code == 201
+
+    nueva = apertura + timedelta(days=2)
+    url_admin = f"{API}/servicios/{evento_id}"
+    editado = client.put(url_admin, headers=headers_admin, json={
+        "apertura_reservas_en": nueva.replace(tzinfo=None).isoformat(),
+    })
+    assert editado.status_code == 200, editado.text
+    assert editado.json()["vigencia_inicio"] == inicio.isoformat()
+    assert client.get(url).json()["proximo_cambio_en"] == nueva.isoformat()
+    assert _reservar(client, headers_usuario, agenda_id, turno).status_code == 400
+
+    invalida = client.put(url_admin, headers=headers_admin, json={
+        "apertura_reservas_en": (fin + timedelta(days=1)).isoformat() + "T09:00:00",
+    })
+    assert invalida.status_code == 400
+    assert client.get(url).json()["proximo_cambio_en"] == nueva.isoformat()

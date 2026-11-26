@@ -55,6 +55,7 @@ export interface EstadoDeVigencia {
 
 /** "Servicio" es el nombre interno; en el portal público se presenta como "Evento". */
 export interface Servicio extends VigenciaYRegla, EstadoDeVigencia {
+  apertura_reservas_en?: string | null;
   id: number;
   nombre: string;
   descripcion_corta?: string | null;

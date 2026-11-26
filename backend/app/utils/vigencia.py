@@ -67,23 +67,34 @@ class EventoProgramado(Protocol):
     hora_cierre: time | None
 
 
+def _apertura_participacion(evento: EventoProgramado) -> datetime | None:
+    apertura = getattr(evento, "apertura_reservas_en", None)
+    if apertura is not None:
+        return apertura
+    if evento.vigencia_inicio is not None:
+        return datetime.combine(evento.vigencia_inicio, evento.hora_apertura or time.min)
+    return None
+
+
 def estado_participacion(evento: EventoProgramado, ahora: datetime) -> EstadoVigencia:
-    inicio, fin = evento.vigencia_inicio, evento.vigencia_fin
-    estado = estado_vigencia(inicio, fin, ahora.date())
-    if estado != "vigente":
-        return estado
-    hora = ahora.time()
-    if ahora.date() == inicio and evento.hora_apertura is not None and hora < evento.hora_apertura:
-        return "proximo"
-    if ahora.date() == fin and evento.hora_cierre is not None and hora >= evento.hora_cierre:
+    fin = evento.vigencia_fin
+    apertura = _apertura_participacion(evento)
+    local = ahora.replace(tzinfo=None)
+    if fin is not None and (local.date() > fin or (
+        local.date() == fin and evento.hora_cierre is not None and local.time() >= evento.hora_cierre
+    )):
         return "finalizado"
-    return estado
+    if apertura is not None and local < apertura:
+        return "proximo"
+    return "vigente" if apertura is not None or fin is not None else "sin_vigencia"
 
 
 def proximo_cambio_participacion(evento: EventoProgramado, ahora: datetime) -> datetime | None:
     estado = estado_participacion(evento, ahora)
-    if estado == "proximo" and evento.vigencia_inicio is not None:
-        return datetime.combine(evento.vigencia_inicio, evento.hora_apertura or time.min, tzinfo=ahora.tzinfo)
+    if estado == "proximo":
+        apertura = _apertura_participacion(evento)
+        if apertura is not None:
+            return apertura.replace(tzinfo=ahora.tzinfo)
     if estado == "vigente" and evento.vigencia_fin is not None:
         fin, cierre = evento.vigencia_fin, evento.hora_cierre
         if cierre is None:
@@ -104,6 +115,10 @@ def motivo_participacion(evento: EventoProgramado, ahora: datetime, que: str) ->
         return "Este evento aún no se ha publicado."
     estado = estado_participacion(evento, ahora)
     if estado == "proximo":
+        apertura = _apertura_participacion(evento)
+        if apertura is not None and getattr(evento, "apertura_reservas_en", None) is not None:
+            formato = "%H:%M:%S" if apertura.second else "%H:%M"
+            return f"Las reservas estarán habilitadas a partir del {formato_fecha(apertura.date())} a las {apertura.strftime(formato)}."
         fecha = formato_fecha(evento.vigencia_inicio)
         hora = ""
         if evento.hora_apertura is not None:

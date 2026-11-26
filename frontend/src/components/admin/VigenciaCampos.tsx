@@ -7,6 +7,7 @@ export interface VigenciaForm {
   fin: string;
   publicacion: string;
   apertura: string;
+  aperturaReservas: string;
   cierre: string;
 }
 
@@ -15,10 +16,11 @@ const MAX_DIAS_VIGENCIA = 731;
 
 export function vigenciaPorDefecto(): VigenciaForm {
   const hoy = hoyBogota();
-  return { inicio: hoy, fin: sumarDias(hoy, 6), publicacion: "", apertura: "", cierre: "" };
+  return { inicio: hoy, fin: sumarDias(hoy, 6), publicacion: "", apertura: "", aperturaReservas: "", cierre: "" };
 }
 
 export function vigenciaDesde(evento: HorarioParticipacion & {
+  apertura_reservas_en?: string | null;
   vigencia_inicio?: string | null;
   vigencia_fin?: string | null;
 }): VigenciaForm {
@@ -28,6 +30,7 @@ export function vigenciaDesde(evento: HorarioParticipacion & {
       : vigenciaPorDefecto()),
     publicacion: evento.publicacion_en ?? "",
     apertura: evento.hora_apertura ?? "",
+    aperturaReservas: evento.apertura_reservas_en ?? "",
     cierre: evento.hora_cierre ?? "",
   };
 }
@@ -46,12 +49,15 @@ function diasEntre(desde: string, hasta: string): number {
 
 /** Al crear, una vigencia que ya terminó no tiene sentido; al editar sí se permite (p. ej.
  * para cerrar un evento antes de tiempo). */
-export function errorVigencia(v: VigenciaForm, creando: boolean): string | null {
+export function errorVigencia(v: VigenciaForm, creando: boolean, esReserva = false): string | null {
   if (!v.inicio || !v.fin) return "Define la fecha de inicio y la de finalización del evento.";
   if (v.fin < v.inicio) return "La fecha de finalización debe ser igual o posterior a la de inicio.";
   if (diasEntre(v.inicio, v.fin) + 1 > MAX_DIAS_VIGENCIA) return `La vigencia no puede superar ${MAX_DIAS_VIGENCIA} días.`;
+  if (creando && esReserva && !v.aperturaReservas) return "Define la fecha y hora de apertura de reservas.";
   const hora = (valor: string) => valor.length > 5 ? valor : `${valor || "00:00"}:00`;
-  if (v.inicio === v.fin && v.cierre && hora(v.cierre) <= hora(v.apertura)) {
+  const [fechaApertura, horaApertura] = v.aperturaReservas.split("T");
+  const dia = fechaApertura || v.inicio;
+  if (dia > v.fin || (dia === v.fin && v.cierre && hora(v.cierre) <= hora(horaApertura ?? v.apertura))) {
     return "El cierre debe ser posterior a la apertura.";
   }
   if (creando && v.fin === hoyBogota() && v.cierre && hora(v.cierre) <= hora(horaBogota())) {
@@ -70,24 +76,23 @@ interface Props {
 }
 
 export default function VigenciaCampos({ valor, onChange, creando, participaciones }: Props) {
-  const error = errorVigencia(valor, creando);
-  const fueraDeOrden = !!valor.inicio && !!valor.fin && valor.fin < valor.inicio;
   const esReserva = participaciones === "reservas";
+  const error = errorVigencia(valor, creando, esReserva);
+  const fueraDeOrden = !!valor.inicio && !!valor.fin && valor.fin < valor.inicio;
 
   return (
     <>
       <Grid container spacing={2}>
         <Grid item xs={12} sm={6}>
           <TextField
-            label={esReserva ? "Reservas desde" : "Inscripciones desde"} type="date" required fullWidth
+            label={esReserva ? "Primer día de atención" : "Inscripciones desde"} type="date" required fullWidth
             InputLabelProps={{ shrink: true }}
             value={valor.inicio} onChange={(e) => onChange({ ...valor, inicio: e.target.value })}
-            helperText={esReserva ? "También es el primer día de atención." : undefined}
           />
         </Grid>
         <Grid item xs={12} sm={6}>
           <TextField
-            label={esReserva ? "Reservas hasta" : "Inscripciones hasta"} type="date" required fullWidth
+            label={esReserva ? "Último día de atención" : "Inscripciones hasta"} type="date" required fullWidth
             InputLabelProps={{ shrink: true }}
             value={valor.fin} onChange={(e) => onChange({ ...valor, fin: e.target.value })}
             inputProps={{ min: valor.inicio || undefined }}
@@ -103,14 +108,25 @@ export default function VigenciaCampos({ valor, onChange, creando, participacion
             helperText="Opcional. Déjalo vacío para publicar el evento al activarlo."
           />
         </Grid>
-        <Grid item xs={6} sm={3}>
+        {esReserva && (
+          <Grid item xs={12} sm={6}>
+            <TextField
+              label="Fecha y hora de apertura de reservas" type="datetime-local" required={creando} fullWidth
+              InputLabelProps={{ shrink: true }} inputProps={{ step: 1 }}
+              value={valor.aperturaReservas}
+              onChange={(e) => onChange({ ...valor, aperturaReservas: e.target.value })}
+              helperText="Hora de Colombia. Puedes abrir las reservas antes o después del primer día de atención."
+            />
+          </Grid>
+        )}
+        {!valor.aperturaReservas && (!esReserva || !creando) && <Grid item xs={6} sm={3}>
           <TextField
-            label="Hora de apertura" type="time" fullWidth
+            label={esReserva ? "Hora de apertura el primer día" : "Hora de apertura"} type="time" fullWidth
             InputLabelProps={{ shrink: true }} inputProps={{ step: 1 }}
             value={valor.apertura} onChange={(e) => onChange({ ...valor, apertura: e.target.value })}
             helperText="Por defecto, 00:00."
           />
-        </Grid>
+        </Grid>}
         <Grid item xs={6} sm={3}>
           <TextField
             label="Hora de cierre" type="time" fullWidth

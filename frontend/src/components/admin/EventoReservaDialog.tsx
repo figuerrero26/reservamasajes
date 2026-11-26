@@ -87,7 +87,7 @@ export default function EventoReservaDialog({
   const propias = servicio ? agendas.filter((a) => a.servicio_id === servicio.id) : [];
   const problema = !info.nombre.trim()
     ? "Escribe el nombre del evento."
-    : errorImagen(info.imagenUrl) ?? errorVigencia(vigencia, creando) ?? (creando ? errorAgendasNuevas(nuevas) : null)
+    : errorImagen(info.imagenUrl) ?? errorVigencia(vigencia, creando, true) ?? (creando ? errorAgendasNuevas(nuevas) : null)
       ?? errorRegla(regla, "reserva");
 
   async function guardar() {
@@ -100,6 +100,7 @@ export default function EventoReservaDialog({
       vigencia_inicio: vigencia.inicio,
       vigencia_fin: vigencia.fin,
       ...horarioDesde(vigencia),
+      apertura_reservas_en: vigencia.aperturaReservas || null,
       limite_participaciones: regla.limite,
       periodo_limite: regla.periodo,
     };
@@ -130,8 +131,8 @@ export default function EventoReservaDialog({
         />
       </Seccion>
       <Divider />
-      <Seccion numero={creando ? 2 : undefined} titulo="Fechas del evento"
-        ayuda="Días en que se puede reservar. Al terminar, el evento se cierra solo y conserva sus reservas.">
+      <Seccion numero={creando ? 2 : undefined} titulo="Fechas de atención y reservas"
+        ayuda="Define cuándo se atiende y desde qué momento se pueden reservar los turnos.">
         <Stack spacing={2}>
           <VigenciaCampos valor={vigencia} onChange={setVigencia} creando={creando} participaciones="reservas" />
         </Stack>

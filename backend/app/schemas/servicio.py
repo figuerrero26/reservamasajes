@@ -43,6 +43,7 @@ class ServicioCreate(EsquemaDeReserva, ConImagen, VigenciaYReglaCreate):
     compatibilidad. Solo acepta campos de reserva: los de inscripción (sesiones, cupos,
     formulario…) se rechazan."""
     tipo: Literal["reserva"] | None = None
+    apertura_reservas_en: datetime | None = None
     nombre: str = Field(min_length=1, max_length=120)
     descripcion_corta: str | None = Field(default=None, max_length=255)
     descripcion_larga: str | None = None
@@ -69,6 +70,7 @@ class ServicioUpdate(EsquemaDeReserva, ConImagen, VigenciaYReglaUpdate):
     """Edición de la información, la vigencia y la regla de reserva. Las áreas, horarios y
     turnos se editan en cada agenda del evento (PUT /agendas/{id})."""
     tipo: Literal["reserva"] | None = None
+    apertura_reservas_en: datetime | None = None
     nombre: str | None = Field(default=None, min_length=1, max_length=120)
     descripcion_corta: str | None = Field(default=None, max_length=255)
     descripcion_larga: str | None = None
@@ -98,6 +100,7 @@ class ServicioOut(BaseModel):
     vigencia_fin: date | None = None
     finalizado_en: datetime | None = None
     publicacion_en: datetime | None = None
+    apertura_reservas_en: datetime | None = None
     hora_apertura: time | None = None
     hora_cierre: time | None = None
     publicado: bool = False

@@ -37,6 +37,7 @@ class Servicio(Base):
     vigencia_inicio: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     vigencia_fin: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     publicacion_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    apertura_reservas_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     hora_apertura: Mapped[time | None] = mapped_column(Time, nullable=True)
     hora_cierre: Mapped[time | None] = mapped_column(Time, nullable=True)
     finalizado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
