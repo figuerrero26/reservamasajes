@@ -1,19 +1,17 @@
 """Vigencia de un evento y límites de participación por persona (funciones puras).
 
-Vigencia: cada evento (de reserva por turnos o actividad con inscripción) tiene su propio
+Vigencia por días: cada evento (de reserva por turnos o actividad con inscripción) tiene su propio
 periodo [inicio, fin], ambos días incluidos:
-- "proximo": todavía no empieza → no aparece en el portal ni recibe participaciones.
-- "vigente": aparece y recibe reservas/inscripciones.
-- "finalizado": terminó → deja de aparecer y de recibir participaciones, pero TODO su
-  historial (reservas, inscripciones, notificaciones) se conserva intacto.
+- "proximo": todavía no recibe participaciones.
+- "vigente": recibe reservas o inscripciones.
+- "finalizado": dejó de recibir participaciones y conserva su historial.
 - "sin_vigencia": eventos creados antes de que existiera la vigencia (sin límite de fechas).
 
-El estado se calcula siempre contra la fecha actual de la aplicación (America/Bogota) en
-cada solicitud: el cierre ocurre a la medianoche del día siguiente al fin aunque nadie entre
-al panel y aunque la tarea programada no haya corrido todavía.
+La programación opcional añade una fecha de publicación y horas de apertura y cierre.
+La zona horaria de la aplicación se aplica en cada solicitud.
 """
-from datetime import date, timedelta
-from typing import Literal
+from datetime import date, datetime, time, timedelta
+from typing import Literal, Protocol
 
 EstadoVigencia = Literal["sin_vigencia", "proximo", "vigente", "finalizado"]
 Periodo = Literal["evento", "dia", "semana", "mes"]
@@ -57,7 +55,65 @@ def motivo_fuera_de_vigencia(
     if estado == "proximo" and inicio is not None:
         return f"Este evento abre sus {que} el {formato_fecha(inicio)}."
     if estado == "finalizado" and fin is not None:
-        return f"Este evento finalizó el {formato_fecha(fin)} y ya no recibe {que}."
+        return f"El periodo de {que} finalizó el {formato_fecha(fin)}."
+    return None
+
+
+class EventoProgramado(Protocol):
+    vigencia_inicio: date | None
+    vigencia_fin: date | None
+    publicacion_en: datetime | None
+    hora_apertura: time | None
+    hora_cierre: time | None
+
+
+def estado_participacion(evento: EventoProgramado, ahora: datetime) -> EstadoVigencia:
+    inicio, fin = evento.vigencia_inicio, evento.vigencia_fin
+    estado = estado_vigencia(inicio, fin, ahora.date())
+    if estado != "vigente":
+        return estado
+    hora = ahora.time()
+    if ahora.date() == inicio and evento.hora_apertura is not None and hora < evento.hora_apertura:
+        return "proximo"
+    if ahora.date() == fin and evento.hora_cierre is not None and hora >= evento.hora_cierre:
+        return "finalizado"
+    return estado
+
+
+def proximo_cambio_participacion(evento: EventoProgramado, ahora: datetime) -> datetime | None:
+    estado = estado_participacion(evento, ahora)
+    if estado == "proximo" and evento.vigencia_inicio is not None:
+        return datetime.combine(evento.vigencia_inicio, evento.hora_apertura or time.min, tzinfo=ahora.tzinfo)
+    if estado == "vigente" and evento.vigencia_fin is not None:
+        fin, cierre = evento.vigencia_fin, evento.hora_cierre
+        if cierre is None:
+            if fin == date.max:
+                return None
+            fin, cierre = fin + timedelta(days=1), time.min
+        return datetime.combine(fin, cierre, tzinfo=ahora.tzinfo)
+    return None
+
+
+def publicado(evento: EventoProgramado, ahora: datetime) -> bool:
+    """Un evento activo se publica de inmediato salvo que se programe para más adelante."""
+    return evento.publicacion_en is None or ahora.replace(tzinfo=None) >= evento.publicacion_en
+
+
+def motivo_participacion(evento: EventoProgramado, ahora: datetime, que: str) -> str | None:
+    if not publicado(evento, ahora):
+        return "Este evento aún no se ha publicado."
+    estado = estado_participacion(evento, ahora)
+    if estado == "proximo":
+        fecha = formato_fecha(evento.vigencia_inicio)
+        hora = ""
+        if evento.hora_apertura is not None:
+            formato = "%H:%M:%S" if evento.hora_apertura.second else "%H:%M"
+            hora = f" a las {evento.hora_apertura.strftime(formato)}"
+        return f"Este evento abre sus {que} el {fecha}{hora}."
+    if estado == "finalizado":
+        return motivo_fuera_de_vigencia(evento.vigencia_inicio, evento.vigencia_fin, ahora.date(), que) or (
+            f"Este evento ya cerró sus {que}."
+        )
     return None
 
 

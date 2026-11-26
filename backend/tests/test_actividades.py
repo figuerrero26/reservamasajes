@@ -153,13 +153,14 @@ def test_concurrencia_no_supera_el_cupo(client, datos_base, headers_admin):
 
 
 def test_vigencia_y_pausa_de_inscripciones(client, datos_base, headers_admin, headers_usuario):
-    # Vigencia que todavía no empieza: el evento no se publica ni recibe inscripciones,
-    # tampoco manuales (antes del inicio nadie participa).
+    # La actividad se publica antes de abrir las inscripciones.
     actividad = _crear_actividad(client, headers_admin, campos_formulario=[],
                                  vigencia_inicio=_en(2), vigencia_fin=_en(30))
     assert actividad["estado_vigencia"] == "proximo" and actividad["estado_inscripcion"] == "proximamente"
     sesion = _crear_sesion(client, headers_admin, actividad["id"], cupo=5, dias=10)
-    assert client.get(f"{API}/actividades/publicas/{actividad['id']}").status_code == 404
+    detalle = client.get(f"{API}/actividades/publicas/{actividad['id']}")
+    assert detalle.status_code == 200 and detalle.json()["estado_inscripcion"] == "proximamente"
+    assert not detalle.json()["inscripcion_disponible"]
     r = client.post(f"{API}/inscripciones", headers=headers_usuario, json={"sesion_id": sesion["id"]})
     assert r.status_code == 400 and "abre sus inscripciones" in r.json()["detail"]
     r = client.post(f"{API}/inscripciones/manual", headers=headers_admin,
@@ -171,7 +172,7 @@ def test_vigencia_y_pausa_de_inscripciones(client, datos_base, headers_admin, he
                     json={"fecha": _en(1), "hora_inicio": "08:00", "hora_fin": "09:00"})
     assert r.status_code == 400
 
-    # Al empezar la vigencia se publica.
+    # Al empezar la vigencia se habilita la inscripción.
     r = client.put(f"{API}/actividades/{actividad['id']}", headers=headers_admin, json={"vigencia_inicio": _en(0)})
     assert r.status_code == 200 and r.json()["estado_vigencia"] == "vigente"
     assert client.get(f"{API}/actividades/publicas/{actividad['id']}").json()["estado_inscripcion"] == "abierta"
@@ -186,10 +187,10 @@ def test_vigencia_y_pausa_de_inscripciones(client, datos_base, headers_admin, he
     assert r.status_code == 201, r.text
 
 
-def test_actividad_sin_sesiones_futuras_no_se_anuncia(client, datos_base, headers_admin):
+def test_actividad_publicada_sin_sesiones_futuras_se_puede_consultar(client, datos_base, headers_admin):
     actividad = _crear_actividad(client, headers_admin, campos_formulario=[])
     assert actividad["estado_inscripcion"] == "finalizada"
-    assert actividad["id"] not in [a["id"] for a in client.get(f"{API}/actividades/publicas").json()]
+    assert actividad["id"] in [a["id"] for a in client.get(f"{API}/actividades/publicas").json()]
     _crear_sesion(client, headers_admin, actividad["id"])
     assert actividad["id"] in [a["id"] for a in client.get(f"{API}/actividades/publicas").json()]
 

@@ -81,3 +81,7 @@ export async function cancelarReservasLote(
   });
   return data;
 }
+
+export const eliminarReservaCancelada = async (id: number) => {
+  await api.delete(`/reservas/${id}/cancelada`);
+};

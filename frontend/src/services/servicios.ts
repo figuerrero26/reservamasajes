@@ -1,3 +1,4 @@
+import type { HorarioParticipacion } from "../types";
 import api from "./api";
 import type { ConReservasAfectadas, PeriodoLimite, Servicio } from "../types";
 
@@ -6,7 +7,7 @@ export const listarServicios = async (areaId?: number) =>
   (await api.get<Servicio[]>("/servicios", { params: areaId ? { area_id: areaId } : {} })).data;
 
 /** Vigencia y regla de participación, comunes a los eventos por turnos y a las actividades. */
-export interface VigenciaPayload {
+export interface VigenciaPayload extends HorarioParticipacion {
   vigencia_inicio: string;
   vigencia_fin: string;
   limite_participaciones: number | null;

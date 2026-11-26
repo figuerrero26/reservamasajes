@@ -45,3 +45,7 @@ export async function cancelarInscripcion(
   return data;
 }
 
+
+export const eliminarInscripcionCancelada = async (id: number) => {
+  await api.delete(`/inscripciones/${id}/cancelada`);
+};

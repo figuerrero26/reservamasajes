@@ -11,8 +11,8 @@ inscripciones; las inscripciones existentes se conservan.
 Este módulo centraliza la evaluación de ESTADOS (de la actividad y de cada sesión), para que
 el portal, el panel y la propia inscripción usen exactamente la misma regla.
 
-Vigencia (ver app/utils/vigencia.py): la actividad se publica y recibe inscripciones solo
-dentro de su periodo. Las sesiones no pueden ser anteriores al inicio de la vigencia (nadie
+La publicación define la visibilidad. La vigencia define cuándo se reciben inscripciones.
+Las sesiones no pueden ser anteriores al inicio de la vigencia (nadie
 podría inscribirse); sí pueden ser posteriores al fin: en ese caso las inscripciones cierran
 al terminar la vigencia y la sesión se realiza con quienes ya estaban inscritos.
 """
@@ -33,16 +33,18 @@ from app.schemas.actividad import (
     ResumenSesiones, describir_regla_inscripcion,
 )
 from app.schemas.sesion import SesionCreate
-from app.schemas.vigencia import validar_rango_vigencia
+from app.schemas.vigencia import HorarioParticipacion, validar_horario_participacion, validar_rango_vigencia
 from app.services import auditoria_service
 from app.services.errors import DomainError, NotFound
 from app.utils.time import now, ya_empezo
-from app.utils.vigencia import estado_vigencia, formato_fecha, motivo_fuera_de_vigencia
+from app.utils.vigencia import (
+    estado_participacion, estado_vigencia, formato_fecha, motivo_participacion, proximo_cambio_participacion, publicado,
+)
 
 CAMPOS_AUDITORIA = [
     "id", "area_id", "nombre", "descripcion_corta", "informacion_adicional", "imagen_url",
     "inscripcion_abierta", "activo", "vigencia_inicio", "vigencia_fin",
-    "limite_participaciones", "periodo_limite",
+    "limite_participaciones", "periodo_limite", "publicacion_en", "hora_apertura", "hora_cierre",
 ]
 CAMPOS_AUDITORIA_SESION = ["id", "actividad_id", "fecha", "hora_inicio", "hora_fin", "cupo_maximo", "lugar", "activa"]
 NO_NULOS = {"area_id", "nombre", "inscripcion_abierta", "activo", "vigencia_inicio", "vigencia_fin", "periodo_limite"}
@@ -73,23 +75,22 @@ def campos_formulario_de(actividad: Actividad) -> list[CampoFormulario]:
 
 
 def motivo_actividad_no_disponible(actividad: Actividad) -> str | None:
-    """None si la actividad se publica y acepta inscripciones hoy; si no, el motivo. Ella y
-    su área deben estar activas (las actividades antiguas sin área dependen solo de su
-    propio estado) y el evento debe estar dentro de su vigencia."""
+    """Motivo por el que la actividad no recibe inscripciones en este momento."""
     if not (actividad.activo and (actividad.area is None or actividad.area.activo)):
         return "La actividad no está disponible."
-    return motivo_fuera_de_vigencia(actividad.vigencia_inicio, actividad.vigencia_fin, _hoy(), "inscripciones")
+    return motivo_participacion(actividad, now(), "inscripciones")
 
 
 def actividad_disponible(actividad: Actividad) -> bool:
-    return motivo_actividad_no_disponible(actividad) is None
+    """Visibilidad pública, independiente de la ventana de inscripción."""
+    return actividad.activo and (actividad.area is None or actividad.area.activo) and publicado(actividad, now())
 
 
 def ventana_inscripcion(actividad: Actividad) -> Ventana:
     """Estado de las inscripciones de la actividad hoy: vigencia del evento + switch manual."""
     if not (actividad.activo and (actividad.area is None or actividad.area.activo)):
         return "cerrada"
-    estado = estado_vigencia(actividad.vigencia_inicio, actividad.vigencia_fin, _hoy())
+    estado = estado_participacion(actividad, now())
     if estado == "proximo":
         return "proximamente"
     if estado == "finalizado":
@@ -194,7 +195,9 @@ class ActividadService:
             inscripcion_abierta=actividad.inscripcion_abierta,
             activo=actividad.activo,
             vigencia_inicio=actividad.vigencia_inicio, vigencia_fin=actividad.vigencia_fin,
-            finalizado_en=actividad.finalizado_en,
+            publicacion_en=actividad.publicacion_en, hora_apertura=actividad.hora_apertura,
+            hora_cierre=actividad.hora_cierre, finalizado_en=actividad.finalizado_en,
+            publicado=actividad_disponible(actividad),
             estado_vigencia=estado_vigencia(actividad.vigencia_inicio, actividad.vigencia_fin, _hoy()),
             limite_participaciones=actividad.limite_participaciones, periodo_limite=actividad.periodo_limite,
             estado_inscripcion=estado, resumen=resumen,
@@ -210,6 +213,8 @@ class ActividadService:
             imagen_url=actividad.imagen_url, informacion_adicional=actividad.informacion_adicional,
             campos_formulario=campos_formulario_de(actividad),
             inscripcion_disponible=estado == "abierta", estado_inscripcion=estado,
+            motivo_no_disponible=motivo_actividad_no_disponible(actividad),
+            proximo_cambio_en=proximo_cambio_participacion(actividad, now()),
             vigencia_inicio=actividad.vigencia_inicio, vigencia_fin=actividad.vigencia_fin,
             regla_participacion=describir_regla_inscripcion(actividad.limite_participaciones, actividad.periodo_limite),
             resumen=resumen,
@@ -233,20 +238,17 @@ class ActividadService:
         return actividad
 
     def listar_publicas(self, area_id: int | None = None) -> list[ActividadPublicaOut]:
-        """Catálogo del portal: actividades disponibles (ellas y su área activas, dentro de
-        su vigencia) con al menos una sesión FUTURA activa."""
+        """Actividades publicadas, con independencia de si reciben inscripciones."""
         actividades = [a for a in self.repo.list_activas(area_id=area_id) if actividad_disponible(a)]
         evaluaciones = self._evaluar_varias(actividades)
-        return [
-            self._a_publica(a, *evaluaciones[a.id])
-            for a in actividades if evaluaciones[a.id][0] != "finalizada"
-        ]
+        return [self._a_publica(a, *evaluaciones[a.id]) for a in actividades]
 
     def obtener_publica(self, actividad_id: int) -> ActividadPublicaOut:
         actividad = self.obtener(actividad_id)
-        motivo = motivo_actividad_no_disponible(actividad)
-        if motivo:
-            raise NotFound("Actividad no encontrada" if actividad.activo is False else motivo)
+        if not actividad_disponible(actividad):
+            raise NotFound(
+                (motivo_actividad_no_disponible(actividad) if actividad.activo else None) or "Actividad no encontrada"
+            )
         return self._a_publica(actividad, *self._evaluar_varias([actividad])[actividad.id])
 
     def _validar_area(self, area_id: int) -> None:
@@ -256,7 +258,7 @@ class ActividadService:
 
     def crear(self, data: ActividadCreate, admin_id: int) -> Actividad:
         self._validar_area(data.area_id)
-        if data.vigencia_fin < _hoy():
+        if estado_participacion(data, now()) == "finalizado":
             raise DomainError("La fecha de finalización ya pasó: define una vigencia actual o futura.")
         actividad = Actividad(
             area_id=data.area_id,
@@ -266,6 +268,7 @@ class ActividadService:
             campos_formulario=json.dumps([c.model_dump() for c in data.campos_formulario], ensure_ascii=False),
             inscripcion_abierta=data.inscripcion_abierta,
             vigencia_inicio=data.vigencia_inicio, vigencia_fin=data.vigencia_fin,
+            publicacion_en=data.publicacion_en, hora_apertura=data.hora_apertura, hora_cierre=data.hora_cierre,
             limite_participaciones=data.limite_participaciones, periodo_limite=data.periodo_limite,
         )
         self.db.add(actividad)
@@ -304,6 +307,15 @@ class ActividadService:
             except ValueError as exc:
                 raise DomainError(str(exc)) from exc
 
+        horario = HorarioParticipacion(**{
+            campo: cambios.get(campo, getattr(actividad, campo))
+            for campo in HorarioParticipacion.model_fields
+        })
+        try:
+            validar_horario_participacion(inicio, fin, horario)
+        except ValueError as exc:
+            raise DomainError(str(exc)) from exc
+
         anteriores = auditoria_service.snapshot(actividad, CAMPOS_AUDITORIA)
         for k, v in cambios.items():
             setattr(actividad, k, v)
@@ -325,7 +337,7 @@ class ActividadService:
     def cambiar_estado(self, actividad_id: int, activo: bool, admin_id: int) -> Actividad:
         """Desactivar oculta la actividad del portal y cierra las inscripciones. Las
         inscripciones existentes se conservan (el resumen las informa en el panel). Activar
-        no la publica si está fuera de su vigencia."""
+        respeta la fecha de publicación programada."""
         actividad = self.obtener(actividad_id)
         if activo and actividad.area_id is None:
             raise DomainError("Asigna un área a la actividad antes de publicarla.")

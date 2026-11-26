@@ -5,11 +5,11 @@ concurrencia.
 from collections import defaultdict
 from datetime import date, time
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import Agenda, Reserva, EstadoReserva, Servicio, Usuario
+from app.models import Notificacion, Agenda, Reserva, EstadoReserva, Servicio, Usuario
 from app.repositories.agenda_repository import AgendaRepository
 from app.repositories.configuracion_repository import ConfiguracionRepository
 from app.repositories.reserva_repository import ReservaRepository
@@ -226,6 +226,26 @@ class ReservaService:
             )
         self.db.commit()
         return canceladas, omitidas
+
+    def eliminar_cancelada(self, reserva_id: int, admin_id: int) -> None:
+        registro = self.db.scalar(
+            select(Reserva).where(Reserva.id == reserva_id).with_for_update()
+        )
+        if registro is None:
+            raise NotFound("Reserva no encontrada")
+        if registro.estado != EstadoReserva.CANCELADA.value:
+            raise Conflict("Solo se pueden eliminar registros cancelados.")
+
+        self.db.execute(
+            update(Notificacion).where(Notificacion.reserva_id == registro.id)
+            .values(reserva_id=None)
+        )
+        auditoria_service.registrar(
+            self.db, admin_id, "eliminar_cancelada", "reserva", registro.id,
+            datos_anteriores=auditoria_service.snapshot(registro, ["estado", "usuario_id", "cancelled_at", "cancelled_by"]),
+        )
+        self.reservas.delete(registro)
+        self.db.commit()
 
     def cancelar_propia(self, reserva_id: int, usuario_id: int) -> Reserva:
         """Cancelación por el propio dueño de la reserva, sujeta a la política configurada.

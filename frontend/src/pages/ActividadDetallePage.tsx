@@ -21,7 +21,7 @@ import type { ActividadPublica, Sesion } from "../types";
 import { listarSesionesPublicas, obtenerActividadPublica } from "../services/actividades";
 import { crearInscripcion, type Respuestas } from "../services/inscripciones";
 import { mensajeError } from "../utils/errors";
-import { formatearFechaLarga, formatearHora, textoFechasLargas } from "../utils/fechas";
+import { formatearFechaLarga, formatearHora, programarActualizacion, textoFechasLargas } from "../utils/fechas";
 import { useUsuarioAuth } from "../hooks/useUsuarioAuth";
 
 const MENSAJE_ESTADO: Record<string, string> = {
@@ -72,9 +72,9 @@ export default function ActividadDetallePage() {
 
   const cargar = useCallback(async (mostrarCarga = true) => {
     if (mostrarCarga) setCargando(true);
-    setError(null);
     try {
       const [a, s] = await Promise.all([obtenerActividadPublica(actividadId), listarSesionesPublicas(actividadId)]);
+      setError(null);
       setActividad(a);
       setSesiones(s);
     } catch (e) {
@@ -86,7 +86,17 @@ export default function ActividadDetallePage() {
 
   useEffect(() => {
     cargar();
+    const intervalo = window.setInterval(() => {
+      if (!document.hidden) void cargar(false);
+    }, 10000);
+    return () => window.clearInterval(intervalo);
   }, [cargar, token]);
+
+  const proximoCambio = actividad?.proximo_cambio_en;
+  useEffect(() => {
+    const temporizador = programarActualizacion(proximoCambio, () => { void cargar(false); });
+    return () => window.clearTimeout(temporizador);
+  }, [cargar, proximoCambio, token]);
 
   function abrirInscripcion(sesion: Sesion) {
     if (!token) {
@@ -131,7 +141,7 @@ export default function ActividadDetallePage() {
     );
   }
 
-  const mensajeEstado = MENSAJE_ESTADO[actividad.estado_inscripcion];
+  const mensajeEstado = actividad.motivo_no_disponible ?? MENSAJE_ESTADO[actividad.estado_inscripcion];
   const sesionUnica = sesiones.length === 1 ? sesiones[0] : null;
   const realizacion = sesionUnica
     ? `${formatearFechaLarga(sesionUnica.fecha)} · ${formatearHora(sesionUnica.hora_inicio)} a ${formatearHora(sesionUnica.hora_fin)}`
@@ -291,7 +301,7 @@ export default function ActividadDetallePage() {
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setSesionSeleccionada(null)} disabled={inscribiendo}>Cancelar</Button>
-              <Button variant="contained" onClick={confirmarInscripcion} disabled={inscribiendo}>
+              <Button variant="contained" onClick={confirmarInscripcion} disabled={inscribiendo || !actividad.inscripcion_disponible}>
                 {inscribiendo ? "Inscribiendo…" : "Confirmar inscripción"}
               </Button>
             </DialogActions>

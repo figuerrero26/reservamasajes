@@ -78,3 +78,9 @@ def cancelar_admin(inscripcion_id: int, data: CancelarInscripcionIn, background_
     if data.notificar:
         background_tasks.add_task(enviar_cancelacion_inscripcion, inscripcion.id, data.motivo)
     return servicio.a_out(inscripcion)
+
+
+@router.delete("/{inscripcion_id}/cancelada", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_cancelada(inscripcion_id: int, db: Session = Depends(get_db),
+                       admin: dict = Depends(get_current_admin_full)) -> None:
+    InscripcionService(db).eliminar_cancelada(inscripcion_id, admin["id"])

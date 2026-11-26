@@ -19,7 +19,7 @@ import type { AgendaPublica, EventoPublico, Slot } from "../types";
 import { obtenerEvento } from "../services/eventos";
 import { listarAgendasPublicas } from "../services/agendas";
 import { mensajeError } from "../utils/errors";
-import { textoFechasLargas } from "../utils/fechas";
+import { programarActualizacion, textoFechasLargas } from "../utils/fechas";
 import { useUsuarioAuth } from "../hooks/useUsuarioAuth";
 
 const CLAVE_RESERVA_PENDIENTE = "reserva_pendiente";
@@ -56,22 +56,50 @@ export default function DisponibilidadPage() {
     setAgendaSeleccionada(null);
     setSeleccion(null);
 
-    // Los días los decide el backend (dentro de la vigencia del evento, desde hoy): es la misma
-    // regla con la que valida cada reserva.
-    Promise.all([obtenerEvento(eventoId), listarAgendasPublicas(eventoId)])
-      .then(([eventoData, agendasData]) => {
+    let vigente = true;
+    let temporizador: number | undefined;
+
+    async function cargar() {
+      try {
+        const [eventoData, agendasData] = await Promise.all([obtenerEvento(eventoId), listarAgendasPublicas(eventoId)]);
+        if (!vigente) return;
+        setError(null);
         setEvento(eventoData);
+        window.clearTimeout(temporizador);
+        temporizador = programarActualizacion(eventoData.proximo_cambio_en, () => { void cargar(); });
         setAgendas(agendasData);
-        if (agendasData.length === 1) setAgendaSeleccionada(agendasData[0]);
-        setDias(eventoData.dias_reservables ?? []);
-      })
-      .catch((e) => setError(mensajeError(e, "No se pudo cargar el evento.")))
-      .finally(() => setCargando(false));
+        setAgendaSeleccionada((actual) => agendasData.length === 1
+          ? agendasData[0]
+          : agendasData.find((agenda) => agenda.id === actual?.id) ?? null);
+        setDias((actuales) => {
+          const nuevas = eventoData.dias_reservables ?? [];
+          return actuales.length === nuevas.length && actuales.every((dia, i) => dia === nuevas[i]) ? actuales : nuevas;
+        });
+        if (eventoData.motivo_no_disponible) {
+          setSeleccion(null);
+          setLoginRequerido(null);
+        }
+      } catch (e) {
+        if (vigente) setError(mensajeError(e, "No se pudo cargar el evento."));
+      } finally {
+        if (vigente) setCargando(false);
+      }
+    }
+
+    void cargar();
+    const intervalo = window.setInterval(() => {
+      if (!document.hidden) void cargar();
+    }, 10000);
+    return () => {
+      vigente = false;
+      window.clearInterval(intervalo);
+      window.clearTimeout(temporizador);
+    };
   }, [eventoId]);
 
   // Restaura la selección guardada antes de mandar al colaborador a iniciar sesión.
   useEffect(() => {
-    if (!token || agendas.length === 0) return;
+    if (!token || agendas.length === 0 || evento?.motivo_no_disponible) return;
     const raw = sessionStorage.getItem(CLAVE_RESERVA_PENDIENTE);
     if (!raw) return;
     try {
@@ -86,7 +114,7 @@ export default function DisponibilidadPage() {
     } finally {
       sessionStorage.removeItem(CLAVE_RESERVA_PENDIENTE);
     }
-  }, [token, agendas, eventoId]);
+  }, [token, agendas, eventoId, evento?.motivo_no_disponible]);
 
   function manejarSeleccionSlot(fecha: string, slot: Slot) {
     if (!agendaSeleccionada) return;
@@ -174,6 +202,10 @@ export default function DisponibilidadPage() {
         </Grid>
       </Grid>
 
+      {evento.motivo_no_disponible && (
+        <Alert severity="info" sx={{ mb: 3 }}>{evento.motivo_no_disponible}</Alert>
+      )}
+
       {agendas.length > 0 && evento.turnos_disponibles === 0 && (
         <Alert severity="info" sx={{ mb: 3 }}>
           Por ahora todos los turnos de estas fechas están ocupados. Si alguien cancela, el turno vuelve a quedar disponible.
@@ -184,7 +216,7 @@ export default function DisponibilidadPage() {
         <EmptyState titulo="Sin horarios por ahora" descripcion="Este evento no tiene horarios disponibles en este momento." />
       )}
 
-      {agendas.length > 1 && !agendaSeleccionada && (
+      {!evento.motivo_no_disponible && agendas.length > 1 && !agendaSeleccionada && (
         <Box>
           <Typography variant="h6" sx={{ mb: 2 }}>¿Dónde quieres tu sesión?</Typography>
           <Grid container spacing={2}>
@@ -197,14 +229,14 @@ export default function DisponibilidadPage() {
         </Box>
       )}
 
-      {agendaSeleccionada && dias.length === 0 && (
+      {!evento.motivo_no_disponible && agendaSeleccionada && dias.length === 0 && (
         <EmptyState
           titulo="No hay fechas abiertas para reservar"
           descripcion="Este evento ya no tiene días disponibles dentro de su vigencia."
         />
       )}
 
-      {agendaSeleccionada && dias.length > 0 && (
+      {!evento.motivo_no_disponible && agendaSeleccionada && dias.length > 0 && (
         <Box>
           <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }} flexWrap="wrap" useFlexGap spacing={1}>
             <Box>
@@ -229,7 +261,7 @@ export default function DisponibilidadPage() {
         </Box>
       )}
 
-      {agendaSeleccionada && seleccion && (
+      {!evento.motivo_no_disponible && agendaSeleccionada && seleccion && (
         <ReservationDialog
           open
           agenda={agendaSeleccionada}

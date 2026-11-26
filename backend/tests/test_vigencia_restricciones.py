@@ -106,15 +106,16 @@ def _inscribir(client, headers, sesion_id: int):
 
 # ---- Evento próximo -----------------------------------------------------------------------------
 
-def test_evento_proximo_no_se_publica_ni_recibe_reservas(client, datos_base, headers_admin, headers_usuario):
+def test_evento_proximo_ya_publicado_no_recibe_reservas(client, datos_base, headers_admin, headers_usuario):
     sid, aid = datos_base["servicio_id"], datos_base["agenda_id"]
     datos = _vigencia(client, headers_admin, sid, _en(5), _en(20))
     assert datos["estado_vigencia"] == "proximo"
 
-    assert sid not in _catalogo(client)
+    assert sid in _catalogo(client)
     r = client.get(f"{API}/eventos/{sid}")
-    assert r.status_code == 404 and "abre sus reservas" in r.json()["detail"]
-    assert aid not in [a["id"] for a in client.get(f"{API}/agendas/publicas").json()]
+    assert r.status_code == 200 and "abre sus reservas" in r.json()["motivo_no_disponible"]
+    assert r.json()["dias_reservables"] == []
+    assert aid in [a["id"] for a in client.get(f"{API}/agendas/publicas").json()]
     assert client.get(f"{API}/agendas/{aid}/horarios", params={"fecha": _en(6).isoformat()}).status_code == 404
 
     r = _reservar(client, headers_usuario, aid, _en(6))
@@ -159,14 +160,14 @@ def test_evento_vigente_recibe_reservas_solo_dentro_de_su_periodo(client, datos_
 
 # ---- Evento cuya fecha de fin ya pasó -----------------------------------------------------------
 
-def test_evento_finalizado_deja_de_publicarse_sin_tocar_su_flag(client, datos_base, headers_admin, headers_usuario):
+def test_evento_finalizado_permanece_publicado_y_no_recibe_reservas(client, datos_base, headers_admin, headers_usuario):
     sid, aid = datos_base["servicio_id"], datos_base["agenda_id"]
     datos = _vigencia(client, headers_admin, sid, _en(-10), _en(-1))
     assert datos["estado_vigencia"] == "finalizado" and datos["activo"] is True
 
-    assert sid not in _catalogo(client)
+    assert sid in _catalogo(client)
     r = client.get(f"{API}/eventos/{sid}")
-    assert r.status_code == 404 and "finalizó" in r.json()["detail"]
+    assert r.status_code == 200 and "finalizó" in r.json()["motivo_no_disponible"]
     assert client.get(f"{API}/agendas/{aid}/horarios", params={"fecha": _en(2).isoformat()}).status_code == 404
     finalizados = client.get(f"{API}/servicios", headers=headers_admin, params={"estado": "finalizado"}).json()
     assert [s["id"] for s in finalizados] == [sid]
@@ -248,10 +249,10 @@ def test_actividad_finalizada_conserva_sus_inscripciones(client, datos_base, hea
     finally:
         db.close()
 
-    # Fuera del portal, pero el participante y el administrador conservan todo.
-    assert act["id"] not in [a["id"] for a in client.get(f"{API}/actividades/publicas").json()]
+    # El evento sigue publicado y el participante y el administrador conservan todo.
+    assert act["id"] in [a["id"] for a in client.get(f"{API}/actividades/publicas").json()]
     r = client.get(f"{API}/actividades/publicas/{act['id']}")
-    assert r.status_code == 404 and "finalizó" in r.json()["detail"]
+    assert r.status_code == 200 and "finalizó" in r.json()["motivo_no_disponible"]
     mia = client.get(f"{API}/inscripciones/mias", headers=headers_usuario).json()[0]
     assert mia["estado"] == "activa" and mia["puede_cancelar"] is True
     inscritos = client.get(f"{API}/inscripciones", headers=headers_admin, params={"actividad_id": act["id"]}).json()
@@ -270,7 +271,8 @@ def test_inscripcion_nueva_despues_del_fin_se_rechaza(client, datos_base, header
     r = client.post(f"{API}/inscripciones/manual", headers=headers_admin,
                     json={"correo": "colaborador.demo@example.com", "sesion_id": sesion["id"]})
     assert r.status_code == 400  # tampoco el administrador
-    assert client.get(f"{API}/actividades/publicas/{act['id']}/sesiones").status_code == 404
+    sesiones = client.get(f"{API}/actividades/publicas/{act['id']}/sesiones")
+    assert sesiones.status_code == 200 and sesiones.json()[0]["estado"] == "cerrada"
 
 
 # ---- Historial de eventos finalizados -----------------------------------------------------------

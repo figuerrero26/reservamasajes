@@ -30,7 +30,13 @@ export type EstadoVigencia = "sin_vigencia" | "proximo" | "vigente" | "finalizad
 export type PeriodoLimite = "evento" | "dia" | "semana" | "mes";
 
 /** Vigencia y regla de participación propias de cada evento (turnos o actividad). */
-export interface VigenciaYRegla {
+export interface HorarioParticipacion {
+  publicacion_en?: string | null;
+  hora_apertura?: string | null;
+  hora_cierre?: string | null;
+}
+
+export interface VigenciaYRegla extends HorarioParticipacion {
   vigencia_inicio?: string | null;
   vigencia_fin?: string | null;
   /** null = sin límite. */
@@ -39,6 +45,7 @@ export interface VigenciaYRegla {
 }
 
 export interface EstadoDeVigencia {
+  publicado: boolean;
   estado_vigencia: EstadoVigencia;
   /** Cuándo la tarea programada registró el fin de la vigencia (solo informativo). */
   finalizado_en?: string | null;
@@ -97,6 +104,8 @@ export interface EventoPublico {
   vigencia_inicio?: string | null;
   vigencia_fin?: string | null;
   regla_participacion: string;
+  motivo_no_disponible?: string | null;
+  proximo_cambio_en?: string | null;
   dias_reservables?: string[] | null;
   turnos_disponibles?: number | null;
   proximo_turno_fecha?: string | null;
@@ -293,6 +302,7 @@ export interface ConfiguracionGeneral {
   logo_url?: string | null;
   color_primario?: string | null;
   color_secundario?: string | null;
+  titulo_bienvenida?: string | null;
   mensaje_bienvenida?: string | null;
   imagen_bienvenida_url?: string | null;
   color_boton_disponibilidad?: string | null;
@@ -419,6 +429,8 @@ export interface ActividadPublica {
   imagen_url?: string | null;
   informacion_adicional?: string | null;
   campos_formulario: CampoFormulario[];
+  motivo_no_disponible?: string | null;
+  proximo_cambio_en?: string | null;
   inscripcion_disponible: boolean;
   estado_inscripcion: EstadoActividad;
   vigencia_inicio?: string | null;

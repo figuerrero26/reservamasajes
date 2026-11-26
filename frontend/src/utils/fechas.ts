@@ -123,3 +123,11 @@ export function descargarCSV(nombreArchivo: string, encabezados: string[], filas
   a.click();
   URL.revokeObjectURL(url);
 }
+
+/** Actualiza al llegar al límite indicado por la API. La recarga periódica cubre
+ * cambios del administrador y los plazos lejanos. */
+export function programarActualizacion(fecha: string | null | undefined, actualizar: () => void): number | undefined {
+  if (!fecha) return;
+  const espera = Date.parse(fecha) - Date.now();
+  if (espera > 0 && espera <= 2_147_483_647) return window.setTimeout(actualizar, espera);
+}

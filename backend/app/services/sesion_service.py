@@ -10,7 +10,7 @@ from app.repositories.sesion_repository import SesionRepository
 from app.schemas.sesion import MAX_SESIONES_LOTE, GenerarSesionesIn, SesionCreate, SesionOut, SesionUpdate
 from app.services import auditoria_service
 from app.services.actividad_service import (
-    construir_sesion, estado_sesion, motivo_actividad_no_disponible, validar_sesion_en_vigencia,
+    construir_sesion, estado_sesion, actividad_disponible, validar_sesion_en_vigencia,
     ventana_inscripcion,
 )
 from app.services.errors import DomainError, NotFound
@@ -88,11 +88,8 @@ class SesionService:
 
     def listar_publicas(self, actividad_id: int, usuario_id: int | None = None) -> list[SesionOut]:
         actividad = self.actividades.get(actividad_id)
-        if not actividad:
+        if not actividad or not actividad_disponible(actividad):
             raise NotFound("Actividad no encontrada")
-        motivo = motivo_actividad_no_disponible(actividad)
-        if motivo:
-            raise NotFound(motivo)
         return self.listar(actividad_id, solo_activas=True, solo_futuras=True, usuario_id=usuario_id)
 
     def obtener(self, sesion_id: int) -> Sesion:

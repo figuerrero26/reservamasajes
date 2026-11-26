@@ -28,19 +28,20 @@ from app.repositories.reserva_repository import ReservaRepository
 from app.repositories.servicio_repository import ServicioRepository
 from app.schemas.evento import AgendaResumen, EventoPublico
 from app.schemas.servicio import ServicioCreate, ServicioUpdate, describir_regla_reserva
-from app.schemas.vigencia import validar_rango_vigencia
+from app.schemas.vigencia import HorarioParticipacion, validar_horario_participacion, validar_rango_vigencia
 from app.services import auditoria_service
 from app.services.auditoria_service import snapshot
 from app.services.errors import Conflict, DomainError, NotFound
 from app.services.horario_service import HorarioService, ResumenTurnos
 from app.services.reserva_service import a_admin_out
-from app.utils.time import today
-from app.utils.vigencia import estado_vigencia, motivo_fuera_de_vigencia
+from app.utils.time import now, today
+from app.utils.vigencia import estado_participacion, estado_vigencia, motivo_participacion, proximo_cambio_participacion
 
 CAMPOS = [
     "id", "nombre", "descripcion_corta", "descripcion_larga", "imagen_url",
     "duracion_minutos", "informacion_adicional", "activo",
     "vigencia_inicio", "vigencia_fin", "limite_participaciones", "periodo_limite",
+    "publicacion_en", "hora_apertura", "hora_cierre",
 ]
 CAMPOS_AGENDA = [
     "id", "nombre", "area_id", "servicio_id", "hora_inicio", "hora_fin",
@@ -89,10 +90,10 @@ class ServicioService:
         return servicios
 
     def listar_eventos_publicos(self) -> list[EventoPublico]:
-        """Catálogo del portal: eventos activos y vigentes con al menos una agenda reservable
+        """Catálogo del portal: eventos publicados con al menos una agenda activa
         (agenda y área activas). Solo información general e identificativa: la
         disponibilidad se consulta en el detalle de cada evento. Una sola consulta."""
-        agendas = self.agendas.list_reservables(today())
+        agendas = self.agendas.listar_publicas()
         por_servicio: dict[int, list] = {}
         for agenda in agendas:
             por_servicio.setdefault(agenda.servicio_id, []).append(agenda)
@@ -105,12 +106,14 @@ class ServicioService:
         servicio = self.repo.get(servicio_id)
         if not servicio or not servicio.activo:
             raise NotFound("Evento no encontrado o no disponible")
-        motivo = motivo_fuera_de_vigencia(servicio.vigencia_inicio, servicio.vigencia_fin, today(), "reservas")
-        if motivo:
-            raise NotFound(motivo)
-        agendas = self.agendas.list_reservables(today(), servicio_id=servicio_id)
+        agendas = self.agendas.listar_publicas(servicio_id=servicio_id)
         if not agendas:
-            raise NotFound("Evento no encontrado o no disponible")
+            raise NotFound(motivo_participacion(servicio, now(), "reservas") or "Evento no encontrado o no disponible")
+
+        evento = self._a_evento_publico(servicio, agendas)
+        if evento.motivo_no_disponible:
+            evento.dias_reservables = []
+            return evento
 
         horarios = HorarioService(self.db)
         dias = horarios.fechas_reservables(servicio)
@@ -118,7 +121,6 @@ class ServicioService:
         resumenes = [resumen.get(a.id, ResumenTurnos()) for a in agendas]
         proximos = sorted((r.proxima_fecha, r.proxima_hora) for r in resumenes if r.proxima_fecha is not None)
 
-        evento = self._a_evento_publico(servicio, agendas)
         evento.dias_reservables = dias
         evento.turnos_disponibles = sum(r.disponibles for r in resumenes)
         evento.proximo_turno_fecha = proximos[0][0] if proximos else None
@@ -145,6 +147,8 @@ class ServicioService:
             agendas=[AgendaResumen(id=a.id, area_id=a.area_id, area_nombre=a.area_nombre) for a in agendas],
             vigencia_inicio=servicio.vigencia_inicio,
             vigencia_fin=servicio.vigencia_fin,
+            motivo_no_disponible=motivo_participacion(servicio, now(), "reservas"),
+            proximo_cambio_en=proximo_cambio_participacion(servicio, now()),
             regla_participacion=describir_regla_reserva(servicio.limite_participaciones, servicio.periodo_limite),
         )
 
@@ -158,7 +162,7 @@ class ServicioService:
         una sola transacción: si algo falla, no queda un evento suelto sin área ni una
         agenda a medias."""
         self._validar_nombre(data.nombre)
-        if data.vigencia_fin < today():
+        if estado_participacion(data, now()) == "finalizado":
             raise DomainError("La fecha de finalización ya pasó: define una vigencia actual o futura.")
         areas = []
         for agenda_inicial in data.agendas:
@@ -219,6 +223,15 @@ class ServicioService:
                 cambios.get("limite_participaciones", serv.limite_participaciones),
                 cambios.get("periodo_limite", serv.periodo_limite),
             )
+
+        horario = HorarioParticipacion(**{
+            campo: cambios.get(campo, getattr(serv, campo))
+            for campo in HorarioParticipacion.model_fields
+        })
+        try:
+            validar_horario_participacion(inicio, fin, horario)
+        except ValueError as exc:
+            raise DomainError(str(exc)) from exc
 
         anteriores = snapshot(serv, CAMPOS)
         for k, v in cambios.items():

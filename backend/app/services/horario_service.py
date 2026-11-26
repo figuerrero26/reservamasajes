@@ -30,7 +30,7 @@ from app.repositories.reserva_repository import ReservaRepository
 from app.schemas.reserva import EstadoSlot, Slot
 from app.services.errors import NotFound
 from app.utils.time import a_minutos, desde_minutos, now, overlaps, today
-from app.utils.vigencia import fecha_en_vigencia, motivo_fuera_de_vigencia
+from app.utils.vigencia import fecha_en_vigencia, motivo_participacion
 
 # Un día tiene 1440 minutos y la duración mínima de un turno es 5: nunca puede haber más de
 # 288 turnos legítimos. Cualquier cosa por encima de esto es un error de configuración.
@@ -165,7 +165,7 @@ class HorarioService:
         if not incluir_pasado:
             # El evento o el área se desactivaron, o el evento está fuera de su vigencia: la
             # agenda deja de ofrecer turnos aunque su propio flag siga activo.
-            motivo = motivo_no_reservable(agenda, today())
+            motivo = motivo_no_reservable(agenda)
             if motivo:
                 raise NotFound(motivo)
 
@@ -236,7 +236,10 @@ def motivo_no_reservable(agenda: Agenda, hoy: date | None = None) -> str | None:
     servicio = agenda.servicio
     if not (agenda.activo and servicio.activo and agenda.area.activo):
         return "Este evento no está disponible para reservas en este momento."
-    return motivo_fuera_de_vigencia(servicio.vigencia_inicio, servicio.vigencia_fin, hoy or today(), "reservas")
+    ahora = now()
+    if hoy is not None:
+        ahora = datetime.combine(hoy, ahora.time(), tzinfo=ahora.tzinfo)
+    return motivo_participacion(servicio, ahora, "reservas")
 
 
 def agenda_reservable(agenda: Agenda, hoy: date | None = None) -> bool:

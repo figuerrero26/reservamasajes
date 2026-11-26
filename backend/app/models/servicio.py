@@ -1,11 +1,11 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 
-from sqlalchemy import String, Boolean, Date, DateTime, Integer, Text, func
+from sqlalchemy import Time, String, Boolean, Date, DateTime, Integer, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
-from app.utils.time import today
-from app.utils.vigencia import EstadoVigencia, estado_vigencia
+from app.utils.time import now, today
+from app.utils.vigencia import EstadoVigencia, estado_vigencia, publicado
 
 
 class Servicio(Base):
@@ -16,7 +16,7 @@ class Servicio(Base):
     de cada cita la sigue gobernando `Agenda.duracion_minutos` (una agenda por área).
 
     Vigencia (migración 0012): `vigencia_inicio`/`vigencia_fin` (días incluidos) definen
-    cuándo el evento se publica y recibe reservas — ver app/utils/vigencia.py. Al terminar,
+    los días de reserva. La activación y `publicacion_en` controlan la visibilidad. Al terminar,
     el evento deja de recibir reservas sin tocar las existentes; `finalizado_en` solo
     registra cuándo lo detectó la tarea programada (app/services/tareas_programadas.py).
 
@@ -36,6 +36,9 @@ class Servicio(Base):
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     vigencia_inicio: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     vigencia_fin: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    publicacion_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    hora_apertura: Mapped[time | None] = mapped_column(Time, nullable=True)
+    hora_cierre: Mapped[time | None] = mapped_column(Time, nullable=True)
     finalizado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     limite_participaciones: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
     periodo_limite: Mapped[str] = mapped_column(String(10), default="dia", server_default="dia")
@@ -47,3 +50,7 @@ class Servicio(Base):
     @property
     def estado_vigencia(self) -> EstadoVigencia:
         return estado_vigencia(self.vigencia_inicio, self.vigencia_fin, today())
+
+    @property
+    def publicado(self) -> bool:
+        return self.activo and publicado(self, now())

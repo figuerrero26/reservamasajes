@@ -60,6 +60,7 @@ interface FormularioGeneral {
   logo_url: string;
   color_primario: string;
   color_secundario: string;
+  titulo_bienvenida: string;
   mensaje_bienvenida: string;
   color_boton_disponibilidad: string;
   color_fondo_bienvenida: string;
@@ -78,6 +79,7 @@ function aFormulario(c: ConfiguracionGeneral): FormularioGeneral {
     logo_url: c.logo_url ?? "",
     color_primario: c.color_primario || "#1F3A5F",
     color_secundario: c.color_secundario || "#2E6DA4",
+    titulo_bienvenida: c.titulo_bienvenida ?? "",
     mensaje_bienvenida: c.mensaje_bienvenida ?? "",
     color_boton_disponibilidad: c.color_boton_disponibilidad || c.color_primario || "#1F3A5F",
     color_fondo_bienvenida: c.color_fondo_bienvenida || c.color_primario || "#1F3A5F",
@@ -179,6 +181,7 @@ export default function ConfiguracionPage() {
     } catch (e) {
       setErrorGeneral(mensajeError(e, "No se pudo guardar la configuración."));
     } finally {
+      window.dispatchEvent(new Event("configuracion-actualizada"));
       setGuardando(false);
     }
   }
@@ -446,6 +449,17 @@ export default function ConfiguracionPage() {
             </Grid>
             <Grid item xs={12}>
               <TextField
+                label="Título de bienvenida"
+                value={form.titulo_bienvenida}
+                onChange={(e) => setForm({ ...form, titulo_bienvenida: e.target.value })}
+                placeholder="Relájate y disfruta la semana."
+                helperText="Déjalo vacío para mostrar el título predeterminado."
+                inputProps={{ maxLength: 255 }}
+                fullWidth
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
                 label="Mensaje de bienvenida"
                 value={form.mensaje_bienvenida}
                 onChange={(e) => setForm({ ...form, mensaje_bienvenida: e.target.value })}
@@ -580,7 +594,7 @@ export default function ConfiguracionPage() {
       )}
 
       <Alert severity="info" sx={{ mb: 3 }}>
-        La vigencia (fechas de inicio y fin) y la regla de participación ya no son globales: se definen en cada
+        La publicación, la apertura, el cierre y la regla de participación se definen en cada
         evento, al crearlo o editarlo en <RouterLink to="/admin/eventos">Catálogo → Eventos</RouterLink>. Al terminar
         su vigencia, cada evento se cierra solo y conserva su historial.
       </Alert>

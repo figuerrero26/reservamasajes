@@ -59,13 +59,16 @@ def test_motivos_fuera_de_vigencia():
     assert motivo_fuera_de_vigencia(INICIO, FIN, HOY) is None
     assert motivo_fuera_de_vigencia(INICIO, FIN, date(2030, 1, 1)) == "Este evento abre sus reservas el 10 de enero de 2030."
     assert motivo_fuera_de_vigencia(INICIO, FIN, date(2030, 2, 1), "inscripciones") == (
-        "Este evento finalizó el 20 de enero de 2030 y ya no recibe inscripciones."
+        "El periodo de inscripciones finalizó el 20 de enero de 2030."
     )
     assert formato_fecha(date(2026, 11, 30)) == "30 de noviembre de 2026"
 
 
 def _agenda(activo=True, servicio_activo=True, area_activa=True, inicio=INICIO, fin=FIN):
-    servicio = SimpleNamespace(activo=servicio_activo, vigencia_inicio=inicio, vigencia_fin=fin)
+    servicio = SimpleNamespace(
+        activo=servicio_activo, vigencia_inicio=inicio, vigencia_fin=fin,
+        publicacion_en=None, hora_apertura=None, hora_cierre=None,
+    )
     return SimpleNamespace(activo=activo, servicio=servicio, area=SimpleNamespace(activo=area_activa))
 
 

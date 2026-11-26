@@ -5,9 +5,10 @@ import {
 } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import type { EstadoReserva, ReservaAdmin, Servicio } from "../../types";
-import { buscarReservas, cancelarReserva } from "../../services/reservas";
+import { buscarReservas, cancelarReserva, eliminarReservaCancelada } from "../../services/reservas";
 import { mensajeError } from "../../utils/errors";
 import { descargarCSV, formatearFecha, formatearHora, horaBogota, hoyBogota, nombreDia } from "../../utils/fechas";
+import EliminarCanceladaButton from "./EliminarCanceladaButton";
 import ConfirmDialog from "../ConfirmDialog";
 import DataTable, { type ColumnaDataTable } from "../DataTable";
 import EstadoChip from "../EstadoChip";
@@ -123,7 +124,14 @@ export default function HistorialReservasPanel({ servicio, soloLectura = false }
     {
       key: "acciones", label: "", align: "right",
       render: (r) => {
-        if (soloLectura || r.estado !== "activa") return null;
+        if (soloLectura) return null;
+        if (r.estado === "cancelada") return (
+          <EliminarCanceladaButton
+            tipo="reserva" nombre={`${r.usuario_nombre} ${r.usuario_apellido}`}
+            eliminar={() => eliminarReservaCancelada(r.id)} onEliminada={() => cargar(servicio.id)}
+          />
+        );
+        if (r.estado !== "activa") return null;
         return (
           <Button
             size="small" color="error"

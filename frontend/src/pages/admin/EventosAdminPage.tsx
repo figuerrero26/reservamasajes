@@ -193,8 +193,10 @@ export default function EventosAdminPage() {
         await desactivarActividad(a.id);
         setAviso(`«${a.nombre}» se ocultó del portal.` + (a.resumen.inscritos_futuros ? ` Sus ${a.resumen.inscritos_futuros} inscripción(es) futura(s) se conservan.` : ""));
       } else {
-        await activarActividad(a.id);
-        setAviso(`«${a.nombre}» está publicado de nuevo.`);
+        const resultado = await activarActividad(a.id);
+        setAviso(resultado.publicado
+          ? `«${a.nombre}» está publicado de nuevo.`
+          : `«${a.nombre}» está activo. Su visibilidad depende de la fecha de publicación y del estado del área.`);
       }
       await cargar();
     } catch (e) {
@@ -276,13 +278,12 @@ export default function EventosAdminPage() {
       label: "Estado",
       render: (f) => (
         <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap alignItems="center" justifyContent={{ xs: "flex-end", sm: "flex-start" }}>
-          {/* Publicado = activo y dentro de su vigencia (lo mismo que decide el portal). */}
           {(() => {
-            const publicado = f.activo && (f.estadoVigencia === "vigente" || f.estadoVigencia === "sin_vigencia");
-            const texto = publicado ? "Publicado" : !f.activo ? "Oculto" : f.estadoVigencia === "proximo" ? "Aún no publicado" : "Cerrado";
+            const publicado = Boolean(f.servicio?.publicado || f.actividad?.publicado);
+            const texto = publicado ? "Publicado" : !f.activo ? "Oculto" : "Aún no publicado";
             return <Chip size="small" label={texto} color={publicado ? "success" : "default"} variant={publicado ? "filled" : "outlined"} />;
           })()}
-          {f.tipo === "inscripcion" && f.activo && f.estadoVigencia === "vigente" && (
+          {f.tipo === "inscripcion" && f.activo && (
             <EstadoChip tipo="actividad" estado={f.actividad!.estado_inscripcion} />
           )}
           {f.tipo === "inscripcion" && (
@@ -414,8 +415,8 @@ export default function EventosAdminPage() {
         onGuardado={async (s, creado, fueraDeVigencia) => {
           if (creado) {
             setReservaAbierta(null);
-            const publicado = s.estado_vigencia === "vigente" && s.activo;
-            setAviso(`«${s.nombre}» creado con sus agendas. ${publicado ? "Ya aparece en el portal." : "Se publicará cuando empiece su vigencia."}`);
+            const publicado = s.publicado;
+            setAviso(`«${s.nombre}» creado con sus agendas. ${publicado ? "Ya aparece en el portal." : "Se mostrará según la publicación programada."}`);
           }
           if (fueraDeVigencia.length > 0) {
             setAfectadas({
@@ -440,7 +441,7 @@ export default function EventosAdminPage() {
         onGuardada={async (a, creada) => {
           if (creada) {
             setInscripcionAbierta(null);
-            setAviso(`«${a.nombre}» creado${a.estado_vigencia === "vigente" ? " y publicado" : ": se publicará cuando empiece su periodo de inscripción"}.`);
+            setAviso(`«${a.nombre}» creado${a.publicado ? " y publicado" : ": visibilidad según la publicación programada"}.`);
           }
           await cargar();
         }}

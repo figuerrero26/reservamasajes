@@ -21,7 +21,7 @@ from app.utils.uploads import PUBLIC_PREFIX, UPLOAD_DIR
 # Sus filas antiguas se conservan en la tabla, pero ya no se leen ni se pueden editar.
 CLAVES_PUBLICAS = [
     "empresa_nombre", "sistema_nombre", "logo_url", "color_primario", "color_secundario",
-    "mensaje_bienvenida", "imagen_bienvenida_url", "color_boton_disponibilidad", "color_fondo_bienvenida",
+    "titulo_bienvenida", "mensaje_bienvenida", "imagen_bienvenida_url", "color_boton_disponibilidad", "color_fondo_bienvenida",
     "contacto_correo", "contacto_telefono", "contacto_direccion", "terminos_condiciones",
 ]
 CLAVES_ADMIN = CLAVES_PUBLICAS + [
@@ -108,6 +108,7 @@ class ConfiguracionService:
             logo_url=valores.get("logo_url"),
             color_primario=valores.get("color_primario"),
             color_secundario=valores.get("color_secundario"),
+            titulo_bienvenida=valores.get("titulo_bienvenida"),
             mensaje_bienvenida=valores.get("mensaje_bienvenida"),
             imagen_bienvenida_url=valores.get("imagen_bienvenida_url"),
             color_boton_disponibilidad=valores.get("color_boton_disponibilidad"),

@@ -1,10 +1,10 @@
-from datetime import date
-
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Agenda, Area, Servicio
 from app.repositories.base import BaseRepository
+from app.utils.time import now
+from app.utils.vigencia import publicado
 
 
 class AgendaRepository(BaseRepository[Agenda]):
@@ -26,10 +26,10 @@ class AgendaRepository(BaseRepository[Agenda]):
             stmt = stmt.where(Agenda.servicio_id == servicio_id)
         return list(self.db.execute(stmt).scalars().all())
 
-    def list_reservables(self, hoy: date, servicio_id: int | None = None) -> list[Agenda]:
+    def listar_publicas(self, servicio_id: int | None = None) -> list[Agenda]:
         """Agendas que el portal público puede ofrecer `hoy`: la agenda, su evento y su área
-        activos y el evento dentro de su vigencia (misma regla que
-        horario_service.motivo_no_reservable, resuelta en SQL)."""
+        activos y el evento publicado. El horario de reserva se valida al consultar
+        los turnos y al intentar reservar."""
         stmt = (
             select(Agenda)
             .join(Servicio, Agenda.servicio_id == Servicio.id)
@@ -37,14 +37,13 @@ class AgendaRepository(BaseRepository[Agenda]):
             .options(joinedload(Agenda.area), joinedload(Agenda.servicio))
             .where(
                 Agenda.activo.is_(True), Servicio.activo.is_(True), Area.activo.is_(True),
-                or_(Servicio.vigencia_inicio.is_(None), Servicio.vigencia_inicio <= hoy),
-                or_(Servicio.vigencia_fin.is_(None), Servicio.vigencia_fin >= hoy),
             )
             .order_by(Area.nombre)
         )
         if servicio_id:
             stmt = stmt.where(Agenda.servicio_id == servicio_id)
-        return list(self.db.execute(stmt).scalars().all())
+        ahora = now()
+        return [agenda for agenda in self.db.scalars(stmt) if publicado(agenda.servicio, ahora)]
 
     def por_area_servicio(self, area_id: int, servicio_id: int) -> Agenda | None:
         return self.db.execute(

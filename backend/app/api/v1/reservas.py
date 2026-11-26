@@ -116,3 +116,9 @@ def cancelar_admin(reserva_id: int, data: CancelacionIn, background_tasks: Backg
     if data.notificar:
         background_tasks.add_task(enviar_cancelacion_reserva, reserva.id, data.motivo)
     return reserva
+
+
+@router.delete("/reservas/{reserva_id}/cancelada", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_cancelada(reserva_id: int, db: Session = Depends(get_db),
+                       admin: dict = Depends(get_current_admin_full)) -> None:
+    ReservaService(db).eliminar_cancelada(reserva_id, admin["id"])

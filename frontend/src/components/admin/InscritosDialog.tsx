@@ -5,9 +5,10 @@ import {
 } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import type { Actividad, InscripcionAdmin, Sesion } from "../../types";
-import { buscarInscripciones, cancelarInscripcion, crearInscripcionManual } from "../../services/inscripciones";
+import { buscarInscripciones, cancelarInscripcion, eliminarInscripcionCancelada, crearInscripcionManual } from "../../services/inscripciones";
 import { mensajeError } from "../../utils/errors";
 import { descargarCSV, formatearFechaLarga, formatearHora } from "../../utils/fechas";
+import EliminarCanceladaButton from "./EliminarCanceladaButton";
 import ConfirmDialog from "../ConfirmDialog";
 import EstadoChip from "../EstadoChip";
 import Loader from "../Loader";
@@ -179,6 +180,12 @@ export default function InscritosDialog({ actividad, sesion, onCerrar, onCambio 
                       </Box>
                       <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" useFlexGap>
                         <EstadoChip tipo="inscripcion" estado={i.estado} />
+                        {i.estado === "cancelada" && (
+                          <EliminarCanceladaButton
+                            tipo="inscripción" nombre={`${i.usuario_nombre} ${i.usuario_apellido}`}
+                            eliminar={() => eliminarInscripcionCancelada(i.id)} onEliminada={refrescar}
+                          />
+                        )}
                         {i.estado === "activa" && (
                           <Button size="small" color="error"
                             onClick={() => { setACancelar(i); setErrorCancelar(null); setMotivo(""); setNotificar(true); }}>

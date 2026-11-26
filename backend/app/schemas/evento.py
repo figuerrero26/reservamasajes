@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, datetime, time
 
 from pydantic import BaseModel
 
@@ -33,6 +33,8 @@ class EventoPublico(BaseModel):
     agendas: list[AgendaResumen]
     vigencia_inicio: date | None = None
     vigencia_fin: date | None = None
+    motivo_no_disponible: str | None = None
+    proximo_cambio_en: datetime | None = None
     regla_participacion: str
     # Solo en el detalle (GET /eventos/{id}); en el catálogo quedan en null.
     dias_reservables: list[date] | None = None

@@ -39,16 +39,29 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<ConfiguracionGeneral>(configInicial);
 
   useEffect(() => {
-    obtenerConfiguracion()
-      .then((c) => {
-        setConfig((prev) => ({ ...prev, ...c }));
-        try {
-          localStorage.setItem(CLAVE_CACHE, JSON.stringify(c));
-        } catch {
-          // localStorage no disponible (modo privado, cuota llena, etc.): no es crítico.
-        }
-      })
-      .catch(() => undefined); // si falla, se usan los valores por defecto o los de caché
+    let version = 0;
+
+    function cargarConfiguracion() {
+      const solicitud = ++version;
+      obtenerConfiguracion()
+        .then((c) => {
+          if (solicitud !== version) return;
+          setConfig((prev) => ({ ...prev, ...c }));
+          try {
+            localStorage.setItem(CLAVE_CACHE, JSON.stringify(c));
+          } catch {
+            // localStorage no disponible (modo privado, cuota llena, etc.): no es crítico.
+          }
+        })
+        .catch(() => undefined); // si falla, se usan los valores por defecto o los de caché
+    }
+
+    cargarConfiguracion();
+    window.addEventListener("configuracion-actualizada", cargarConfiguracion);
+    return () => {
+      version++;
+      window.removeEventListener("configuracion-actualizada", cargarConfiguracion);
+    };
   }, []);
 
   return <ConfigContext.Provider value={config}>{children}</ConfigContext.Provider>;

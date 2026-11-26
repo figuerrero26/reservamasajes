@@ -16,11 +16,11 @@ orden, también en la inscripción manual del administrador).
 """
 import json
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import Actividad, EstadoInscripcion, Inscripcion, Usuario
+from app.models import Notificacion, Actividad, EstadoInscripcion, Inscripcion, Usuario
 from app.repositories.inscripcion_repository import InscripcionRepository
 from app.repositories.sesion_repository import SesionRepository
 from app.repositories.usuario_repository import UsuarioRepository
@@ -174,6 +174,26 @@ class InscripcionService:
         )
         self.db.commit()  # el cupo queda libre automáticamente (slot_lock vuelve a NULL)
         return inscripcion
+
+    def eliminar_cancelada(self, inscripcion_id: int, admin_id: int) -> None:
+        registro = self.db.scalar(
+            select(Inscripcion).where(Inscripcion.id == inscripcion_id).with_for_update()
+        )
+        if registro is None:
+            raise NotFound("Inscripción no encontrada")
+        if registro.estado != EstadoInscripcion.CANCELADA.value:
+            raise Conflict("Solo se pueden eliminar registros cancelados.")
+
+        self.db.execute(
+            update(Notificacion).where(Notificacion.inscripcion_id == registro.id)
+            .values(inscripcion_id=None)
+        )
+        auditoria_service.registrar(
+            self.db, admin_id, "eliminar_cancelada", "inscripcion", registro.id,
+            datos_anteriores=auditoria_service.snapshot(registro, ["estado", "usuario_id", "cancelled_at", "cancelled_by"]),
+        )
+        self.inscripciones.delete(registro)
+        self.db.commit()
 
     def cancelar_propia(self, inscripcion_id: int, usuario_id: int) -> Inscripcion:
         """El colaborador puede cancelar su inscripción hasta que la sesión empiece; después

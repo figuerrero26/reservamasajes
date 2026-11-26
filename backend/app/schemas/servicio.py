@@ -97,6 +97,10 @@ class ServicioOut(BaseModel):
     vigencia_inicio: date | None = None
     vigencia_fin: date | None = None
     finalizado_en: datetime | None = None
+    publicacion_en: datetime | None = None
+    hora_apertura: time | None = None
+    hora_cierre: time | None = None
+    publicado: bool = False
     estado_vigencia: EstadoVigencia = "sin_vigencia"
     limite_participaciones: int | None = None
     periodo_limite: PeriodoLimite = "dia"

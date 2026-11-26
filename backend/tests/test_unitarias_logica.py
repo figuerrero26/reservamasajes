@@ -211,6 +211,7 @@ def test_formulario_guardado_ilegible_se_omite_pregunta_por_pregunta():
 
 def _actividad(**cambios):
     base = dict(activo=True, inscripcion_abierta=True, vigencia_inicio=None, vigencia_fin=None,
+                publicacion_en=None, hora_apertura=None, hora_cierre=None,
                 area=SimpleNamespace(activo=True))
     return SimpleNamespace(**{**base, **cambios})
 

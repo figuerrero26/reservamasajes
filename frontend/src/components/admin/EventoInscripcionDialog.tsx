@@ -17,7 +17,7 @@ import InformacionEventoCampos, { INFO_VACIA, infoAPayload, infoDesde, type Info
 import PreguntasFormularioCampos, { errorPreguntas } from "./PreguntasFormularioCampos";
 import ReglaParticipacionCampo, { errorRegla, reglaDesde, reglaPorDefecto, type ReglaForm } from "./ReglaParticipacionCampo";
 import SesionesPanel from "./SesionesPanel";
-import VigenciaCampos, { errorVigencia, vigenciaDesde, vigenciaPorDefecto, type VigenciaForm } from "./VigenciaCampos";
+import VigenciaCampos, { errorVigencia, horarioDesde, vigenciaDesde, vigenciaPorDefecto, type VigenciaForm } from "./VigenciaCampos";
 
 export type PestanaInscripcion = "info" | "fechas";
 
@@ -68,7 +68,7 @@ export default function EventoInscripcionDialog({
     setAreaId(actividad ? actividad.area_id ?? "" : areaInicial);
     setInfo(infoDesde(actividad));
     setFechas([fechaNueva()]);
-    setVigencia(actividad ? vigenciaDesde(actividad.vigencia_inicio, actividad.vigencia_fin) : vigenciaPorDefecto());
+    setVigencia(actividad ? vigenciaDesde(actividad) : vigenciaPorDefecto());
     setVigenciaTocada(false);
     setRegla(actividad ? reglaDesde("inscripcion", actividad.limite_participaciones, actividad.periodo_limite) : reglaPorDefecto("inscripcion"));
     setInscripcionAbierta(actividad?.inscripcion_abierta ?? true);
@@ -105,6 +105,7 @@ export default function EventoInscripcionDialog({
       inscripcion_abierta: inscripcionAbierta,
       vigencia_inicio: vigencia.inicio,
       vigencia_fin: vigencia.fin,
+      ...horarioDesde(vigencia),
       limite_participaciones: regla.limite,
       periodo_limite: regla.periodo,
     };
@@ -154,7 +155,7 @@ export default function EventoInscripcionDialog({
       )}
       <Divider />
       <Seccion numero={numero()} titulo="Periodo de inscripción"
-        ayuda="Días en que el evento se publica y recibe inscripciones. Al terminar se cierra solo y conserva sus inscritos.">
+        ayuda="Configura la publicación y el plazo de inscripción. Las horas se interpretan en la zona horaria de la aplicación.">
         <Stack spacing={2}>
           <VigenciaCampos
             valor={vigencia} onChange={(v) => { setVigenciaTocada(true); setVigencia(v); }}

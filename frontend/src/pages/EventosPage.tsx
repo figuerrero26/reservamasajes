@@ -46,12 +46,13 @@ function tarjetaDeEvento(e: EventoPublico): TarjetaCatalogo {
   if (e.areas.length > 0) datos.push({ icono: <PlaceOutlinedIcon />, texto: e.areas.join(" · ") });
   datos.push(...datoVigencia(e.vigencia_inicio, e.vigencia_fin));
   datos.push({ icono: <ScheduleOutlinedIcon />, texto: duracion });
+  datos.push({ icono: <EventOutlinedIcon />, texto: e.motivo_no_disponible ?? "Reservas abiertas" });
   return {
     key: `evento-${e.id}`,
     clase: "turnos",
     props: {
       tipo: "Evento de reserva", titulo: e.nombre, descripcionCorta: e.descripcion_corta, imagenUrl: e.imagen_url,
-      datos, ruta: `/eventos/${e.id}`, textoAccion: "Ver horarios",
+      datos, ruta: `/eventos/${e.id}`, textoAccion: e.motivo_no_disponible ? "Ver detalles" : "Ver horarios",
     },
   };
 }
@@ -69,12 +70,20 @@ function tarjetaDeActividad(a: ActividadPublica): TarjetaCatalogo {
   } else {
     datos.push(...datoVigencia(a.vigencia_inicio, a.vigencia_fin));
   }
+  const estadoRegistro = a.motivo_no_disponible ?? {
+    abierta: "Inscripciones abiertas",
+    proximamente: "Inscripciones próximamente",
+    cerrada: "Inscripciones cerradas",
+    agotada: "Sin cupos disponibles",
+    finalizada: "Sin inscripciones disponibles",
+  }[a.estado_inscripcion];
+  datos.push({ icono: <EventOutlinedIcon />, texto: estadoRegistro });
   return {
     key: `actividad-${a.id}`,
     clase: "actividades",
     props: {
       tipo: "Evento de inscripción", titulo: a.nombre, descripcionCorta: a.descripcion_corta, imagenUrl: a.imagen_url,
-      datos, ruta: `/actividades/${a.id}`, textoAccion: "Ver e inscribirme",
+      datos, ruta: `/actividades/${a.id}`, textoAccion: a.inscripcion_disponible ? "Ver e inscribirme" : "Ver detalles",
     },
   };
 }
@@ -90,13 +99,30 @@ export default function EventosPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([listarEventos(), listarActividadesPublicas()])
-      .then(([ev, ac]) => {
+    let vigente = true;
+
+    async function cargar() {
+      try {
+        const [ev, ac] = await Promise.all([listarEventos(), listarActividadesPublicas()]);
+        if (!vigente) return;
         setEventos(ev);
         setActividades(ac);
-      })
-      .catch((e) => setError(mensajeError(e, "No se pudo cargar el catálogo.")))
-      .finally(() => setCargando(false));
+        setError(null);
+      } catch (e) {
+        if (vigente) setError(mensajeError(e, "No se pudo cargar el catálogo."));
+      } finally {
+        if (vigente) setCargando(false);
+      }
+    }
+
+    void cargar();
+    const intervalo = window.setInterval(() => {
+      if (!document.hidden) void cargar();
+    }, 15000);
+    return () => {
+      vigente = false;
+      window.clearInterval(intervalo);
+    };
   }, []);
 
   const tarjetas = useMemo(
@@ -120,7 +146,7 @@ export default function EventosPage() {
             component="h1"
             sx={{ fontSize: { xs: "2.3rem", sm: "3rem", md: media ? "3.4rem" : "3.9rem" }, maxWidth: 760 }}
           >
-            Relájate y disfruta la semana.
+            {config.titulo_bienvenida || "Relájate y disfruta la semana."}
           </Typography>
           <Typography
             variant="h6"

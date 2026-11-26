@@ -1,6 +1,6 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 
-from sqlalchemy import String, Boolean, Date, DateTime, ForeignKey, Integer, Text, func
+from sqlalchemy import Time, String, Boolean, Date, DateTime, ForeignKey, Integer, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -45,6 +45,9 @@ class Actividad(Base):
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     vigencia_inicio: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     vigencia_fin: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    publicacion_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    hora_apertura: Mapped[time | None] = mapped_column(Time, nullable=True)
+    hora_cierre: Mapped[time | None] = mapped_column(Time, nullable=True)
     finalizado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Por defecto sin límite: la única restricción histórica de las actividades era no
     # inscribirse dos veces en la misma sesión (índice único de `inscripciones`).

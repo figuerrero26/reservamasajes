@@ -4,9 +4,10 @@ import {
 } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import type { Actividad, EstadoInscripcion, InscripcionAdmin } from "../../types";
-import { buscarInscripciones, cancelarInscripcion } from "../../services/inscripciones";
+import { buscarInscripciones, cancelarInscripcion, eliminarInscripcionCancelada } from "../../services/inscripciones";
 import { mensajeError } from "../../utils/errors";
 import { descargarCSV, formatearFecha, formatearHora, nombreDia } from "../../utils/fechas";
+import EliminarCanceladaButton from "./EliminarCanceladaButton";
 import ConfirmDialog from "../ConfirmDialog";
 import DataTable, { type ColumnaDataTable } from "../DataTable";
 import EstadoChip from "../EstadoChip";
@@ -97,7 +98,14 @@ export default function HistorialInscripcionesPanel({ actividad, soloLectura = f
     {
       key: "acciones", label: "", align: "right",
       render: (i) => {
-        if (soloLectura || i.estado !== "activa") return null;
+        if (soloLectura) return null;
+        if (i.estado === "cancelada") return (
+          <EliminarCanceladaButton
+            tipo="inscripción" nombre={`${i.usuario_nombre} ${i.usuario_apellido}`}
+            eliminar={() => eliminarInscripcionCancelada(i.id)} onEliminada={() => cargar(actividad.id)}
+          />
+        );
+        if (i.estado !== "activa") return null;
         return (
           <Button
             size="small" color="error"

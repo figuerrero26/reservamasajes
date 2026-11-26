@@ -14,6 +14,7 @@ class ConfiguracionGeneralOut(BaseModel):
     logo_url: str | None = None
     color_primario: str | None = None
     color_secundario: str | None = None
+    titulo_bienvenida: str | None = None
     mensaje_bienvenida: str | None = None
     imagen_bienvenida_url: str | None = None
     color_boton_disponibilidad: str | None = None

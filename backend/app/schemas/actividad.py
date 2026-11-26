@@ -140,9 +140,13 @@ class ActividadOut(BaseModel):
     vigencia_inicio: date | None = None
     vigencia_fin: date | None = None
     finalizado_en: datetime | None = None
+    publicacion_en: datetime | None = None
+    hora_apertura: time | None = None
+    hora_cierre: time | None = None
     estado_vigencia: EstadoVigencia = "sin_vigencia"
     limite_participaciones: int | None = None
     periodo_limite: PeriodoLimite = "evento"
+    publicado: bool = False
     estado_inscripcion: EstadoActividad = "finalizada"
     resumen: ResumenSesiones = ResumenSesiones()
 
@@ -164,6 +168,8 @@ class ActividadPublicaOut(BaseModel):
     imagen_url: str | None = None
     informacion_adicional: str | None = None
     campos_formulario: list[CampoFormulario] = []
+    motivo_no_disponible: str | None = None
+    proximo_cambio_en: datetime | None = None
     inscripcion_disponible: bool
     estado_inscripcion: EstadoActividad
     vigencia_inicio: date | None = None

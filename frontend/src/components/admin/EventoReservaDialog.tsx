@@ -14,7 +14,7 @@ import HistorialReservasPanel from "./HistorialReservasPanel";
 import { errorImagen } from "./ImagenEventoCampo";
 import InformacionEventoCampos, { INFO_VACIA, infoAPayload, infoDesde, type InfoEvento } from "./InformacionEventoCampos";
 import ReglaParticipacionCampo, { errorRegla, reglaDesde, reglaPorDefecto, type ReglaForm } from "./ReglaParticipacionCampo";
-import VigenciaCampos, { errorVigencia, vigenciaDesde, vigenciaPorDefecto, type VigenciaForm } from "./VigenciaCampos";
+import VigenciaCampos, { errorVigencia, horarioDesde, vigenciaDesde, vigenciaPorDefecto, type VigenciaForm } from "./VigenciaCampos";
 
 export type PestanaReserva = "info" | "agendas" | "historial";
 
@@ -75,7 +75,7 @@ export default function EventoReservaDialog({
     if (!abierto) return;
     setPestana(servicio ? pestanaInicial : "info");
     setInfo(infoDesde(servicio));
-    setVigencia(servicio ? vigenciaDesde(servicio.vigencia_inicio, servicio.vigencia_fin) : vigenciaPorDefecto());
+    setVigencia(servicio ? vigenciaDesde(servicio) : vigenciaPorDefecto());
     setRegla(servicio ? reglaDesde("reserva", servicio.limite_participaciones, servicio.periodo_limite) : reglaPorDefecto("reserva"));
     setNuevas([agendaNueva(areaInicial)]);
     setError(null);
@@ -99,6 +99,7 @@ export default function EventoReservaDialog({
       ...infoAPayload(info),
       vigencia_inicio: vigencia.inicio,
       vigencia_fin: vigencia.fin,
+      ...horarioDesde(vigencia),
       limite_participaciones: regla.limite,
       periodo_limite: regla.periodo,
     };
